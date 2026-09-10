@@ -1,5 +1,5 @@
 
-# 🏗️ ObraCheck — Gestão de Obras para Pequenas Empresas
+# 🏗️ ObraMaster — Gestão de Obras para Pequenas Empresas
 
 [![CI Tests](https://img.shields.io/badge/tests-pending--setup-lightgrey?style=for-the-badge)](#-testes)
 
