@@ -463,3 +463,25 @@ Este projeto é acadêmico (TCC) e pode ser adaptado para fins educacionais, com
 ### Simples para a sua empresa. Transparente para o seu cliente.
 
 ## "Sua obra merece mais que um caderno."
+
+
+## Como rodar o projeto
+
+### Frontend
+cd frontend
+npm install
+npm run dev -- --host
+
+### Backend
+cd backend
+npm install
+node index.js
+
+## Banco de dados
+PostgreSQL (Supabase) + Prisma. Tabelas: Empresa, Usuario.
+Configure `DATABASE_URL` no `backend/.env` com a connection string do Supabase
+(Project Settings > Database > Connection string, modo Pooler) e rode:
+`npx prisma migrate dev` (dentro de backend/)
+
+## Repositório
+https://github.com/Jaqueline-BCO-97/Gestao-de-Obras
