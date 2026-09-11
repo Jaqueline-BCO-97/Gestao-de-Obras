@@ -463,3 +463,23 @@ Este projeto é acadêmico (TCC) e pode ser adaptado para fins educacionais, com
 ### Simples para a sua empresa. Transparente para o seu cliente.
 
 ## "Sua obra merece mais que um caderno."
+
+
+## Como rodar o projeto
+
+### Frontend
+cd frontend
+npm install
+npm run dev -- --host
+
+### Backend
+cd backend
+npm install
+node index.js
+
+## Banco de dados
+PostgreSQL (Neon) + Prisma. Tabelas: Empresa, Usuario.
+Para recriar localmente: npx prisma migrate dev (dentro de backend/)
+
+## Repositório
+https://github.com/Jaqueline-BCO-97/Gestao-de-Obras
