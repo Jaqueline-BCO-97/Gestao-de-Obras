@@ -478,8 +478,10 @@ npm install
 node index.js
 
 ## Banco de dados
-PostgreSQL (Neon) + Prisma. Tabelas: Empresa, Usuario.
-Para recriar localmente: npx prisma migrate dev (dentro de backend/)
+PostgreSQL (Supabase) + Prisma. Tabelas: Empresa, Usuario.
+Configure `DATABASE_URL` no `backend/.env` com a connection string do Supabase
+(Project Settings > Database > Connection string, modo Pooler) e rode:
+`npx prisma migrate dev` (dentro de backend/)
 
 ## Repositório
 https://github.com/Jaqueline-BCO-97/Gestao-de-Obras

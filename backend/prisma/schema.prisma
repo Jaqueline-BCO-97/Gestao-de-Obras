@@ -1,0 +1,37 @@
+// Define que vamos gerar o "cliente" do Prisma (código que usamos no index.js pra falar com o banco)
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Define qual banco estamos usando e de onde vem a string de conexão.
+// O banco é o PostgreSQL do Supabase — a string vai na variável DATABASE_URL (ver backend/.env.example)
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Empresa que usa o sistema (multiempresa — cada empresa é isolada das outras)
+model Empresa {
+  id        String    @id @default(uuid())
+  nome      String
+  criadoEm  DateTime  @default(now())
+  usuarios  Usuario[]
+}
+
+// Usuário do sistema — pode ser CLIENTE, COLABORADOR ou ADMIN
+model Usuario {
+  id         String      @id @default(uuid())
+  empresaId  String
+  empresa    Empresa     @relation(fields: [empresaId], references: [id])
+  nome       String
+  email      String      @unique
+  senhaHash  String
+  tipo       TipoUsuario
+  criadoEm   DateTime    @default(now())
+}
+
+enum TipoUsuario {
+  CLIENTE
+  COLABORADOR
+  ADMIN
+}

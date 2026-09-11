@@ -1,22 +1,26 @@
-const { getSupabase, isSupabaseConfigured } = require("../config/supabase");
+const { getPrisma, isDbConfigured } = require("../config/db");
 
 async function listarUsuarios() {
-  if (!isSupabaseConfigured()) {
+  if (!isDbConfigured()) {
     const erro = new Error(
-      "Supabase não configurado. Defina SUPABASE_URL e SUPABASE_ANON_KEY no .env"
+      "Banco não configurado. Defina DATABASE_URL no .env (PostgreSQL do Supabase)"
     );
-    erro.code = "SUPABASE_NOT_CONFIGURED";
+    erro.code = "DATABASE_NOT_CONFIGURED";
     throw erro;
   }
 
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from("usuarios")
-    .select("id, empresa_id, nome, email, tipo, criado_em")
-    .order("criado_em", { ascending: false });
-
-  if (error) throw error;
-  return data;
+  const prisma = getPrisma();
+  return prisma.usuario.findMany({
+    select: {
+      id: true,
+      empresaId: true,
+      nome: true,
+      email: true,
+      tipo: true,
+      criadoEm: true,
+    },
+    orderBy: { criadoEm: "desc" },
+  });
 }
 
 module.exports = { listarUsuarios };
