@@ -150,7 +150,7 @@ flowchart TD
 # 📂 Estrutura de Pastas
 
 ```
-obracheck/
+obramaster/
 │
 ├── frontend/
 │   ├── src/
@@ -458,7 +458,7 @@ Este projeto é acadêmico (TCC) e pode ser adaptado para fins educacionais, com
 
 ---
 
-# 🏗️ ObraCheck
+# 🏗️ ObraMaster
 
 ### Simples para a sua empresa. Transparente para o seu cliente.
 
