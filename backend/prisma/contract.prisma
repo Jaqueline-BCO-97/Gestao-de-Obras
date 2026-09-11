@@ -1,0 +1,12 @@
+// use prisma-next
+// Contract inferred from the live database schema. Edit as needed, then run `prisma contract emit`.
+
+model Usuarios {
+  id        Int          @id(map: "usuarios_pkey") @default(autoincrement())
+  nome      VarChar(100)
+  email     VarChar(150) @unique(map: "usuarios_email_key")
+  senha     VarChar(255)
+  createdAt Timestamp?   @default(now()) @map("created_at")
+
+  @@map("usuarios")
+}
