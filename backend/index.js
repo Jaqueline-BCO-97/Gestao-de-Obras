@@ -12,6 +12,8 @@ const { isDbConfigured } = require("./src/config/db");
 const {
   listarUsuarios,
   buscarUsuarioPorEmail,
+  buscarUsuarioPorId,
+  atualizarSenhaUsuario,
 } = require("./src/repositories/usuarioRepository");
 const authMiddleware = require("./src/middlewares/authMiddleware");
 
@@ -109,6 +111,48 @@ app.get("/usuarios", authMiddleware, async (req, res) => {
     }
     console.error("Erro ao listar usuários:", erro.message);
     res.status(500).json({ erro: "Erro ao listar usuários" });
+  }
+});
+
+// Alteração da própria senha do usuário autenticado
+app.patch("/usuarios/me/senha", authMiddleware, async (req, res) => {
+  try {
+    const { senhaAtual, novaSenha, senha_atual, nova_senha } = req.body || {};
+    const senhaAtualFinal = senhaAtual ?? senha_atual;
+    const novaSenhaFinal = novaSenha ?? nova_senha;
+
+    if (
+      !senhaAtualFinal ||
+      !novaSenhaFinal ||
+      typeof senhaAtualFinal !== "string" ||
+      typeof novaSenhaFinal !== "string"
+    ) {
+      return res
+        .status(400)
+        .json({ erro: "Senha atual e nova senha são obrigatórias" });
+    }
+
+    const usuarioId = req.usuario.id;
+    const usuario = await buscarUsuarioPorId(usuarioId);
+    if (!usuario) {
+      return res.status(404).json({ erro: "Usuário não encontrado" });
+    }
+
+    const senhaValida = await bcrypt.compare(senhaAtualFinal, usuario.senhaHash);
+    if (!senhaValida) {
+      return res.status(400).json({ erro: "Senha atual incorreta" });
+    }
+
+    const novaSenhaHash = await bcrypt.hash(novaSenhaFinal, 10);
+    await atualizarSenhaUsuario(usuarioId, novaSenhaHash);
+
+    return res.json({ mensagem: "Senha alterada com sucesso" });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") {
+      return res.status(503).json({ erro: erro.message });
+    }
+    console.error("Erro ao alterar senha:", erro.message);
+    return res.status(500).json({ erro: "Erro ao alterar senha" });
   }
 });
 
