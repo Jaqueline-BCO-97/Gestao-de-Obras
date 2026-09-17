@@ -3,7 +3,7 @@ export const brl = (value: number) =>
 
 export const formatDate = (iso: string) => {
   if (!iso) return "—";
-  const [datePart] = iso.split("T");
+  const datePart = iso.split("T")[0] ?? iso;
   const [y, m, d] = datePart.split("-");
   if (!y || !m || !d) return iso;
   return `${d}/${m}/${y}`;
@@ -11,7 +11,7 @@ export const formatDate = (iso: string) => {
 
 export const formatDateTime = (iso: string) => {
   if (!iso) return "—";
-  const [datePart, timePart = ""] = iso.split("T");
+  const [datePart = "", timePart = ""] = iso.split("T");
   return `${formatDate(datePart)} ${timePart.slice(0, 5)}`.trim();
 };
 

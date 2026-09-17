@@ -10,33 +10,312 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as CadastroRouteImport } from './routes/cadastro'
+import { Route as ClienteRouteImport } from './routes/cliente'
+import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminAgendamentosRouteImport } from './routes/admin.agendamentos'
+import { Route as AdminAuditoriaRouteImport } from './routes/admin.auditoria'
+import { Route as AdminClientesRouteImport } from './routes/admin.clientes'
+import { Route as AdminOrcamentosRouteImport } from './routes/admin.orcamentos'
+import { Route as AdminPagamentosRouteImport } from './routes/admin.pagamentos'
+import { Route as AdminPerfilRouteImport } from './routes/admin.perfil'
+import { Route as AdminPrecosRouteImport } from './routes/admin.precos'
+import { Route as AdminRelatoriosRouteImport } from './routes/admin.relatorios'
+import { Route as ClienteIndexRouteImport } from './routes/cliente.index'
+import { Route as ClienteNotificacoesRouteImport } from './routes/cliente.notificacoes'
+import { Route as ClientePagamentosRouteImport } from './routes/cliente.pagamentos'
+import { Route as ClientePerfilRouteImport } from './routes/cliente.perfil'
+import { Route as AdminObrasIndexRouteImport } from './routes/admin.obras.index'
+import { Route as AdminObrasIdRouteImport } from './routes/admin.obras.$id'
+import { Route as ClienteObrasIndexRouteImport } from './routes/cliente.obras.index'
+import { Route as ClienteObrasIdRouteImport } from './routes/cliente.obras.$id'
+import { Route as ClienteOrcamentosIndexRouteImport } from './routes/cliente.orcamentos.index'
+import { Route as ClienteOrcamentosIdRouteImport } from './routes/cliente.orcamentos.$id'
+import { Route as ClienteOrcamentosNovoRouteImport } from './routes/cliente.orcamentos.novo'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CadastroRoute = CadastroRouteImport.update({
+  id: '/cadastro',
+  path: '/cadastro',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClienteRoute = ClienteRouteImport.update({
+  id: '/cliente',
+  path: '/cliente',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAgendamentosRoute = AdminAgendamentosRouteImport.update({
+  id: '/agendamentos',
+  path: '/agendamentos',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAuditoriaRoute = AdminAuditoriaRouteImport.update({
+  id: '/auditoria',
+  path: '/auditoria',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminClientesRoute = AdminClientesRouteImport.update({
+  id: '/clientes',
+  path: '/clientes',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminOrcamentosRoute = AdminOrcamentosRouteImport.update({
+  id: '/orcamentos',
+  path: '/orcamentos',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPagamentosRoute = AdminPagamentosRouteImport.update({
+  id: '/pagamentos',
+  path: '/pagamentos',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPerfilRoute = AdminPerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPrecosRoute = AdminPrecosRouteImport.update({
+  id: '/precos',
+  path: '/precos',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminRelatoriosRoute = AdminRelatoriosRouteImport.update({
+  id: '/relatorios',
+  path: '/relatorios',
+  getParentRoute: () => AdminRoute,
+} as any)
+const ClienteIndexRoute = ClienteIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ClienteRoute,
+} as any)
+const ClienteNotificacoesRoute = ClienteNotificacoesRouteImport.update({
+  id: '/notificacoes',
+  path: '/notificacoes',
+  getParentRoute: () => ClienteRoute,
+} as any)
+const ClientePagamentosRoute = ClientePagamentosRouteImport.update({
+  id: '/pagamentos',
+  path: '/pagamentos',
+  getParentRoute: () => ClienteRoute,
+} as any)
+const ClientePerfilRoute = ClientePerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
+  getParentRoute: () => ClienteRoute,
+} as any)
+const AdminObrasIndexRoute = AdminObrasIndexRouteImport.update({
+  id: '/obras/',
+  path: '/obras/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminObrasIdRoute = AdminObrasIdRouteImport.update({
+  id: '/obras/$id',
+  path: '/obras/$id',
+  getParentRoute: () => AdminRoute,
+} as any)
+const ClienteObrasIndexRoute = ClienteObrasIndexRouteImport.update({
+  id: '/obras/',
+  path: '/obras/',
+  getParentRoute: () => ClienteRoute,
+} as any)
+const ClienteObrasIdRoute = ClienteObrasIdRouteImport.update({
+  id: '/obras/$id',
+  path: '/obras/$id',
+  getParentRoute: () => ClienteRoute,
+} as any)
+const ClienteOrcamentosIndexRoute = ClienteOrcamentosIndexRouteImport.update({
+  id: '/orcamentos/',
+  path: '/orcamentos/',
+  getParentRoute: () => ClienteRoute,
+} as any)
+const ClienteOrcamentosIdRoute = ClienteOrcamentosIdRouteImport.update({
+  id: '/orcamentos/$id',
+  path: '/orcamentos/$id',
+  getParentRoute: () => ClienteRoute,
+} as any)
+const ClienteOrcamentosNovoRoute = ClienteOrcamentosNovoRouteImport.update({
+  id: '/orcamentos/novo',
+  path: '/orcamentos/novo',
+  getParentRoute: () => ClienteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/cadastro': typeof CadastroRoute
+  '/cliente': typeof ClienteRouteWithChildren
+  '/admin/agendamentos': typeof AdminAgendamentosRoute
+  '/admin/auditoria': typeof AdminAuditoriaRoute
+  '/admin/clientes': typeof AdminClientesRoute
+  '/admin/orcamentos': typeof AdminOrcamentosRoute
+  '/admin/pagamentos': typeof AdminPagamentosRoute
+  '/admin/perfil': typeof AdminPerfilRoute
+  '/admin/precos': typeof AdminPrecosRoute
+  '/admin/relatorios': typeof AdminRelatoriosRoute
+  '/cliente/notificacoes': typeof ClienteNotificacoesRoute
+  '/cliente/pagamentos': typeof ClientePagamentosRoute
+  '/cliente/perfil': typeof ClientePerfilRoute
+  '/admin/': typeof AdminIndexRoute
+  '/cliente/': typeof ClienteIndexRoute
+  '/admin/obras/$id': typeof AdminObrasIdRoute
+  '/cliente/obras/$id': typeof ClienteObrasIdRoute
+  '/cliente/orcamentos/$id': typeof ClienteOrcamentosIdRoute
+  '/cliente/orcamentos/novo': typeof ClienteOrcamentosNovoRoute
+  '/admin/obras/': typeof AdminObrasIndexRoute
+  '/cliente/obras/': typeof ClienteObrasIndexRoute
+  '/cliente/orcamentos/': typeof ClienteOrcamentosIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/cadastro': typeof CadastroRoute
+  '/admin/agendamentos': typeof AdminAgendamentosRoute
+  '/admin/auditoria': typeof AdminAuditoriaRoute
+  '/admin/clientes': typeof AdminClientesRoute
+  '/admin/orcamentos': typeof AdminOrcamentosRoute
+  '/admin/pagamentos': typeof AdminPagamentosRoute
+  '/admin/perfil': typeof AdminPerfilRoute
+  '/admin/precos': typeof AdminPrecosRoute
+  '/admin/relatorios': typeof AdminRelatoriosRoute
+  '/cliente/notificacoes': typeof ClienteNotificacoesRoute
+  '/cliente/pagamentos': typeof ClientePagamentosRoute
+  '/cliente/perfil': typeof ClientePerfilRoute
+  '/admin': typeof AdminIndexRoute
+  '/cliente': typeof ClienteIndexRoute
+  '/admin/obras/$id': typeof AdminObrasIdRoute
+  '/cliente/obras/$id': typeof ClienteObrasIdRoute
+  '/cliente/orcamentos/$id': typeof ClienteOrcamentosIdRoute
+  '/cliente/orcamentos/novo': typeof ClienteOrcamentosNovoRoute
+  '/admin/obras': typeof AdminObrasIndexRoute
+  '/cliente/obras': typeof ClienteObrasIndexRoute
+  '/cliente/orcamentos': typeof ClienteOrcamentosIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/cadastro': typeof CadastroRoute
+  '/cliente': typeof ClienteRouteWithChildren
+  '/admin/agendamentos': typeof AdminAgendamentosRoute
+  '/admin/auditoria': typeof AdminAuditoriaRoute
+  '/admin/clientes': typeof AdminClientesRoute
+  '/admin/orcamentos': typeof AdminOrcamentosRoute
+  '/admin/pagamentos': typeof AdminPagamentosRoute
+  '/admin/perfil': typeof AdminPerfilRoute
+  '/admin/precos': typeof AdminPrecosRoute
+  '/admin/relatorios': typeof AdminRelatoriosRoute
+  '/cliente/notificacoes': typeof ClienteNotificacoesRoute
+  '/cliente/pagamentos': typeof ClientePagamentosRoute
+  '/cliente/perfil': typeof ClientePerfilRoute
+  '/admin/': typeof AdminIndexRoute
+  '/cliente/': typeof ClienteIndexRoute
+  '/admin/obras/$id': typeof AdminObrasIdRoute
+  '/cliente/obras/$id': typeof ClienteObrasIdRoute
+  '/cliente/orcamentos/$id': typeof ClienteOrcamentosIdRoute
+  '/cliente/orcamentos/novo': typeof ClienteOrcamentosNovoRoute
+  '/admin/obras/': typeof AdminObrasIndexRoute
+  '/cliente/obras/': typeof ClienteObrasIndexRoute
+  '/cliente/orcamentos/': typeof ClienteOrcamentosIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/cadastro'
+    | '/cliente'
+    | '/admin/agendamentos'
+    | '/admin/auditoria'
+    | '/admin/clientes'
+    | '/admin/orcamentos'
+    | '/admin/pagamentos'
+    | '/admin/perfil'
+    | '/admin/precos'
+    | '/admin/relatorios'
+    | '/cliente/notificacoes'
+    | '/cliente/pagamentos'
+    | '/cliente/perfil'
+    | '/admin/'
+    | '/cliente/'
+    | '/admin/obras/$id'
+    | '/cliente/obras/$id'
+    | '/cliente/orcamentos/$id'
+    | '/cliente/orcamentos/novo'
+    | '/admin/obras/'
+    | '/cliente/obras/'
+    | '/cliente/orcamentos/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/cadastro'
+    | '/admin/agendamentos'
+    | '/admin/auditoria'
+    | '/admin/clientes'
+    | '/admin/orcamentos'
+    | '/admin/pagamentos'
+    | '/admin/perfil'
+    | '/admin/precos'
+    | '/admin/relatorios'
+    | '/cliente/notificacoes'
+    | '/cliente/pagamentos'
+    | '/cliente/perfil'
+    | '/admin'
+    | '/cliente'
+    | '/admin/obras/$id'
+    | '/cliente/obras/$id'
+    | '/cliente/orcamentos/$id'
+    | '/cliente/orcamentos/novo'
+    | '/admin/obras'
+    | '/cliente/obras'
+    | '/cliente/orcamentos'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/cadastro'
+    | '/cliente'
+    | '/admin/agendamentos'
+    | '/admin/auditoria'
+    | '/admin/clientes'
+    | '/admin/orcamentos'
+    | '/admin/pagamentos'
+    | '/admin/perfil'
+    | '/admin/precos'
+    | '/admin/relatorios'
+    | '/cliente/notificacoes'
+    | '/cliente/pagamentos'
+    | '/cliente/perfil'
+    | '/admin/'
+    | '/cliente/'
+    | '/admin/obras/$id'
+    | '/cliente/obras/$id'
+    | '/cliente/orcamentos/$id'
+    | '/cliente/orcamentos/novo'
+    | '/admin/obras/'
+    | '/cliente/obras/'
+    | '/cliente/orcamentos/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRouteWithChildren
+  CadastroRoute: typeof CadastroRoute
+  ClienteRoute: typeof ClienteRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +327,232 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cadastro': {
+      id: '/cadastro'
+      path: '/cadastro'
+      fullPath: '/cadastro'
+      preLoaderRoute: typeof CadastroRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cliente': {
+      id: '/cliente'
+      path: '/cliente'
+      fullPath: '/cliente'
+      preLoaderRoute: typeof ClienteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/agendamentos': {
+      id: '/admin/agendamentos'
+      path: '/agendamentos'
+      fullPath: '/admin/agendamentos'
+      preLoaderRoute: typeof AdminAgendamentosRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/auditoria': {
+      id: '/admin/auditoria'
+      path: '/auditoria'
+      fullPath: '/admin/auditoria'
+      preLoaderRoute: typeof AdminAuditoriaRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/clientes': {
+      id: '/admin/clientes'
+      path: '/clientes'
+      fullPath: '/admin/clientes'
+      preLoaderRoute: typeof AdminClientesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/orcamentos': {
+      id: '/admin/orcamentos'
+      path: '/orcamentos'
+      fullPath: '/admin/orcamentos'
+      preLoaderRoute: typeof AdminOrcamentosRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/pagamentos': {
+      id: '/admin/pagamentos'
+      path: '/pagamentos'
+      fullPath: '/admin/pagamentos'
+      preLoaderRoute: typeof AdminPagamentosRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/perfil': {
+      id: '/admin/perfil'
+      path: '/perfil'
+      fullPath: '/admin/perfil'
+      preLoaderRoute: typeof AdminPerfilRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/precos': {
+      id: '/admin/precos'
+      path: '/precos'
+      fullPath: '/admin/precos'
+      preLoaderRoute: typeof AdminPrecosRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/relatorios': {
+      id: '/admin/relatorios'
+      path: '/relatorios'
+      fullPath: '/admin/relatorios'
+      preLoaderRoute: typeof AdminRelatoriosRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/cliente/': {
+      id: '/cliente/'
+      path: '/'
+      fullPath: '/cliente/'
+      preLoaderRoute: typeof ClienteIndexRouteImport
+      parentRoute: typeof ClienteRoute
+    }
+    '/cliente/notificacoes': {
+      id: '/cliente/notificacoes'
+      path: '/notificacoes'
+      fullPath: '/cliente/notificacoes'
+      preLoaderRoute: typeof ClienteNotificacoesRouteImport
+      parentRoute: typeof ClienteRoute
+    }
+    '/cliente/pagamentos': {
+      id: '/cliente/pagamentos'
+      path: '/pagamentos'
+      fullPath: '/cliente/pagamentos'
+      preLoaderRoute: typeof ClientePagamentosRouteImport
+      parentRoute: typeof ClienteRoute
+    }
+    '/cliente/perfil': {
+      id: '/cliente/perfil'
+      path: '/perfil'
+      fullPath: '/cliente/perfil'
+      preLoaderRoute: typeof ClientePerfilRouteImport
+      parentRoute: typeof ClienteRoute
+    }
+    '/admin/obras/': {
+      id: '/admin/obras/'
+      path: '/obras'
+      fullPath: '/admin/obras/'
+      preLoaderRoute: typeof AdminObrasIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/obras/$id': {
+      id: '/admin/obras/$id'
+      path: '/obras/$id'
+      fullPath: '/admin/obras/$id'
+      preLoaderRoute: typeof AdminObrasIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/cliente/obras/': {
+      id: '/cliente/obras/'
+      path: '/obras'
+      fullPath: '/cliente/obras/'
+      preLoaderRoute: typeof ClienteObrasIndexRouteImport
+      parentRoute: typeof ClienteRoute
+    }
+    '/cliente/obras/$id': {
+      id: '/cliente/obras/$id'
+      path: '/obras/$id'
+      fullPath: '/cliente/obras/$id'
+      preLoaderRoute: typeof ClienteObrasIdRouteImport
+      parentRoute: typeof ClienteRoute
+    }
+    '/cliente/orcamentos/': {
+      id: '/cliente/orcamentos/'
+      path: '/orcamentos'
+      fullPath: '/cliente/orcamentos/'
+      preLoaderRoute: typeof ClienteOrcamentosIndexRouteImport
+      parentRoute: typeof ClienteRoute
+    }
+    '/cliente/orcamentos/$id': {
+      id: '/cliente/orcamentos/$id'
+      path: '/orcamentos/$id'
+      fullPath: '/cliente/orcamentos/$id'
+      preLoaderRoute: typeof ClienteOrcamentosIdRouteImport
+      parentRoute: typeof ClienteRoute
+    }
+    '/cliente/orcamentos/novo': {
+      id: '/cliente/orcamentos/novo'
+      path: '/orcamentos/novo'
+      fullPath: '/cliente/orcamentos/novo'
+      preLoaderRoute: typeof ClienteOrcamentosNovoRouteImport
+      parentRoute: typeof ClienteRoute
+    }
   }
 }
 
+interface AdminRouteChildren {
+  AdminAgendamentosRoute: typeof AdminAgendamentosRoute
+  AdminAuditoriaRoute: typeof AdminAuditoriaRoute
+  AdminClientesRoute: typeof AdminClientesRoute
+  AdminOrcamentosRoute: typeof AdminOrcamentosRoute
+  AdminPagamentosRoute: typeof AdminPagamentosRoute
+  AdminPerfilRoute: typeof AdminPerfilRoute
+  AdminPrecosRoute: typeof AdminPrecosRoute
+  AdminRelatoriosRoute: typeof AdminRelatoriosRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+  AdminObrasIdRoute: typeof AdminObrasIdRoute
+  AdminObrasIndexRoute: typeof AdminObrasIndexRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminAgendamentosRoute: AdminAgendamentosRoute,
+  AdminAuditoriaRoute: AdminAuditoriaRoute,
+  AdminClientesRoute: AdminClientesRoute,
+  AdminOrcamentosRoute: AdminOrcamentosRoute,
+  AdminPagamentosRoute: AdminPagamentosRoute,
+  AdminPerfilRoute: AdminPerfilRoute,
+  AdminPrecosRoute: AdminPrecosRoute,
+  AdminRelatoriosRoute: AdminRelatoriosRoute,
+  AdminIndexRoute: AdminIndexRoute,
+  AdminObrasIdRoute: AdminObrasIdRoute,
+  AdminObrasIndexRoute: AdminObrasIndexRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
+interface ClienteRouteChildren {
+  ClienteNotificacoesRoute: typeof ClienteNotificacoesRoute
+  ClientePagamentosRoute: typeof ClientePagamentosRoute
+  ClientePerfilRoute: typeof ClientePerfilRoute
+  ClienteIndexRoute: typeof ClienteIndexRoute
+  ClienteObrasIdRoute: typeof ClienteObrasIdRoute
+  ClienteOrcamentosIdRoute: typeof ClienteOrcamentosIdRoute
+  ClienteOrcamentosNovoRoute: typeof ClienteOrcamentosNovoRoute
+  ClienteObrasIndexRoute: typeof ClienteObrasIndexRoute
+  ClienteOrcamentosIndexRoute: typeof ClienteOrcamentosIndexRoute
+}
+
+const ClienteRouteChildren: ClienteRouteChildren = {
+  ClienteNotificacoesRoute: ClienteNotificacoesRoute,
+  ClientePagamentosRoute: ClientePagamentosRoute,
+  ClientePerfilRoute: ClientePerfilRoute,
+  ClienteIndexRoute: ClienteIndexRoute,
+  ClienteObrasIdRoute: ClienteObrasIdRoute,
+  ClienteOrcamentosIdRoute: ClienteOrcamentosIdRoute,
+  ClienteOrcamentosNovoRoute: ClienteOrcamentosNovoRoute,
+  ClienteObrasIndexRoute: ClienteObrasIndexRoute,
+  ClienteOrcamentosIndexRoute: ClienteOrcamentosIndexRoute,
+}
+
+const ClienteRouteWithChildren =
+  ClienteRoute._addFileChildren(ClienteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRouteWithChildren,
+  CadastroRoute: CadastroRoute,
+  ClienteRoute: ClienteRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

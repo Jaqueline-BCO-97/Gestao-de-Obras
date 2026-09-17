@@ -57,7 +57,7 @@ const adminNav = [
   { to: "/admin/perfil", label: "Perfil", icon: UserCircle },
 ] as const;
 
-function NavLinks({ role, onNavigate }: { role: "cliente" | "admin"; onNavigate?: () => void }) {
+function NavLinks({ role, onNavigate }: { role: "cliente" | "admin"; onNavigate?: (() => void) | undefined }) {
   const items = role === "cliente" ? clientNav : adminNav;
   return (
     <nav className="space-y-1">
@@ -77,7 +77,7 @@ function NavLinks({ role, onNavigate }: { role: "cliente" | "admin"; onNavigate?
   );
 }
 
-function SidebarContent({ role, onNavigate }: { role: "cliente" | "admin"; onNavigate?: () => void }) {
+function SidebarContent({ role, onNavigate }: { role: "cliente" | "admin"; onNavigate?: (() => void) | undefined }) {
   return (
     <div className="flex h-full flex-col gap-6 bg-sidebar p-4">
       <div className="px-1 pt-1">
@@ -235,7 +235,7 @@ export function AppShell({ role, children }: { role: "cliente" | "admin"; childr
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} variant="destructive">
+                <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
                   <LogOut className="size-4" /> Sair
                 </DropdownMenuItem>
               </DropdownMenuContent>
