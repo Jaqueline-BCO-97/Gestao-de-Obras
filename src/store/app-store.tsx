@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import * as seed from "@/data/mock";
 import type {
   AuditLog,
@@ -93,20 +93,44 @@ interface AppStore extends AppState {
 
 const AppContext = createContext<AppStore | null>(null);
 
+const STORAGE_KEY = "obramaster-state";
+
+const initialState: AppState = {
+  currentUser: null,
+  users: seed.users,
+  quotes: seed.quotes,
+  works: seed.works,
+  payments: seed.payments,
+  schedules: seed.schedules,
+  notifications: seed.notifications,
+  auditLogs: seed.auditLogs,
+  prices: seed.servicePrices,
+};
+
+function loadState(): AppState {
+  if (typeof window === "undefined") return initialState;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return initialState;
+    return { ...initialState, ...(JSON.parse(raw) as AppState) };
+  } catch {
+    return initialState;
+  }
+}
+
 export function AppStoreProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AppState>({
-    currentUser: null,
-    users: seed.users,
-    quotes: seed.quotes,
-    works: seed.works,
-    payments: seed.payments,
-    schedules: seed.schedules,
-    notifications: seed.notifications,
-    auditLogs: seed.auditLogs,
-    prices: seed.servicePrices,
-  });
+  const [state, setState] = useState<AppState>(loadState);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      /* ignore quota errors */
+    }
+  }, [state]);
 
   const patch = useCallback((fn: (s: AppState) => AppState) => setState((s) => fn(s)), []);
+
 
   const notify = (s: AppState, userId: string, text: string, tone: Notification["tone"] = "info") => ({
     ...s,
