@@ -168,7 +168,7 @@ function RegisterPage() {
               <Select value={form.state} onValueChange={set("state")}>
                 <SelectTrigger
                   id="state"
-                  className={cn("w-full bg-card", touched.state && errors.state && "border-destructive")}
+                  className={cn("w-full bg-card", touched["state"] && errors.state && "border-destructive")}
                 >
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
@@ -180,7 +180,7 @@ function RegisterPage() {
                   ))}
                 </SelectContent>
               </Select>
-              {touched.state && errors.state ? (
+              {touched["state"] && errors.state ? (
                 <p className="text-xs font-medium text-destructive">{errors.state}</p>
               ) : null}
             </div>
@@ -203,7 +203,7 @@ function RegisterPage() {
               <span className="font-semibold text-foreground">política de privacidade</span> do ObraMaster.
             </span>
           </label>
-          {touched.accept && errors.accept ? (
+          {touched["accept"] && errors.accept ? (
             <p className="-mt-4 text-xs font-medium text-destructive">{errors.accept}</p>
           ) : null}
 

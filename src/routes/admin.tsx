@@ -4,7 +4,7 @@ import { useAppStore } from "@/store/app-store";
 
 export const Route = createFileRoute("/admin")({
   ssr: false,
-  component: AdminLayout;
+  component: AdminLayout,
 });
 
 function AdminLayout() {

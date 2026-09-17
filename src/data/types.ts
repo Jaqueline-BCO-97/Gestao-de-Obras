@@ -38,11 +38,11 @@ export interface User {
   email: string;
   password: string;
   role: Role;
-  phone?: string;
-  cpf?: string;
-  address?: string;
-  city?: string;
-  state?: string;
+  phone?: string | undefined;
+  cpf?: string | undefined;
+  address?: string | undefined;
+  city?: string | undefined;
+  state?: string | undefined;
   createdAt: string;
   active: boolean;
 }
@@ -63,13 +63,13 @@ export interface Quote {
   description: string;
   address: string;
   desiredDate: string;
-  notes?: string;
+  notes?: string | undefined;
   value: number | null;
   status: QuoteStatus;
   createdAt: string;
   files: FileRef[];
-  clientApproved?: boolean;
-  refusalReason?: string;
+  clientApproved?: boolean | undefined;
+  refusalReason?: string | undefined;
 }
 
 export interface WorkUpdate {
@@ -89,7 +89,7 @@ export interface Work {
   number: string;
   name: string;
   clientId: string;
-  quoteId?: string;
+  quoteId?: string | undefined;
   service: ServiceType;
   address: string;
   total: number;
@@ -100,7 +100,7 @@ export interface Work {
   progress: number;
   updates: WorkUpdate[];
   files: FileRef[];
-  review?: Review;
+  review?: Review | undefined;
 }
 
 export interface Payment {
@@ -111,7 +111,7 @@ export interface Payment {
   method: PaymentMethod;
   date: string;
   status: PaymentStatus;
-  installments?: number;
+  installments?: number | undefined;
 }
 
 export interface Schedule {

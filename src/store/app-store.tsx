@@ -293,7 +293,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
             const work: Work = {
               id: uid("w"),
               number,
-              name: `${quote.service} — ${quote.address.split("—")[0].trim()}`,
+              name: `${quote.service} — ${(quote.address.split("—")[0] ?? quote.address).trim()}`,
               clientId: quote.clientId,
               quoteId: quote.id,
               service: quote.service,
@@ -349,7 +349,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
                 {
                   id: uid("w"),
                   number,
-                  name: `${quote.service} — ${quote.address.split("—")[0].trim()}`,
+                  name: `${quote.service} — ${(quote.address.split("—")[0] ?? quote.address).trim()}`,
                   clientId: quote.clientId,
                   quoteId: quote.id,
                   service: quote.service,
