@@ -32,7 +32,7 @@ const TIMES = ["08:00", "09:00", "10:00", "13:00", "14:00", "15:00", "16:00"];
 function AdminSchedules() {
   const store = useAppStore();
   const [open, setOpen] = useState(false);
-  const [month, setMonth] = useState<Date | undefined>(new Date("2026-09-15"));
+  const [month, setMonth] = useState<Date>(new Date("2026-09-15"));
   const [form, setForm] = useState({ workId: "", date: "", time: "", team: "Equipe A" });
 
   const conflict =
