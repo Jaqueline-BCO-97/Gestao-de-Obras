@@ -6,8 +6,14 @@
 // - GET /usuarios (lista usuarios via Prisma)
 require("dotenv").config();
 const express = require("express");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 const { isDbConfigured } = require("./src/config/db");
-const { listarUsuarios } = require("./src/repositories/usuarioRepository");
+const {
+  listarUsuarios,
+  buscarUsuarioPorEmail,
+} = require("./src/repositories/usuarioRepository");
+const authMiddleware = require("./src/middlewares/authMiddleware");
 
 const app = express();
 app.use(express.json());
@@ -27,8 +33,73 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Lista usuários do banco (model Usuario do Prisma)
-app.get("/usuarios", async (req, res) => {
+// Rota de autenticação — login com e-mail e senha
+app.post("/auth/login", async (req, res) => {
+  try {
+    const { email, senha } = req.body || {};
+
+    if (!email || !senha) {
+      return res.status(400).json({ erro: "E-mail e senha são obrigatórios" });
+    }
+
+    const usuario = await buscarUsuarioPorEmail(email);
+    if (!usuario) {
+      return res.status(401).json({ erro: "Credenciais inválidas" });
+    }
+
+    const senhaValida = await bcrypt.compare(senha, usuario.senhaHash);
+    if (!senhaValida) {
+      return res.status(401).json({ erro: "Credenciais inválidas" });
+    }
+
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      console.error("JWT_SECRET não configurado nas variáveis de ambiente");
+      return res
+        .status(500)
+        .json({ erro: "Erro interno de configuração de autenticação" });
+    }
+
+    const token = jwt.sign(
+      {
+        id: usuario.id,
+        email: usuario.email,
+        tipo: usuario.tipo,
+        empresaId: usuario.empresaId,
+      },
+      secret,
+      { expiresIn: "8h" }
+    );
+
+    return res.json({
+      token,
+      usuario: {
+        id: usuario.id,
+        nome: usuario.nome,
+        email: usuario.email,
+        tipo: usuario.tipo,
+        empresaId: usuario.empresaId,
+      },
+    });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") {
+      return res.status(503).json({ erro: erro.message });
+    }
+    console.error("Erro ao realizar login:", erro.message);
+    return res.status(500).json({ erro: "Erro ao realizar login" });
+  }
+});
+
+// Rota protegida para validação da autenticação / usuário logado
+app.get("/auth/me", authMiddleware, (req, res) => {
+  res.json({
+    mensagem: "Acesso autorizado",
+    usuario: req.usuario,
+  });
+});
+
+// Lista usuários do banco (model Usuario do Prisma) — rota privada protegida
+app.get("/usuarios", authMiddleware, async (req, res) => {
   try {
     const usuarios = await listarUsuarios();
     res.json(usuarios);

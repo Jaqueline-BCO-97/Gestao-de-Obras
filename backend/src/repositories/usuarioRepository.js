@@ -23,4 +23,19 @@ async function listarUsuarios() {
   });
 }
 
-module.exports = { listarUsuarios };
+async function buscarUsuarioPorEmail(email) {
+  if (!isDbConfigured()) {
+    const erro = new Error(
+      "Banco não configurado. Defina DATABASE_URL no .env (PostgreSQL do Supabase)"
+    );
+    erro.code = "DATABASE_NOT_CONFIGURED";
+    throw erro;
+  }
+
+  const prisma = getPrisma();
+  return prisma.usuario.findUnique({
+    where: { email },
+  });
+}
+
+module.exports = { listarUsuarios, buscarUsuarioPorEmail };
