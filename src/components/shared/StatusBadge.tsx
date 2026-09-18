@@ -3,12 +3,12 @@ import { cn } from "@/lib/utils";
 type Tone = "neutral" | "info" | "brand" | "success" | "warning" | "danger";
 
 const toneClass: Record<Tone, string> = {
-  neutral: "bg-muted text-muted-foreground ring-border",
-  info: "bg-info/12 text-info ring-info/25",
-  brand: "bg-brand/12 text-brand ring-brand/25",
-  success: "bg-success/12 text-success ring-success/25",
-  warning: "bg-warning/18 text-warning-foreground ring-warning/35",
-  danger: "bg-destructive/12 text-destructive ring-destructive/25",
+  neutral: "bg-muted/70 text-wood ring-sand",
+  info: "bg-info/10 text-info ring-info/20",
+  brand: "bg-primary/10 text-primary ring-primary/20",
+  success: "bg-success/10 text-success ring-success/20",
+  warning: "bg-warning/15 text-warning-foreground ring-warning/25",
+  danger: "bg-destructive/10 text-destructive ring-destructive/20",
 };
 
 const statusTone: Record<string, Tone> = {

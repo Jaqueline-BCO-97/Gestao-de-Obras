@@ -17,15 +17,15 @@ export function Timeline({ steps }: { steps: TimelineStep[] }) {
               aria-hidden
               className={cn(
                 "absolute left-[13px] top-7 h-[calc(100%+0.6rem)] w-0.5 rounded",
-                step.state === "done" ? "bg-success/40" : "bg-border",
+                step.state === "done" ? "bg-oak/45" : "bg-border",
               )}
             />
           ) : null}
           <span
             className={cn(
               "z-10 grid size-7 shrink-0 place-items-center rounded-full ring-4 ring-card",
-              step.state === "done" && "bg-success text-success-foreground",
-              step.state === "current" && "bg-warning text-warning-foreground",
+               step.state === "done" && "bg-brand text-brand-foreground",
+               step.state === "current" && "bg-primary text-primary-foreground",
               step.state === "todo" && "bg-muted text-muted-foreground",
             )}
           >

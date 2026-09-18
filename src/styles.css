@@ -6,7 +6,8 @@
 
 /*
  * ObraMaster design system.
- * Petrol/deep blue SaaS palette. All colors in oklch, all semantic.
+ * Architectural material palette. Deep blue structure with oak, walnut,
+ * terracotta, sand and warm off-white surfaces. All colors are semantic.
  */
 
 @theme inline {
@@ -16,8 +17,8 @@
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
-  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Urbanist", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Epilogue", ui-sans-serif, system-ui, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -34,6 +35,11 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
+  --color-wood: var(--wood);
+  --color-wood-foreground: var(--wood-foreground);
+  --color-oak: var(--oak);
+  --color-sand: var(--sand);
+  --color-clay: var(--clay);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
@@ -59,52 +65,57 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --shadow-card: 0 1px 2px 0 oklch(0.25 0.05 240 / 0.04), 0 8px 24px -12px oklch(0.25 0.05 240 / 0.12);
-  --shadow-float: 0 12px 40px -12px oklch(0.25 0.05 240 / 0.28);
+  --shadow-card: 0 1px 2px oklch(0.397 0.043 49.4 / 0.04), 0 10px 28px -18px oklch(0.397 0.043 49.4 / 0.2);
+  --shadow-float: 0 16px 38px -18px oklch(0.310 0.059 250.3 / 0.24);
 }
 
 :root {
-  --radius: 0.75rem;
-  --background: oklch(0.976 0.004 247.9);
-  --foreground: oklch(0.245 0.036 240);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.245 0.036 240);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.245 0.036 240);
-  --primary: oklch(0.335 0.062 236);
-  --primary-foreground: oklch(0.985 0.005 240);
-  --brand: oklch(0.575 0.115 234);
-  --brand-foreground: oklch(0.99 0.005 240);
-  --secondary: oklch(0.955 0.008 240);
-  --secondary-foreground: oklch(0.335 0.062 236);
-  --muted: oklch(0.958 0.007 244);
-  --muted-foreground: oklch(0.55 0.028 245);
-  --accent: oklch(0.935 0.024 234);
-  --accent-foreground: oklch(0.335 0.062 236);
-  --success: oklch(0.58 0.135 155);
+  --radius: 0.625rem;
+  --background: oklch(0.966 0.009 78.3);
+  --foreground: oklch(0.274 0.005 67.6);
+  --card: oklch(0.986 0.006 76);
+  --card-foreground: oklch(0.274 0.005 67.6);
+  --popover: oklch(0.986 0.006 76);
+  --popover-foreground: oklch(0.274 0.005 67.6);
+  --primary: oklch(0.603 0.113 40.8);
+  --primary-foreground: oklch(0.986 0.006 76);
+  --brand: oklch(0.427 0.060 230.7);
+  --brand-foreground: oklch(0.986 0.006 76);
+  --wood: oklch(0.397 0.043 49.4);
+  --wood-foreground: oklch(0.966 0.009 78.3);
+  --oak: oklch(0.580 0.071 58.9);
+  --sand: oklch(0.830 0.042 74.4);
+  --clay: oklch(0.675 0.088 46.6);
+  --secondary: oklch(0.427 0.060 230.7);
+  --secondary-foreground: oklch(0.986 0.006 76);
+  --muted: oklch(0.906 0.022 74.1);
+  --muted-foreground: oklch(0.592 0.029 67.2);
+  --accent: oklch(0.906 0.022 74.1);
+  --accent-foreground: oklch(0.397 0.043 49.4);
+  --success: oklch(0.56 0.105 150);
   --success-foreground: oklch(0.99 0.01 155);
-  --warning: oklch(0.76 0.145 72);
-  --warning-foreground: oklch(0.28 0.06 60);
-  --info: oklch(0.62 0.1 235);
-  --info-foreground: oklch(0.99 0.005 240);
+  --warning: oklch(0.72 0.105 72);
+  --warning-foreground: oklch(0.34 0.05 58);
+  --info: oklch(0.427 0.060 230.7);
+  --info-foreground: oklch(0.986 0.006 76);
   --destructive: oklch(0.577 0.222 25);
   --destructive-foreground: oklch(0.985 0.01 25);
-  --border: oklch(0.916 0.011 244);
-  --input: oklch(0.9 0.012 244);
-  --ring: oklch(0.575 0.115 234);
-  --chart-1: oklch(0.335 0.062 236);
-  --chart-2: oklch(0.575 0.115 234);
-  --chart-3: oklch(0.58 0.135 155);
-  --chart-4: oklch(0.76 0.145 72);
-  --chart-5: oklch(0.68 0.06 245);
-  --sidebar: oklch(0.29 0.055 238);
-  --sidebar-foreground: oklch(0.92 0.014 240);
-  --sidebar-primary: oklch(0.575 0.115 234);
-  --sidebar-primary-foreground: oklch(0.99 0.005 240);
-  --sidebar-accent: oklch(0.36 0.06 236);
-  --sidebar-accent-foreground: oklch(0.98 0.005 240);
-  --sidebar-border: oklch(0.38 0.05 238);
-  --sidebar-ring: oklch(0.575 0.115 234);
+  --border: oklch(0.830 0.042 74.4 / 0.72);
+  --input: oklch(0.755 0.035 69 / 0.72);
+  --ring: oklch(0.603 0.113 40.8);
+  --chart-1: oklch(0.427 0.060 230.7);
+  --chart-2: oklch(0.603 0.113 40.8);
+  --chart-3: oklch(0.56 0.105 150);
+  --chart-4: oklch(0.580 0.071 58.9);
+  --chart-5: oklch(0.675 0.088 46.6);
+  --sidebar: oklch(0.310 0.059 250.3);
+  --sidebar-foreground: oklch(0.930 0.018 75);
+  --sidebar-primary: oklch(0.580 0.071 58.9);
+  --sidebar-primary-foreground: oklch(0.986 0.006 76);
+  --sidebar-accent: oklch(0.365 0.055 242);
+  --sidebar-accent-foreground: oklch(0.966 0.009 78.3);
+  --sidebar-border: oklch(0.830 0.042 74.4 / 0.2);
+  --sidebar-ring: oklch(0.675 0.088 46.6);
 }
 
 .dark {
@@ -162,7 +173,11 @@
   h3,
   .font-display {
     font-family: var(--font-display);
-    letter-spacing: -0.015em;
+    letter-spacing: 0;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-clay) 35%, transparent);
   }
 }
 
@@ -171,13 +186,19 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
+  transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
 }
 
 @utility auth-gradient {
-  background-image: linear-gradient(
-    150deg,
-    oklch(0.29 0.055 238) 0%,
-    oklch(0.335 0.062 236) 45%,
-    oklch(0.45 0.09 234) 100%
-  );
+  background-color: var(--color-sidebar);
+  background-image: linear-gradient(150deg, var(--color-sidebar), var(--color-wood));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

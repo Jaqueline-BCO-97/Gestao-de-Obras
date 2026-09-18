@@ -67,7 +67,7 @@ function NavLinks({ role, onNavigate }: { role: "cliente" | "admin"; onNavigate?
           to={item.to}
           onClick={onNavigate}
           activeOptions={{ exact: "exact" in item ? item.exact : false }}
-          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[status=active]:bg-sidebar-primary data-[status=active]:text-sidebar-primary-foreground"
+          className="relative flex items-center gap-3 rounded-md border border-transparent px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 transition-all duration-200 before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-clay before:opacity-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[status=active]:border-sidebar-border data-[status=active]:bg-sidebar-accent data-[status=active]:text-sidebar-accent-foreground data-[status=active]:before:opacity-100 data-[status=active]:[&_svg]:text-clay"
         >
           <item.icon className="size-4.5 shrink-0" />
           <span className="truncate">{item.label}</span>
@@ -84,7 +84,7 @@ function SidebarContent({ role, onNavigate }: { role: "cliente" | "admin"; onNav
         <Logo onDark />
       </div>
       {role === "cliente" ? (
-        <Button asChild variant="secondary" className="w-full justify-start gap-2">
+        <Button asChild className="w-full justify-start gap-2">
           <Link to="/cliente/orcamentos/novo" onClick={onNavigate}>
             <Plus className="size-4" />
             Solicitar orçamento
@@ -178,7 +178,7 @@ export function AppShell({ role, children }: { role: "cliente" | "admin"; childr
       </aside>
 
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-30 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b bg-card/85 px-4 py-3 backdrop-blur sm:px-6">
+        <header className="sticky top-0 z-30 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b bg-card/90 px-4 py-3 backdrop-blur sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
             <Sheet open={open} onOpenChange={setOpen}>
               <SheetTrigger asChild>
