@@ -12,8 +12,10 @@ export function Logo({
     <span className={cn("flex items-center gap-2.5", className)}>
       <span
         className={cn(
-          "grid size-9 shrink-0 place-items-center rounded-xl",
-          onDark ? "bg-brand text-brand-foreground" : "bg-primary text-primary-foreground",
+          "grid size-9 shrink-0 place-items-center rounded-lg border shadow-sm",
+          onDark
+            ? "border-sidebar-border bg-sidebar-primary text-sidebar-primary-foreground"
+            : "border-primary/25 bg-primary text-primary-foreground",
         )}
       >
         <HardHat className="size-5" />
@@ -25,7 +27,7 @@ export function Logo({
             onDark ? "text-sidebar-foreground" : "text-foreground",
           )}
         >
-          Obra<span className="text-brand">Master</span>
+          Obra<span className={onDark ? "text-clay" : "text-primary"}>Master</span>
         </span>
         <span
           className={cn(
