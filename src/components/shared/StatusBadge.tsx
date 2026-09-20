@@ -20,7 +20,7 @@ const statusTone: Record<string, Tone> = {
   Expirado: "warning",
   // obras
   Agendada: "info",
-  "Em andamento": "warning",
+  "Em andamento": "brand",
   Concluída: "success",
   // pagamentos
   Pendente: "warning",
