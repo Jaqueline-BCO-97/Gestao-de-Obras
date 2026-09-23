@@ -1,984 +1,487 @@
-# Build Master
 
-Crie uma aplicação web responsiva chamada ObraMaster, um sistema de gestão de obras e reformas para empresas de construção.
+# 🏗️ ObraMaster — Gestão de Obras para Pequenas Empresas
 
-O objetivo é centralizar em uma única plataforma todo o ciclo de uma obra: solicitação de orçamento, aprovação, agendamento, execução, pagamentos, envio de arquivos, acompanhamento de status, avaliação e relatórios administrativos.
+[![CI Tests](https://img.shields.io/badge/tests-pending--setup-lightgrey?style=for-the-badge)](#-testes)
 
-O sistema terá dois ambientes principais:
+## 🚀 Modernizando a gestão de obras com uma plataforma centralizada
 
-Área do Cliente
+### Transforme cadernos, planilhas e grupos de WhatsApp em um histórico único, auditável e acessível para todos os envolvidos na obra.
 
-Área Administrativa
+[![React](https://img.shields.io/badge/Frontend-React_JS-61DAFB?style=for-the-badge&logo=react)](#️-stack-tecnológica)
+[![Node.js](https://img.shields.io/badge/Backend-Node.js-339933?style=for-the-badge&logo=node.js)](#️-stack-tecnológica)
+[![Express](https://img.shields.io/badge/API-Express-000000?style=for-the-badge)](#️-stack-tecnológica)
+[![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL-4169E1?style=for-the-badge&logo=postgresql)](#️-stack-tecnológica)
+[![JWT](https://img.shields.io/badge/Auth-JWT-010101?style=for-the-badge&logo=jsonwebtokens)](#-segurança)
+[![Mercado Pago](https://img.shields.io/badge/Pagamentos-Mercado_Pago-00B1EA?style=for-the-badge)](#️-stack-tecnológica)
 
-1. Tecnologias e arquitetura
+---
 
-Utilize:
+# 🛠️ Início rápido (desenvolvimento)
 
-React
+Pré-requisitos:
 
-TypeScript
+- Node.js 20+
+- PostgreSQL 14+
+- Conta sandbox no Mercado Pago (para testar pagamentos)
 
-Tailwind CSS
+**Backend** (Node.js + Express):
 
-shadcn/ui
-
-Componentes reutilizáveis
-
-Layout responsivo para desktop, tablet e mobile
-
-Neste primeiro momento, implemente o front-end utilizando dados mockados/local state, mas estruture o código de forma que posteriormente seja simples conectar uma API REST.
-
-Não é necessário implementar um backend real ou gateway de pagamento nesta primeira versão.
-
-Evite criar funcionalidades que não estejam relacionadas ao escopo do ObraMaster.
-
-2. Identidade visual
-
-O ObraMaster deve transmitir:
-
-profissionalismo
-
-confiança
-
-organização
-
-construção/reforma
-
-tecnologia
-
-Crie uma identidade visual moderna e profissional.
-
-Paleta sugerida:
-
-Azul escuro / azul petróleo como cor principal
-
-Azul médio para elementos de destaque
-
-Branco e tons de cinza para superfícies
-
-Verde para sucesso/pagamentos aprovados
-
-Amarelo/laranja para alertas e status de atenção
-
-Vermelho apenas para erros e ações destrutivas
-
-Utilize bastante espaço em branco, cards com bordas suaves, sombras discretas e uma hierarquia visual clara.
-
-A interface deve parecer um SaaS profissional de gestão, e não um site institucional.
-
-Use ícones do Lucide.
-
-3. Estrutura geral
-
-Criar um layout com:
-
-Desktop
-
-Sidebar lateral fixa
-
-Logo "ObraMaster"
-
-Menu de navegação
-
-Área principal com header
-
-Nome do usuário
-
-Avatar
-
-Notificações
-
-Conteúdo da página
-
-Mobile
-
-Sidebar transformada em menu lateral/drawer
-
-Header compacto
-
-Cards adaptados para telas pequenas
-
-Tabelas com comportamento responsivo
-
-Botões e formulários fáceis de utilizar por toque
-
-4. LOGIN
-
-Criar uma tela de login moderna.
-
-Elementos:
-
-Logo ObraMaster
-
-Título: "Bem-vindo ao ObraMaster"
-
-Campo de e-mail
-
-Campo de senha
-
-Checkbox "Lembrar de mim"
-
-Botão "Entrar"
-
-Link "Esqueci minha senha"
-
-Link para cadastro de cliente
-
-Para demonstração do projeto, permitir login utilizando usuários mockados.
-
-Criar pelo menos:
-
-usuário Cliente
-
-usuário Administrador
-
-Após o login, direcionar cada perfil para seu respectivo dashboard.
-
-5. CADASTRO DO CLIENTE
-
-Criar tela de cadastro com:
-
-Nome completo
-
-CPF
-
-E-mail
-
-Telefone
-
-Endereço
-
-Cidade
-
-Estado
-
-Senha
-
-Confirmação de senha
-
-Checkbox de aceite dos termos e política de privacidade
-
-Adicionar validações visuais nos campos.
-
-6. ÁREA DO CLIENTE
-
-O cliente deve ter um dashboard simples e intuitivo.
-
-Dashboard do Cliente
-
-Mostrar:
-
-Cards de resumo
-
-Obras ativas
-
-Orçamentos pendentes
-
-Próximo agendamento
-
-Pagamentos pendentes
-
-Seção "Minhas obras"
-
-Exibir cards com:
-
-Nome da obra
-
-Tipo de serviço
-
-Endereço
-
-Status
-
-Data prevista
-
-Valor total
-
-Progresso
-
-Status possíveis:
-
-Agendada
-→ Em andamento
-→ Concluída
-
-Utilizar badges visuais diferentes para cada status.
-
-7. SOLICITAR ORÇAMENTO
-
-Criar uma página "Novo Orçamento".
-
-Campos:
-
-Tipo de serviço
-
-Descrição do serviço
-
-Endereço da obra
-
-Data desejada
-
-Observações
-
-Upload de arquivos/fotos
-
-Exemplos de serviços:
-
-Pintura
-
-Reforma de banheiro
-
-Reforma de cozinha
-
-Instalação elétrica
-
-Instalação hidráulica
-
-Construção
-
-Outros
-
-Botão:
-"Solicitar orçamento"
-
-Após o envio, mostrar confirmação e criar um orçamento com status:
-
-Aguardando análise
-
-8. MEUS ORÇAMENTOS
-
-Criar uma página com lista de orçamentos.
-
-Cada orçamento deve apresentar:
-
-Número do orçamento
-
-Serviço
-
-Data da solicitação
-
-Valor
-
-Status
-
-Ações
-
-Status possíveis:
-
-Aguardando análise
-
-Em análise
-
-Aprovado
-
-Recusado
-
-Expirado
-
-Ao clicar em um orçamento, abrir uma página/modal com todos os detalhes.
-
-Se aprovado, disponibilizar botão:
-
-"Aprovar orçamento"
-
-e posteriormente:
-
-"Ir para pagamento"
-
-9. DETALHES DA OBRA
-
-Criar uma página detalhada para acompanhamento da obra.
-
-Mostrar:
-
-Informações principais
-
-Nome da obra
-
-Tipo de serviço
-
-Endereço
-
-Valor total
-
-Data de início
-
-Previsão de conclusão
-
-Responsável
-
-Status atual
-
-Linha do tempo da obra
-
-Criar uma timeline visual:
-
-✓ Orçamento aprovado
-✓ Pagamento confirmado
-✓ Obra agendada
-● Obra em andamento
-○ Obra concluída
-
-A timeline deve deixar claro o estágio atual.
-
-Progresso
-
-Mostrar uma barra de progresso percentual.
-
-Arquivos
-
-Área para:
-
-visualizar arquivos enviados
-
-enviar novos arquivos
-
-visualizar fotos/documentos relacionados à obra
-
-Atualizações
-
-Mostrar histórico de atualizações da obra.
-
-Exemplo:
-
-"Obra atualizada para Em andamento"
-"Pagamento confirmado"
-"Obra agendada para 25/09/2026"
-
-10. PAGAMENTOS
-
-Criar página "Pagamentos".
-
-Mostrar:
-
-Valor total da obra
-
-Valor já pago
-
-Valor pendente
-
-Histórico de pagamentos
-
-Criar fluxo visual de pagamento com:
-
-Métodos
-
-PIX
-
-Cartão de crédito
-
-Cartão de débito
-
-Para PIX, criar uma interface simulada contendo:
-
-QR Code mockado
-
-Código copia e cola
-
-Valor
-
-Status do pagamento
-
-Para cartão:
-
-Número do cartão
-
-Nome
-
-Validade
-
-CVV
-
-Parcelas
-
-Não implementar processamento financeiro real. Apenas criar a interface e simulação do fluxo.
-
-11. AVALIAÇÃO
-
-Após uma obra ser concluída e não existirem pagamentos pendentes, disponibilizar uma área para avaliação.
-
-Elementos:
-
-Nota de 1 a 5 estrelas
-
-Campo de comentário
-
-Botão "Enviar avaliação"
-
-A avaliação deve estar vinculada à obra.
-
-12. NOTIFICAÇÕES DO CLIENTE
-
-Criar sistema visual de notificações.
-
-Exemplos:
-
-🔔 "Seu orçamento foi aprovado."
-🔔 "Sua obra foi agendada para 25/09."
-🔔 "Sua obra está em andamento."
-🔔 "Pagamento recebido com sucesso."
-🔔 "Sua obra foi concluída."
-
-Criar indicador de notificações não lidas no header.
-
-13. ÁREA ADMINISTRATIVA
-
-O administrador terá um dashboard diferente do cliente.
-
-Dashboard Administrativo
-
-Criar cards:
-
-Obras em andamento
-
-Obras agendadas
-
-Orçamentos pendentes
-
-Pagamentos pendentes
-
-Faturamento
-
-Clientes cadastrados
-
-Adicionar gráficos simples e profissionais:
-
-Obras por status
-
-Agendadas
-
-Em andamento
-
-Concluídas
-
-Faturamento
-
-Gráfico mensal com valores recebidos.
-
-Atividades recentes
-
-Lista com as últimas ações realizadas no sistema.
-
-14. GERENCIAMENTO DE ORÇAMENTOS — ADMIN
-
-Criar página para o administrador visualizar todos os orçamentos.
-
-Tabela com:
-
-ID
-
-Cliente
-
-Serviço
-
-Data
-
-Valor
-
-Status
-
-Ações
-
-Adicionar:
-
-busca
-
-filtro por status
-
-filtro por período
-
-ordenação
-
-Ao abrir um orçamento, permitir:
-
-visualizar detalhes
-
-definir/editar preço
-
-aprovar orçamento
-
-recusar orçamento
-
-Quando aprovado, o cliente deve receber uma notificação mockada.
-
-15. GERENCIAMENTO DE PREÇOS
-
-Criar página "Preços".
-
-O administrador poderá visualizar e editar preços base dos serviços.
-
-Tabela:
-
-ServiçoPreço baseUnidadeAçõesPinturaR$ 0,00m²EditarReforma de banheiroR$ 0,00serviçoEditarReforma de cozinhaR$ 0,00serviçoEditarInstalação elétricaR$ 0,00serviçoEditarInstalação hidráulicaR$ 0,00serviçoEditar
-
-Criar modal de edição de preço.
-
-16. AGENDAMENTOS
-
-Criar página de gerenciamento de agendamentos.
-
-Mostrar calendário e lista de agendamentos.
-
-Cada agendamento deve apresentar:
-
-Obra
-
-Cliente
-
-Data
-
-Horário
-
-Endereço
-
-Status
-
-Criar formulário para agendar uma obra.
-
-O sistema deve apresentar visualmente um alerta caso exista conflito de horário.
-
-Não permitir, na interface, que dois serviços sejam agendados para o mesmo horário/recurso quando houver conflito.
-
-17. GERENCIAMENTO DE OBRAS
-
-Criar página administrativa "Obras".
-
-Tabela/lista contendo:
-
-Obra
-
-Cliente
-
-Serviço
-
-Data
-
-Status
-
-Valor
-
-Pagamento
-
-Ações
-
-Permitir abrir detalhes da obra.
-
-O administrador poderá alterar o status:
-
-Agendada → Em andamento → Concluída
-
-IMPORTANTE:
-
-Não permitir marcar uma obra como Concluída caso exista pagamento pendente.
-
-Quando o usuário tentar fazer isso, exibir um modal de alerta explicando:
-
-"Não é possível concluir esta obra enquanto houver pagamentos pendentes."
-
-18. PAGAMENTOS — ADMIN
-
-Criar página administrativa de pagamentos.
-
-Mostrar:
-
-ID da transação
-
-Cliente
-
-Obra
-
-Valor
-
-Método
-
-Data
-
-Status
-
-Status:
-
-Pendente
-
-Aprovado
-
-Recusado
-
-Estornado
-
-Adicionar filtros e busca.
-
-Criar proteção visual contra duplicidade de transações.
-
-Para a demonstração, se o usuário tentar registrar uma transação com o mesmo identificador, mostrar:
-
-"Esta transação já foi registrada."
-
-19. CLIENTES
-
-Criar página administrativa de clientes.
-
-Tabela:
-
-Nome
-
-E-mail
-
-Telefone
-
-Número de obras
-
-Status
-
-Cadastro
-
-Ao clicar, abrir detalhes do cliente e suas respectivas obras/orçamentos.
-
-20. RELATÓRIOS
-
-Criar página "Relatórios".
-
-Permitir visualizar:
-
-Relatório de obras
-
-Total de obras
-
-Obras agendadas
-
-Obras em andamento
-
-Obras concluídas
-
-Relatório financeiro
-
-Faturamento
-
-Pagamentos recebidos
-
-Pagamentos pendentes
-
-Relatório de clientes
-
-Total de clientes
-
-Novos clientes
-
-Adicionar filtros por período.
-
-Criar botão:
-
-"Exportar relatório"
-
-A exportação pode ser simulada no front-end nesta primeira versão.
-
-21. LOG DE AUDITORIA
-
-Criar página administrativa "Auditoria".
-
-Mostrar uma tabela com:
-
-Data/hora
-
-Usuário
-
-Ação
-
-Entidade
-
-Descrição
-
-Exemplos:
-
-"Administrador alterou o status da obra #1024"
-"Cliente aprovou orçamento #204"
-"Administrador registrou pagamento #839"
-"Administrador alterou preço do serviço Pintura"
-
-Criar filtros por usuário, ação e período.
-
-22. REGRAS DE NEGÓCIO NO FRONT-END
-
-Mesmo utilizando dados mockados, simule as principais regras do sistema.
-
-Regra 1 — Status da obra
-
-Fluxo:
-
-Agendada → Em andamento → Concluída
-
-Evitar permitir transições inválidas.
-
-Regra 2 — Pagamento pendente
-
-Não permitir concluir obra com pagamento pendente.
-
-Regra 3 — Conflito de agendamento
-
-Ao tentar criar um agendamento conflitante, mostrar alerta e impedir a confirmação.
-
-Regra 4 — Duplicidade de transação
-
-Não permitir cadastrar duas vezes a mesma transação mockada.
-
-Regra 5 — Notificações
-
-Sempre que ocorrer uma alteração importante, criar uma notificação mockada para o cliente.
-
-Regra 6 — Auditoria
-
-Alterações administrativas importantes devem aparecer no log de auditoria mockado.
-
-23. COMPONENTES REUTILIZÁVEIS
-
-Criar componentes reutilizáveis para:
-
-Sidebar
-
-Header
-
-Cards
-
-Status badges
-
-Botões
-
-Inputs
-
-Selects
-
-Modais
-
-Tabelas
-
-Filtros
-
-Timeline
-
-Progress bars
-
-Notificações
-
-Empty states
-
-Loading states
-
-Toasts
-
-Confirmações
-
-Evitar duplicar código entre páginas.
-
-24. UX E ESTADOS
-
-Todas as telas devem possuir estados adequados.
-
-Criar:
-
-loading
-
-sucesso
-
-erro
-
-lista vazia
-
-confirmação de ação
-
-modal de exclusão/alteração quando necessário
-
-Usar toast para ações como:
-
-orçamento enviado
-
-orçamento aprovado
-
-pagamento registrado
-
-obra atualizada
-
-arquivo enviado
-
-avaliação enviada
-
-25. DADOS MOCKADOS
-
-Criar dados suficientes para que o sistema pareça funcional durante uma apresentação acadêmica.
-
-Criar pelo menos:
-
-5 clientes
-
-8 orçamentos
-
-6 obras
-
-diferentes status de obras
-
-pagamentos aprovados e pendentes
-
-agendamentos
-
-notificações
-
-logs de auditoria
-
-avaliações
-
-Os dados devem ser coerentes entre si.
-
-Por exemplo, uma obra concluída deve possuir pagamento integralizado.
-
-26. NAVEGAÇÃO
-
-Cliente
-
-Menu:
-
-Dashboard
-
-Meus Orçamentos
-
-Minhas Obras
-
-Pagamentos
-
-Notificações
-
-Perfil
-
-Botão de destaque:
-
-+ Solicitar orçamento
-
-Administrador
-
-Menu:
-
-Dashboard
-
-Orçamentos
-
-Obras
-
-Agendamentos
-
-Pagamentos
-
-Clientes
-
-Preços
-
-Relatórios
-
-Auditoria
-
-27. PERFIL
-
-Criar página de perfil para o usuário.
-
-Cliente:
-
-dados pessoais
-
-contato
-
-endereço
-
-alteração de senha
-
-Administrador:
-
-dados do administrador
-
-alteração de senha
-
-28. RESPONSIVIDADE
-
-A aplicação deve funcionar muito bem em:
-
-Desktop
-
-Notebook
-
-Tablet
-
-Smartphone
-
-No mobile:
-
-adaptar tabelas
-
-transformar cards em listas quando necessário
-
-utilizar drawer para navegação
-
-manter botões acessíveis
-
-evitar overflow horizontal
-
-29. EXPERIÊNCIA DE DEMONSTRAÇÃO
-
-O projeto será utilizado em uma apresentação acadêmica.
-
-Por isso, priorize uma experiência visualmente polida e consistente.
-
-O fluxo de demonstração deve funcionar de ponta a ponta utilizando dados mockados:
-
-Fluxo do cliente:
-
-Login → Dashboard → Solicitar orçamento → Visualizar orçamento → Aprovar orçamento → Pagamento → Acompanhar obra → Avaliar serviço
-
-Fluxo do administrador:
-
-Login → Dashboard → Analisar orçamento → Definir preço → Aprovar → Agendar obra → Alterar status → Registrar pagamento → Concluir obra → Visualizar relatório/auditoria
-
-Os dados devem atualizar visualmente durante a navegação para que pareça um sistema funcional.
-
-30. IMPORTANTE
-
-Não criar uma landing page como foco principal.
-
-O foco é uma aplicação SaaS/dashboard de gestão de obras.
-
-Não adicionar funcionalidades como:
-
-chat
-
-marketplace
-
-rede social
-
-sistema de funcionários
-
-estoque
-
-folha de pagamento
-
-CRM completo
-
-a menos que sejam necessárias para o funcionamento das funcionalidades descritas.
-
-Priorize interface profissional, clareza, usabilidade, consistência visual e demonstração das regras de negócio.
-
-Crie a aplicação completa com todas as telas descritas acima e deixe a navegação funcional entre elas.
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/ae82f132-3730-4a29-9cd6-ce587bd8d6cc).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
+```bash
+cd backend
+npm install
 npm run dev
 ```
+
+Por padrão, a API sobe em `http://localhost:3333`.
+
+**Configuração de Ambiente (.env)**:
+O backend precisa da string de conexão do banco, o segredo do JWT e as credenciais do Mercado Pago (sandbox).
+
+- **Backend**: Copie `cp .env.example .env` e preencha `DATABASE_URL`, `JWT_SECRET`, `MERCADOPAGO_ACCESS_TOKEN` e `CLOUDINARY_URL`.
+- **Frontend**: Copie `cp .env.example .env` e aponte `VITE_API_URL` para o backend.
+
+**Banco de dados** (migrations):
+
+```bash
+cd backend
+npx prisma migrate dev
+```
+
+**Frontend** (Vite + React + Tailwind):
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+**Testes** (local e CI):
+
+```bash
+cd frontend && npm test
+cd backend && npm test
+```
+
+---
+
+# 📌 Sobre o Projeto
+
+**ObraCheck** é uma plataforma web multiempresa (SaaS) de gestão de obras, voltada para pequenas empresas de construção e reforma que hoje controlam tudo manualmente.
+
+> 🎯 **Estado atual**: projeto em fase de implementação — documentação de escopo, casos de uso, regras de negócio e arquitetura já definidos; construção do MVP em andamento.
+
+## 🎯 Problema Resolvido
+
+### Antes:
+
+- Cadernos e planilhas soltas
+- Combinados feitos só por WhatsApp
+- Cliente sem visibilidade da obra
+- Cobrança e reajustes sem registro formal
+- Conflitos de agenda por falta de controle
+
+### Depois:
+
+- Histórico único e auditável por obra
+- Fotos e atualizações de andamento em tempo real
+- Pagamento parcelado dentro do próprio app
+- Comprovante gerado a partir do histórico registrado
+- Validação automática de conflito de agendamento
+
+---
+
+# 🌟 Principais Funcionalidades
+
+## 👤 Cliente
+
+- Solicitar orçamento com valores pré-calculados por serviço
+- Acompanhar o andamento da obra (status, fotos, anotações)
+- Pagar pelo app (PIX, crédito ou débito), em parcelas (50% início / 50% conclusão)
+- Consultar histórico de obras contratadas
+
+## 🧰 Colaborador
+
+- Conta própria, vinculada às obras em que foi alocado
+- Registrar fotos e anotações de andamento
+- Visualizar apenas as obras atribuídas a ele
+
+## 👷 Administrador / Dono
+
+- Gerenciar a tabela de preços da empresa
+- Criar e gerenciar obras, aprovar orçamentos
+- Controlar agendamentos via calendário integrado
+- Atualizar o status oficial da obra (Agendada → Em andamento → Concluída)
+- Registrar pagamentos e reajustes de valor
+- Alocar colaboradores por obra
+- Visualizar o histórico de alterações de cada obra
+
+---
+
+# 🧠 Arquitetura do Sistema
+
+```mermaid
+flowchart LR
+    A[Cliente / Colaborador / Admin - Frontend React] --> B[HTTP REST API]
+    B --> C[Express Controllers]
+    C --> D[Service Layer]
+    D --> E[Camada de Dados / Prisma]
+    E --> F[(PostgreSQL)]
+    D --> G[Gateway de Pagamento - Mercado Pago]
+    D --> H[Storage de Fotos - Cloudinary]
+    D --> I[Serviço de Notificações]
+```
+
+---
+
+# 🏗️ Arquitetura em Camadas
+
+```mermaid
+flowchart TD
+    UI[Frontend React] --> Controller
+    Controller --> Service
+    Service --> Data[Camada de Dados / Prisma]
+    Data --> Database[(PostgreSQL)]
+    Service --> Payment[Mercado Pago]
+    Service --> Storage[Cloudinary]
+```
+
+---
+
+# 📂 Estrutura de Pastas
+
+```
+obramaster/
+│
+├── frontend/
+│   ├── src/
+│   │   ├── pages/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── services/
+│   │   ├── routes/
+│   │   └── tests/
+│
+├── backend/
+│   ├── src/
+│   │   ├── controllers/
+│   │   ├── services/
+│   │   ├── repositories/
+│   │   ├── models/
+│   │   ├── middlewares/
+│   │   └── config/
+│   ├── prisma/
+│   │   └── schema.prisma
+│   └── tests/
+│
+└── docs/
+    ├── escopo-do-projeto.md
+    ├── casos-de-uso/
+    └── arquitetura/
+```
+
+---
+
+# ⚙️ Stack Tecnológica
+
+## 🎨 Frontend
+
+- React JS
+- Vite
+- TailwindCSS
+- Axios
+- React Router
+- Context API
+
+## 🛠️ Backend
+
+- Node.js 20+
+- Express
+- Prisma ORM
+- JWT (autenticação)
+- Bcrypt (hash de senha)
+- Jest / Supertest
+
+## 🗄️ Banco de Dados
+
+- PostgreSQL
+- Modelagem multiempresa (`empresa_id` em toda tabela relevante)
+- Migrations via Prisma
+
+## 💳 Integrações
+
+- Mercado Pago (pagamentos via PIX/crédito/débito, sandbox)
+- Cloudinary (armazenamento de fotos/arquivos)
+
+---
+
+# 🔁 Fluxo Principal do Sistema
+
+```mermaid
+sequenceDiagram
+    participant Cliente
+    participant Frontend
+    participant Backend
+    participant Gateway as Mercado Pago
+    participant DB
+
+    Cliente->>Frontend: Solicita orçamento
+    Frontend->>Backend: POST /orcamentos
+    Backend->>DB: Grava orçamento (empresa_id, valores)
+    Backend-->>Frontend: Orçamento aprovado / obra criada
+    Cliente->>Frontend: Realiza pagamento (1ª parcela)
+    Frontend->>Backend: POST /obras/:id/pagamento
+    Backend->>Gateway: Confirma transação
+    Gateway-->>Backend: Pagamento aprovado
+    Backend->>DB: Registra pagamento + histórico
+    Backend-->>Frontend: Atualiza saldo pendente
+    Frontend-->>Cliente: Exibe status atualizado da obra
+```
+
+---
+
+# 📋 Regras de Negócio
+
+## 🔒 Regras Obrigatórias
+
+- **RN1** — Pagamento só é registrado se valor ≤ saldo pendente; sem duplicidade de transação
+- **RN2** — Status segue sequência obrigatória Agendada → Em andamento → Concluída, sem retrocesso; só o Admin oficializa a mudança
+- **RN3** — Reagendamento só é confirmado se não houver conflito de data/hora com outra obra
+- **RN4** — Toda alteração (status, pagamento, agendamento) é registrada em histórico com usuário e data/hora
+- **RN6** — Obra não pode ser marcada como "Concluída" com pagamento pendente
+- **RN7** — Alteração de status ou agendamento dispara notificação automática ao cliente
+- **RN8** — Pagamento padrão dividido em 2 parcelas: 50% na aprovação do orçamento, 50% na conclusão da obra
+- **RN9** — Isolamento total de dados entre empresas (multiempresa)
+
+---
+
+# 🗃️ Modelagem de Dados
+
+## Tabela: `empresa`
+
+| Campo       | Tipo      |
+| ----------- | --------- |
+| id          | UUID      |
+| nome        | VARCHAR   |
+| cnpj        | VARCHAR   |
+| created_at  | TIMESTAMP |
+
+## Tabela: `usuario`
+
+| Campo         | Tipo      |
+| ------------- | --------- |
+| id            | UUID      |
+| empresa_id    | UUID      |
+| nome          | VARCHAR   |
+| email         | VARCHAR   |
+| senha_hash    | TEXT      |
+| tipo          | VARCHAR (cliente/colaborador/admin) |
+| created_at    | TIMESTAMP |
+
+## Tabela: `obra`
+
+| Campo           | Tipo      |
+| --------------- | --------- |
+| id              | UUID      |
+| empresa_id      | UUID      |
+| cliente_id      | UUID      |
+| status          | VARCHAR (Agendada/Em andamento/Concluída/Cancelada) |
+| valor_total     | DECIMAL   |
+| valor_pago      | DECIMAL   |
+| data_agendada   | TIMESTAMP |
+| created_at      | TIMESTAMP |
+
+## Tabela: `obra_evento` (linha do tempo / histórico)
+
+| Campo       | Tipo      |
+| ----------- | --------- |
+| id          | UUID      |
+| obra_id     | UUID      |
+| usuario_id  | UUID      |
+| tipo        | VARCHAR (foto/anotacao/reajuste/pagamento/status) |
+| descricao   | TEXT      |
+| created_at  | TIMESTAMP |
+
+## Tabela: `obra_colaborador`
+
+| Campo          | Tipo |
+| -------------- | ---- |
+| obra_id        | UUID |
+| colaborador_id | UUID |
+
+## Tabela: `tabela_preco`
+
+| Campo       | Tipo    |
+| ----------- | ------- |
+| id          | UUID    |
+| empresa_id  | UUID    |
+| servico     | VARCHAR |
+| valor_m2    | DECIMAL |
+
+---
+
+# 🌐 Endpoints da API
+
+## Autenticação
+
+```
+POST /auth/register   (cadastro de empresa + admin)
+POST /auth/login
+```
+
+## Obras
+
+```
+GET  /obras
+POST /obras
+GET  /obras/:id
+PATCH /obras/:id/status
+POST /obras/:id/andamento     (foto/anotação — Colaborador)
+POST /obras/:id/pagamento     (Admin)
+POST /obras/:id/colaboradores (alocação — Admin)
+```
+
+## Preços e Agenda
+
+```
+GET  /precos
+POST /precos
+GET  /agenda
+```
+
+## Colaboradores
+
+```
+POST /colaboradores
+GET  /colaboradores
+```
+
+---
+
+# 🔐 Segurança
+
+## Implementado / Planejado:
+
+- Autenticação via JWT
+- Hash de senha com Bcrypt
+- Isolamento de dados por empresa (multi-tenant)
+- Dados sensíveis (pagamento, cliente) criptografados em trânsito (HTTPS) e repouso
+- Sem armazenamento direto de dados bancários — pagamento via gateway externo, só token/ID da transação é salvo
+- Conformidade com a LGPD no tratamento de dados pessoais
+
+---
+
+# 🧪 Testes
+
+```
+cd frontend && npm test
+cd backend && npm test
+```
+
+---
+
+# 📄 Documentação e Planejamento
+
+Veja os arquivos de especificação para detalhes:
+
+- `docs/escopo-do-projeto.md` — Escopo completo do projeto
+- `docs/casos-de-uso/` — Especificação dos casos de uso
+- `docs/arquitetura/` — Documento de arquitetura de software
+
+---
+
+# 📈 Roadmap
+
+## ✏️ Fundação do Projeto
+
+- [x] Definição de escopo e visão do produto
+- [x] Especificação de casos de uso e regras de negócio
+- [x] Modelagem de dados
+- [x] Documento de arquitetura
+
+## 🔨 Fase 1: MVP (até 30/09)
+
+- [ ] Cadastro/login de empresa, admin, colaborador e cliente
+- [ ] Tabela de preços por empresa
+- [ ] Cadastro e gestão de obras pelo Admin
+- [ ] Calendário/agenda consolidada
+- [ ] Registro de andamento (fotos + anotações) pelo Colaborador
+- [ ] Alocação de colaboradores por obra
+- [ ] Pagamento parcelado (50/50) via PIX/cartão
+- [ ] Acompanhamento de obra pelo Cliente
+- [ ] Histórico/log de auditoria
+
+## 🚀 Fase 2: Melhorias
+
+- [ ] Chat direto entre dono e cliente
+- [ ] Avaliação do serviço prestado
+- [ ] Emissão de comprovante/termo em PDF
+- [ ] Exportação de relatórios financeiros (PDF/Excel)
+- [ ] Tela dedicada de gestão de colaboradores
+
+---
+
+# 🎨 Diferenciais
+
+## 💥 O que torna o ObraCheck especial:
+
+### Multiempresa
+
+Qualquer empresa de obras pode usar, com dados isolados das demais
+
+### Histórico confiável
+
+Toda alteração registrada com usuário e data/hora — serve como comprovante
+
+### Pensado para o dia a dia da obra
+
+Fotos, anotações e agenda no lugar do caderno e do WhatsApp
+
+### Mobile-first
+
+Feito pra ser usado no celular, direto do canteiro de obras
+
+---
+
+# 🤝 Contribuição
+
+## Padrões:
+
+- Componentização e separação em camadas (Controller/Service/Repository)
+- Commits organizados por feature
+- Pull Requests com pelo menos 1 revisão antes do merge
+
+---
+
+# 📜 Licença
+
+Este projeto é acadêmico (TCC) e pode ser adaptado para fins educacionais, comerciais ou evolutivos conforme necessidade.
+
+---
+
+# 🏗️ ObraMaster
+
+### Simples para a sua empresa. Transparente para o seu cliente.
+
+## "Sua obra merece mais que um caderno."
+
+
+## Como rodar o projeto
+
+### Frontend
+cd frontend
+npm install
+npm run dev -- --host
+
+### Backend
+cd backend
+npm install
+node index.js
+
+## Banco de dados
+PostgreSQL (Supabase) + Prisma. Tabelas: Empresa, Usuario.
+Configure `DATABASE_URL` no `backend/.env` com a connection string do Supabase
+(Project Settings > Database > Connection string, modo Pooler) e rode:
+`npx prisma migrate dev` (dentro de backend/)
+
+## Repositório
+https://github.com/Jaqueline-BCO-97/Gestao-de-Obras
