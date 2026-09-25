@@ -1,4 +1,3 @@
-
 # 🏗️ ObraMaster — Gestão de Obras para Pequenas Empresas
 
 [![CI Tests](https://img.shields.io/badge/tests-pending--setup-lightgrey?style=for-the-badge)](#-testes)
@@ -7,60 +6,51 @@
 
 ### Transforme cadernos, planilhas e grupos de WhatsApp em um histórico único, auditável e acessível para todos os envolvidos na obra.
 
-[![React](https://img.shields.io/badge/Frontend-React_JS-61DAFB?style=for-the-badge&logo=react)](#️-stack-tecnológica)
-[![Node.js](https://img.shields.io/badge/Backend-Node.js-339933?style=for-the-badge&logo=node.js)](#️-stack-tecnológica)
-[![Express](https://img.shields.io/badge/API-Express-000000?style=for-the-badge)](#️-stack-tecnológica)
-[![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL-4169E1?style=for-the-badge&logo=postgresql)](#️-stack-tecnológica)
-[![JWT](https://img.shields.io/badge/Auth-JWT-010101?style=for-the-badge&logo=jsonwebtokens)](#-segurança)
-[![Mercado Pago](https://img.shields.io/badge/Pagamentos-Mercado_Pago-00B1EA?style=for-the-badge)](#️-stack-tecnológica)
+![React](https://img.shields.io/badge/Frontend-React_JS-61DAFB?style=for-the-badge&logo=react) ![Node.js](https://img.shields.io/badge/Backend-Node.js-339933?style=for-the-badge&logo=node.js) ![Express](https://img.shields.io/badge/API-Express-000000?style=for-the-badge) ![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL-4169E1?style=for-the-badge&logo=postgresql) ![JWT](https://img.shields.io/badge/Auth-JWT-010101?style=for-the-badge&logo=jsonwebtokens) ![Mercado Pago](https://img.shields.io/badge/Pagamentos-Mercado_Pago-00B1EA?style=for-the-badge)
 
 ---
 
 # 🛠️ Início rápido (desenvolvimento)
 
 Pré-requisitos:
-
 - Node.js 20+
-- PostgreSQL 14+
-- Conta sandbox no Mercado Pago (para testar pagamentos)
+- Conta no Supabase (banco PostgreSQL já hospedado na nuvem)
+- Conta sandbox no Mercado Pago (para testar pagamentos — ainda não integrado)
 
 **Backend** (Node.js + Express):
-
-```bash
+```
 cd backend
 npm install
-npm run dev
+node index.js
 ```
-
-Por padrão, a API sobe em `http://localhost:3333`.
+Por padrão, a API sobe em `http://localhost:3000`.
 
 **Configuração de Ambiente (.env)**:
-O backend precisa da string de conexão do banco, o segredo do JWT e as credenciais do Mercado Pago (sandbox).
+O backend precisa da string de conexão do banco (Supabase) e do segredo do JWT.
 
-- **Backend**: Copie `cp .env.example .env` e preencha `DATABASE_URL`, `JWT_SECRET`, `MERCADOPAGO_ACCESS_TOKEN` e `CLOUDINARY_URL`.
-- **Frontend**: Copie `cp .env.example .env` e aponte `VITE_API_URL` para o backend.
+- **Backend**: copie `cp .env.example .env` e preencha `DATABASE_URL` (Supabase) e `JWT_SECRET`. `MERCADOPAGO_ACCESS_TOKEN` e `CLOUDINARY_URL` ainda não são usados no código — ficam reservados para quando essas integrações forem implementadas.
+- **Frontend**: ainda não consome a API (é o Hello World padrão do Vite) — variável `VITE_API_URL` será adicionada quando a integração começar.
 
 **Banco de dados** (migrations):
-
-```bash
+```
 cd backend
 npx prisma migrate dev
 ```
 
-**Frontend** (Vite + React + Tailwind):
-
-```bash
+**Frontend** (Vite + React):
+```
 cd frontend
 npm install
-npm run dev
+npm run dev -- --host
 ```
+TailwindCSS ainda **não** está instalado no frontend (planejado, não feito).
 
-**Testes** (local e CI):
-
-```bash
-cd frontend && npm test
-cd backend && npm test
+**Testes** (backend):
 ```
+cd backend
+npm test
+```
+O frontend ainda não tem testes configurados.
 
 ---
 
@@ -68,12 +58,11 @@ cd backend && npm test
 
 **ObraMaster** é uma plataforma web multiempresa (SaaS) de gestão de obras, voltada para pequenas empresas de construção e reforma que hoje controlam tudo manualmente.
 
-> 🎯 **Estado atual**: projeto em fase de implementação — documentação de escopo, casos de uso, regras de negócio e arquitetura já definidos; construção do MVP em andamento.
+> 🎯 **Estado atual**: escopo, casos de uso, regras de negócio e arquitetura definidos; backend com autenticação funcionando (login, dados do usuário logado, troca de senha); frontend ainda no Hello World inicial.
 
 ## 🎯 Problema Resolvido
 
 ### Antes:
-
 - Cadernos e planilhas soltas
 - Combinados feitos só por WhatsApp
 - Cliente sem visibilidade da obra
@@ -81,7 +70,6 @@ cd backend && npm test
 - Conflitos de agenda por falta de controle
 
 ### Depois:
-
 - Histórico único e auditável por obra
 - Fotos e atualizações de andamento em tempo real
 - Pagamento parcelado dentro do próprio app
@@ -90,23 +78,20 @@ cd backend && npm test
 
 ---
 
-# 🌟 Principais Funcionalidades
+# 🌟 Principais Funcionalidades (visão do produto)
 
 ## 👤 Cliente
-
 - Solicitar orçamento com valores pré-calculados por serviço
 - Acompanhar o andamento da obra (status, fotos, anotações)
 - Pagar pelo app (PIX, crédito ou débito), em parcelas (50% início / 50% conclusão)
 - Consultar histórico de obras contratadas
 
 ## 🧰 Colaborador
-
 - Conta própria, vinculada às obras em que foi alocado
 - Registrar fotos e anotações de andamento
 - Visualizar apenas as obras atribuídas a ele
 
 ## 👷 Administrador / Dono
-
 - Gerenciar a tabela de preços da empresa
 - Criar e gerenciar obras, aprovar orçamentos
 - Controlar agendamentos via calendário integrado
@@ -122,13 +107,12 @@ cd backend && npm test
 ```mermaid
 flowchart LR
     A[Cliente / Colaborador / Admin - Frontend React] --> B[HTTP REST API]
-    B --> C[Express Controllers]
-    C --> D[Service Layer]
-    D --> E[Camada de Dados / Prisma]
-    E --> F[(PostgreSQL)]
+    B --> C[Express - Rotas]
+    C --> D[Repositories]
+    D --> E[Prisma]
+    E --> F[(PostgreSQL - Supabase)]
     D --> G[Gateway de Pagamento - Mercado Pago]
     D --> H[Storage de Fotos - Cloudinary]
-    D --> I[Serviço de Notificações]
 ```
 
 ---
@@ -137,12 +121,12 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    UI[Frontend React] --> Controller
-    Controller --> Service
-    Service --> Data[Camada de Dados / Prisma]
-    Data --> Database[(PostgreSQL)]
-    Service --> Payment[Mercado Pago]
-    Service --> Storage[Cloudinary]
+    UI[Frontend React] --> Routes[Rotas - backend/index.js]
+    Routes --> Middlewares[Middlewares - autenticação JWT]
+    Middlewares --> Repo[Repositories - acesso ao banco]
+    Repo --> Data[(PostgreSQL via Prisma)]
+    Routes --> Payment[Mercado Pago - planejado]
+    Routes --> Storage[Cloudinary - planejado]
 ```
 
 ---
@@ -150,7 +134,7 @@ flowchart TD
 # 📂 Estrutura de Pastas
 
 ```
-obramaster/
+gestao-de-obras/
 │
 ├── frontend/
 │   ├── src/
@@ -163,17 +147,14 @@ obramaster/
 │
 ├── backend/
 │   ├── src/
-│   │   ├── controllers/
-│   │   ├── services/
 │   │   ├── repositories/
-│   │   ├── models/
 │   │   ├── middlewares/
 │   │   └── config/
 │   ├── prisma/
 │   │   └── schema.prisma
 │   └── tests/
 │
-└── docs/
+└── docs/               ← planejado, ainda não criado
     ├── escopo-do-projeto.md
     ├── casos-de-uso/
     └── arquitetura/
@@ -184,37 +165,28 @@ obramaster/
 # ⚙️ Stack Tecnológica
 
 ## 🎨 Frontend
-
-- React JS
-- Vite
-- TailwindCSS
-- Axios
-- React Router
-- Context API
+- React JS + Vite
+- TailwindCSS *(planejado, não instalado)*
+- React Router *(planejado)*
 
 ## 🛠️ Backend
-
-- Node.js 20+
-- Express
-- Prisma ORM
+- Node.js + Express
+- Prisma ORM v6
 - JWT (autenticação)
 - Bcrypt (hash de senha)
-- Jest / Supertest
 
 ## 🗄️ Banco de Dados
-
-- PostgreSQL
-- Modelagem multiempresa (`empresa_id` em toda tabela relevante)
+- PostgreSQL (hospedado no Supabase)
+- Modelagem multiempresa (`empresaId` em toda tabela relevante)
 - Migrations via Prisma
 
-## 💳 Integrações
-
+## 💳 Integrações (planejadas, ainda não implementadas)
 - Mercado Pago (pagamentos via PIX/crédito/débito, sandbox)
 - Cloudinary (armazenamento de fotos/arquivos)
 
 ---
 
-# 🔁 Fluxo Principal do Sistema
+# 🔁 Fluxo Principal do Sistema (visão planejada)
 
 ```mermaid
 sequenceDiagram
@@ -226,7 +198,7 @@ sequenceDiagram
 
     Cliente->>Frontend: Solicita orçamento
     Frontend->>Backend: POST /orcamentos
-    Backend->>DB: Grava orçamento (empresa_id, valores)
+    Backend->>DB: Grava orçamento (empresaId, valores)
     Backend-->>Frontend: Orçamento aprovado / obra criada
     Cliente->>Frontend: Realiza pagamento (1ª parcela)
     Frontend->>Backend: POST /obras/:id/pagamento
@@ -241,8 +213,6 @@ sequenceDiagram
 
 # 📋 Regras de Negócio
 
-## 🔒 Regras Obrigatórias
-
 - **RN1** — Pagamento só é registrado se valor ≤ saldo pendente; sem duplicidade de transação
 - **RN2** — Status segue sequência obrigatória Agendada → Em andamento → Concluída, sem retrocesso; só o Admin oficializa a mudança
 - **RN3** — Reagendamento só é confirmado se não houver conflito de data/hora com outra obra
@@ -256,116 +226,70 @@ sequenceDiagram
 
 # 🗃️ Modelagem de Dados
 
-## Tabela: `empresa`
+## ✅ Implementado no banco
 
-| Campo       | Tipo      |
-| ----------- | --------- |
-| id          | UUID      |
-| nome        | VARCHAR   |
-| cnpj        | VARCHAR   |
-| created_at  | TIMESTAMP |
+### `Empresa`
+| Campo | Tipo |
+|---|---|
+| id | UUID |
+| nome | VARCHAR |
+| criadoEm | TIMESTAMP |
 
-## Tabela: `usuario`
+### `Usuario`
+| Campo | Tipo |
+|---|---|
+| id | UUID |
+| empresaId | UUID (FK → Empresa) |
+| nome | VARCHAR |
+| email | VARCHAR (único) |
+| senhaHash | TEXT |
+| tipo | ENUM (CLIENTE / COLABORADOR / ADMIN) |
+| criadoEm | TIMESTAMP |
 
-| Campo         | Tipo      |
-| ------------- | --------- |
-| id            | UUID      |
-| empresa_id    | UUID      |
-| nome          | VARCHAR   |
-| email         | VARCHAR   |
-| senha_hash    | TEXT      |
-| tipo          | VARCHAR (cliente/colaborador/admin) |
-| created_at    | TIMESTAMP |
-
-## Tabela: `obra`
-
-| Campo           | Tipo      |
-| --------------- | --------- |
-| id              | UUID      |
-| empresa_id      | UUID      |
-| cliente_id      | UUID      |
-| status          | VARCHAR (Agendada/Em andamento/Concluída/Cancelada) |
-| valor_total     | DECIMAL   |
-| valor_pago      | DECIMAL   |
-| data_agendada   | TIMESTAMP |
-| created_at      | TIMESTAMP |
-
-## Tabela: `obra_evento` (linha do tempo / histórico)
-
-| Campo       | Tipo      |
-| ----------- | --------- |
-| id          | UUID      |
-| obra_id     | UUID      |
-| usuario_id  | UUID      |
-| tipo        | VARCHAR (foto/anotacao/reajuste/pagamento/status) |
-| descricao   | TEXT      |
-| created_at  | TIMESTAMP |
-
-## Tabela: `obra_colaborador`
-
-| Campo          | Tipo |
-| -------------- | ---- |
-| obra_id        | UUID |
-| colaborador_id | UUID |
-
-## Tabela: `tabela_preco`
-
-| Campo       | Tipo    |
-| ----------- | ------- |
-| id          | UUID    |
-| empresa_id  | UUID    |
-| servico     | VARCHAR |
-| valor_m2    | DECIMAL |
+## 🔜 Planejado, ainda não criado no banco
+`obra`, `obra_evento` (linha do tempo/histórico), `obra_colaborador`, `tabela_preco` — ver detalhamento completo em `docs/escopo-do-projeto.md` (issue de contrato de dados pendente).
 
 ---
 
 # 🌐 Endpoints da API
 
-## Autenticação
-
+## ✅ Implementados
 ```
-POST /auth/register   (cadastro de empresa + admin)
-POST /auth/login
+GET   /health                    (status do servidor)
+GET   /usuarios                  (lista usuários — protegida)
+POST  /auth/login                (login com e-mail/senha, retorna JWT)
+GET   /auth/me                   (dados do usuário autenticado — protegida)
+PATCH /usuarios/me/senha         (troca da própria senha — protegida)
 ```
 
-## Obras
-
+## 🔜 Planejados
 ```
-GET  /obras
-POST /obras
-GET  /obras/:id
+POST  /auth/register             (cadastro de empresa + admin)
+GET   /obras
+POST  /obras
+GET   /obras/:id
 PATCH /obras/:id/status
-POST /obras/:id/andamento     (foto/anotação — Colaborador)
-POST /obras/:id/pagamento     (Admin)
-POST /obras/:id/colaboradores (alocação — Admin)
-```
-
-## Preços e Agenda
-
-```
-GET  /precos
-POST /precos
-GET  /agenda
-```
-
-## Colaboradores
-
-```
-POST /colaboradores
-GET  /colaboradores
+POST  /obras/:id/andamento       (foto/anotação — Colaborador)
+POST  /obras/:id/pagamento       (Admin)
+POST  /obras/:id/colaboradores   (alocação — Admin)
+GET   /precos
+POST  /precos
+GET   /agenda
 ```
 
 ---
 
 # 🔐 Segurança
 
-## Implementado / Planejado:
-
+## ✅ Implementado
 - Autenticação via JWT
 - Hash de senha com Bcrypt
-- Isolamento de dados por empresa (multi-tenant)
-- Dados sensíveis (pagamento, cliente) criptografados em trânsito (HTTPS) e repouso
-- Sem armazenamento direto de dados bancários — pagamento via gateway externo, só token/ID da transação é salvo
+- Rotas privadas protegidas por middleware de autenticação
+
+## 🔜 Planejado
+- Isolamento de dados por empresa (multi-tenant) nas rotas de obra
+- Dados sensíveis criptografados em trânsito (HTTPS) e repouso
+- Sem armazenamento direto de dados bancários — pagamento via gateway externo, só token/ID da transação será salvo
 - Conformidade com a LGPD no tratamento de dados pessoais
 
 ---
@@ -373,34 +297,25 @@ GET  /colaboradores
 # 🧪 Testes
 
 ```
-cd frontend && npm test
-cd backend && npm test
+cd backend
+npm test
 ```
-
----
-
-# 📄 Documentação e Planejamento
-
-Veja os arquivos de especificação para detalhes:
-
-- `docs/escopo-do-projeto.md` — Escopo completo do projeto
-- `docs/casos-de-uso/` — Especificação dos casos de uso
-- `docs/arquitetura/` — Documento de arquitetura de software
+Cobre atualmente o fluxo de troca de senha (`/usuarios/me/senha`). Testes de frontend ainda não configurados.
 
 ---
 
 # 📈 Roadmap
 
 ## ✏️ Fundação do Projeto
-
 - [x] Definição de escopo e visão do produto
 - [x] Especificação de casos de uso e regras de negócio
-- [x] Modelagem de dados
-- [x] Documento de arquitetura
+- [x] Modelagem inicial de dados (Empresa, Usuário)
+- [x] Estrutura de pastas frontend/backend
 
-## 🔨 Fase 1: MVP (até 30/09)
-
-- [ ] Cadastro/login de empresa, admin, colaborador e cliente
+## 🔨 Fase 1: MVP
+- [x] Login (e-mail/senha) com JWT
+- [x] Endpoint de troca de senha
+- [ ] Cadastro de empresa + admin (`/auth/register`)
 - [ ] Tabela de preços por empresa
 - [ ] Cadastro e gestão de obras pelo Admin
 - [ ] Calendário/agenda consolidada
@@ -409,9 +324,9 @@ Veja os arquivos de especificação para detalhes:
 - [ ] Pagamento parcelado (50/50) via PIX/cartão
 - [ ] Acompanhamento de obra pelo Cliente
 - [ ] Histórico/log de auditoria
+- [ ] Frontend: telas de Login e Perfil conectadas à API real
 
-## 🚀 Fase 2: Melhorias
-
+## 🚀 Fase 2: Melhorias (pós-entrega)
 - [ ] Chat direto entre dono e cliente
 - [ ] Avaliação do serviço prestado
 - [ ] Emissão de comprovante/termo em PDF
@@ -422,31 +337,23 @@ Veja os arquivos de especificação para detalhes:
 
 # 🎨 Diferenciais
 
-## 💥 O que torna o ObraMaster especial:
-
 ### Multiempresa
-
 Qualquer empresa de obras pode usar, com dados isolados das demais
 
 ### Histórico confiável
-
 Toda alteração registrada com usuário e data/hora — serve como comprovante
 
 ### Pensado para o dia a dia da obra
-
 Fotos, anotações e agenda no lugar do caderno e do WhatsApp
 
 ### Mobile-first
-
 Feito pra ser usado no celular, direto do canteiro de obras
 
 ---
 
 # 🤝 Contribuição
 
-## Padrões:
-
-- Componentização e separação em camadas (Controller/Service/Repository)
+- Componentização e separação em camadas (rotas / repositories / middlewares)
 - Commits organizados por feature
 - Pull Requests com pelo menos 1 revisão antes do merge
 
@@ -464,24 +371,3 @@ Este projeto é acadêmico (TCC) e pode ser adaptado para fins educacionais, com
 
 ## "Sua obra merece mais que um caderno."
 
-
-## Como rodar o projeto
-
-### Frontend
-cd frontend
-npm install
-npm run dev -- --host
-
-### Backend
-cd backend
-npm install
-node index.js
-
-## Banco de dados
-PostgreSQL (Supabase) + Prisma. Tabelas: Empresa, Usuario.
-Configure `DATABASE_URL` no `backend/.env` com a connection string do Supabase
-(Project Settings > Database > Connection string, modo Pooler) e rode:
-`npx prisma migrate dev` (dentro de backend/)
-
-## Repositório
-https://github.com/Jaqueline-BCO-97/Gestao-de-Obras
