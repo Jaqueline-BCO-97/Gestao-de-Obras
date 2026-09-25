@@ -66,7 +66,7 @@ cd backend && npm test
 
 # 📌 Sobre o Projeto
 
-**ObraCheck** é uma plataforma web multiempresa (SaaS) de gestão de obras, voltada para pequenas empresas de construção e reforma que hoje controlam tudo manualmente.
+**ObraMaster** é uma plataforma web multiempresa (SaaS) de gestão de obras, voltada para pequenas empresas de construção e reforma que hoje controlam tudo manualmente.
 
 > 🎯 **Estado atual**: projeto em fase de implementação — documentação de escopo, casos de uso, regras de negócio e arquitetura já definidos; construção do MVP em andamento.
 
@@ -422,7 +422,7 @@ Veja os arquivos de especificação para detalhes:
 
 # 🎨 Diferenciais
 
-## 💥 O que torna o ObraCheck especial:
+## 💥 O que torna o ObraMaster especial:
 
 ### Multiempresa
 
