@@ -1,3 +1,10 @@
+/**
+ * Botão reutilizável do design system.
+ * @param {"primary"|"outline"} variant - estilo visual (padrão: "primary")
+ * @param {ReactNode} icon - ícone opcional exibido depois do texto
+ * @param {ReactNode} children - texto/conteúdo do botão
+ */
+
 export default function Button({ children, variant = 'primary', icon, ...props }) {
   const base = "px-5 py-3 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
   const variants = {
