@@ -6,8 +6,7 @@ export default function Input({ label, icon, type = "text", ...props }) {
           {label}
         </label>
       )}
-      <div className="flex items-center gap-2 border border-ink/15 rounded-lg px-3 py-3 bg-white focus-within:border-terracotta">
-        {icon && <span className="text-ink/40">{icon}</span>}
+      <div className="flex items-center gap-2 border border-ink/15 rounded-lg px-3 py-3 bg-white focus-within:border-primary">
         <input
           type={type}
           className="w-full outline-none text-sm bg-transparent placeholder:text-ink/30"
