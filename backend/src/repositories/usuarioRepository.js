@@ -53,6 +53,27 @@ async function buscarUsuarioPorId(id) {
   });
 }
 
+async function buscarPerfilUsuarioPorId(id) {
+  if (!isDbConfigured()) {
+    const erro = new Error(
+      "Banco não configurado. Defina DATABASE_URL no .env (PostgreSQL do Supabase)"
+    );
+    erro.code = "DATABASE_NOT_CONFIGURED";
+    throw erro;
+  }
+
+  const prisma = getPrisma();
+  return prisma.usuario.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      nome: true,
+      email: true,
+      tipo: true,
+    },
+  });
+}
+
 async function atualizarSenhaUsuario(id, novaSenhaHash) {
   if (!isDbConfigured()) {
     const erro = new Error(
@@ -81,5 +102,6 @@ module.exports = {
   listarUsuarios,
   buscarUsuarioPorEmail,
   buscarUsuarioPorId,
+  buscarPerfilUsuarioPorId,
   atualizarSenhaUsuario,
 };

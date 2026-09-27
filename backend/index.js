@@ -13,6 +13,7 @@ const {
   listarUsuarios,
   buscarUsuarioPorEmail,
   buscarUsuarioPorId,
+  buscarPerfilUsuarioPorId,
   atualizarSenhaUsuario,
 } = require("./src/repositories/usuarioRepository");
 const authMiddleware = require("./src/middlewares/authMiddleware");
@@ -93,11 +94,20 @@ app.post("/auth/login", async (req, res) => {
 });
 
 // Rota protegida para validação da autenticação / usuário logado
-app.get("/auth/me", authMiddleware, (req, res) => {
-  res.json({
-    mensagem: "Acesso autorizado",
-    usuario: req.usuario,
-  });
+app.get("/auth/me", authMiddleware, async (req, res) => {
+  try {
+    const usuario = await buscarPerfilUsuarioPorId(req.usuario.id);
+    if (!usuario) {
+      return res.status(404).json({ erro: "Usuário não encontrado" });
+    }
+    return res.json({ mensagem: "Acesso autorizado", usuario });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") {
+      return res.status(503).json({ erro: erro.message });
+    }
+    console.error("Erro ao consultar usuário autenticado:", erro.message);
+    return res.status(500).json({ erro: "Erro ao consultar usuário autenticado" });
+  }
 });
 
 // Lista usuários do banco (model Usuario do Prisma) — rota privada protegida
