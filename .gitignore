@@ -12,3 +12,8 @@ coverage/
 .DS_Store
 Thumbs.db
 .vscode/
+
+backend/.agents/
+backend/.claude/
+backend/.cursor/
+backend/.devin/
