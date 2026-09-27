@@ -8,24 +8,37 @@ Autenticação: Bearer Token (JWT) no header `Authorization`, exceto nas rotas d
 ## Autenticação
 
 ### POST /auth/register
-**Descrição:** Cadastra um novo cliente
+**Descrição:** Cadastra uma nova Empresa e cria automaticamente seu usuário Admin/Dono
 **Headers:** `Content-Type: application/json`
 **Request Body:**
 ```json
 {
-  "nome": "Ana Beatriz Souza",
-  "email": "ana@email.com",
-  "senha": "senha123",
-  "telefone": "(11) 98888-1234"
+  "nomeEmpresa": "Reformas do Oliveira",
+  "nomeUsuario": "Carlos Klebe Caires de Oliveira",
+  "email": "carlosklebe@reformasoliveira.com",
+  "senha": "senha123"
 }
 ```
 **Response 201:**
 ```json
-{ "id": 1, "nome": "Ana Beatriz Souza", "email": "ana@email.com" }
+{
+  "empresa": { "id": "...", "nome": "Reformas do Oliveira" },
+  "usuario": {
+    "id": "...",
+    "empresaId": "...",
+    "nome": "Carlos Klebe Caires de Oliveira",
+    "email": "carlosklebe@reformasoliveira.com",
+    "tipo": "ADMIN"
+  }
+}
 ```
 **Response 400:**
 ```json
-{ "erro": "E-mail já cadastrado" }
+{ "erro": "Campos obrigatórios: nomeEmpresa, nomeUsuario, email, senha" }
+```
+**Response 409:**
+```json
+{ "erro": "Já existe um usuário com esse e-mail" }
 ```
 
 ### POST /auth/login
@@ -38,7 +51,7 @@ Autenticação: Bearer Token (JWT) no header `Authorization`, exceto nas rotas d
 ```json
 {
   "token": "jwt.token.aqui",
-  "usuario": { "id": 1, "nome": "Ana Beatriz Souza", "tipo": "cliente" }
+  "usuario": { "id": 1, "nome": "Jaqueline Barros Caires de Oliveira", "tipo": "cliente" }
 }
 ```
 **Response 401:**
@@ -79,10 +92,11 @@ Autenticação: Bearer Token (JWT) no header `Authorization`, exceto nas rotas d
 {
   "titulo": "Construção de casa",
   "tipo_servico": "Construção",
-  "endereco": "Rua das Palmeiras, 55 — Santos/SP",
+  "endereco": "Rua Paranapuã, 13 — São Vicente/SP",
   "valor_total": 85000.00,
   "data_previsao": "2027-03-01"
 }
+
 ```
 **Response 201:**
 ```json
@@ -210,3 +224,8 @@ anotacao: "Instalação do piso concluída"
 ```json
 { "id": 3, "servico": "Pintura interna (m²)", "valor": 35.00 }
 ```
+
+
+---
+
+> **Pendente:** fluxo de cadastro/convite do Cliente (Admin cadastra o cliente e envia link de ativação por e-mail) ainda não tem rota definida — a criar em issue futura.
