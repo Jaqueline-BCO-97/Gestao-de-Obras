@@ -1,3 +1,11 @@
+/**
+ * Modal simples com fundo escurecido, título e botão de fechar.
+ * @param {string} title - título exibido no cabeçalho
+ * @param {ReactNode} children - conteúdo do corpo do modal
+ * @param {() => void} onClose - função chamada ao clicar no X
+ * @param {boolean} open - controla se o modal está visível
+ */
+
 export default function Modal({ title, children, onClose, open }) {
   if (!open) return null
 

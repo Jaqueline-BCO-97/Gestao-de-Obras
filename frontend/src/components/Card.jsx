@@ -1,3 +1,11 @@
+/**
+ * Card de métrica usado no dashboard (ex: "OBRAS ATIVAS").
+ * @param {string} label - título pequeno do card
+ * @param {string|number} value - valor principal em destaque
+ * @param {ReactNode} icon - ícone exibido ao lado do label
+ * @param {string} accent - classe Tailwind da borda superior (padrão: "border-navy")
+ */
+
 export default function Card({ label, value, icon, accent = "border-navy" }) {
   return (
     <div className={`bg-white rounded-xl p-5 border-t-4 ${accent} shadow-sm`}>

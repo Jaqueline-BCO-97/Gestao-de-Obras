@@ -4,13 +4,10 @@ export default {
   theme: {
     extend: {
       colors: {
-        cream: "#F7F3EC",
-        terracotta: {
-          DEFAULT: "#C1694A",
-          dark: "#A8563A",
-        },
-        navy: "#16233F",
-        ink: "#2B2620",
+        background: "#F5F6F8",
+        primary: { DEFAULT: "#2F6FED", dark: "#1D56C7" },
+        navy: "#123047",
+        ink: "#1F2430",
       },
     },
   },

@@ -1,3 +1,10 @@
+/**
+ * Campo de texto com label e ícone opcionais.
+ * @param {string} label - texto exibido acima do input
+ * @param {ReactNode} icon - ícone opcional exibido dentro do input, à esquerda
+ * @param {string} type - tipo do input HTML (padrão: "text")
+ */
+
 export default function Input({ label, icon, type = "text", ...props }) {
   return (
     <div className="mb-4">
@@ -6,7 +13,7 @@ export default function Input({ label, icon, type = "text", ...props }) {
           {label}
         </label>
       )}
-      <div className="flex items-center gap-2 border border-ink/15 rounded-lg px-3 py-3 bg-white focus-within:border-terracotta">
+           <div className="flex items-center gap-2 border border-ink/15 rounded-lg px-3 py-3 bg-white focus-within:border-primary">
         {icon && <span className="text-ink/40">{icon}</span>}
         <input
           type={type}
