@@ -71,55 +71,78 @@ export default function Perfil() {
   }
 
   return (
-    <div className="profile-shell">
-      <header className="topbar">
-        <a className="brand" href="/perfil" aria-label="ObraMaster, Meu perfil">
+    <div className="profile-layout">
+      <aside className="sidebar" aria-label="Navegação do cliente">
+        <a className="brand" href="/perfil" aria-label="ObraMaster, Perfil">
           <span className="brand-mark" aria-hidden="true">⌂</span>
-          <span><strong>Obra<span>Master</span></strong><small>GESTÃO DE OBRAS</small></span>
+          <span className="brand-copy"><strong>Obra<span>Master</span></strong><small>GESTÃO DE OBRAS</small></span>
         </a>
-        <nav aria-label="Navegação principal"><a className="nav-current" href="/perfil">Meu perfil</a></nav>
-      </header>
 
-      <main className="profile-main">
-        <div className="page-heading">
-          <div className="avatar" aria-hidden="true">{usuario?.nome?.trim()?.charAt(0)?.toUpperCase() || ' '}</div>
-          <div><p className="eyebrow">CONTA</p><h1>Meu perfil</h1><p className="heading-copy">Consulte seus dados e mantenha sua conta segura.</p></div>
-        </div>
+        <nav className="sidebar-menu" aria-label="Menu do cliente">
+          <div className="sidebar-item"><span className="sidebar-icon" aria-hidden="true">▦</span>Dashboard</div>
+          <div className="sidebar-item"><span className="sidebar-icon" aria-hidden="true">▤</span>Meus Orçamentos</div>
+          <div className="sidebar-item"><span className="sidebar-icon" aria-hidden="true">▣</span>Minhas Obras</div>
+          <div className="sidebar-item"><span className="sidebar-icon" aria-hidden="true">◉</span>Pagamentos</div>
+          <div className="sidebar-item"><span className="sidebar-icon" aria-hidden="true">♧</span>Notificações</div>
+          <div className="sidebar-item selected" aria-current="page"><span className="sidebar-icon" aria-hidden="true">◎</span>Perfil</div>
+        </nav>
 
-        {carregandoPerfil ? (
-          <section className="notice-card" role="status">Carregando seus dados…</section>
-        ) : erroPerfil ? (
-          <section className="notice-card error-card" role="alert">
-            <h2>Não foi possível carregar seu perfil</h2>
-            <p>{erroPerfil}</p>
-          </section>
-        ) : (
-          <div className="profile-grid">
-            <section className="panel personal-panel">
-              <div className="panel-heading"><div><p className="eyebrow">SEU CADASTRO</p><h2>Informações pessoais</h2></div><span className="panel-icon" aria-hidden="true">◉</span></div>
-              <dl className="details-list">
-                <div className="detail-row"><dt>Nome</dt><dd>{usuario.nome}</dd></div>
-                <div className="detail-row"><dt>E-mail</dt><dd>{usuario.email}</dd></div>
-                <div className="detail-row"><dt>Tipo de usuário</dt><dd><span className="role-badge">{tiposUsuario[usuario.tipo] || usuario.tipo}</span></dd></div>
-              </dl>
-              <p className="private-note"><span aria-hidden="true">✓</span> Estas informações pertencem à sua conta.</p>
-            </section>
+        <div className="sidebar-footer">ObraMaster · Gestão de Obras</div>
+      </aside>
 
-            <section className="panel password-panel">
-              <div className="panel-heading"><div><p className="eyebrow">SEGURANÇA</p><h2>Alterar senha</h2></div><span className="panel-icon" aria-hidden="true">⌑</span></div>
-              <p className="section-copy">Use sua senha atual para definir uma nova senha de acesso.</p>
-              <form onSubmit={enviarTrocaSenha} noValidate>
-                <Input label="Senha atual" type="password" name="senhaAtual" autoComplete="current-password" value={campos.senhaAtual} onChange={atualizarCampo} required />
-                <Input label="Nova senha" type="password" name="novaSenha" autoComplete="new-password" value={campos.novaSenha} onChange={atualizarCampo} required />
-                <Input label="Confirmar nova senha" type="password" name="confirmarSenha" autoComplete="new-password" value={campos.confirmarSenha} onChange={atualizarCampo} required />
-                {mensagem && <p className={`form-message ${mensagem.tipo}`} role={mensagem.tipo === 'erro' ? 'alert' : 'status'}>{mensagem.texto}</p>}
-                <Button type="submit" disabled={salvando} className="submit-button">{salvando ? 'Salvando…' : 'Alterar senha'}<span aria-hidden="true">→</span></Button>
-              </form>
-            </section>
+      <div className="profile-workspace">
+        <header className="topbar">
+          <div className="topbar-title"><span>ÁREA DO CLIENTE</span><strong>Perfil</strong></div>
+        </header>
+
+        <main className="profile-main">
+          <div className="page-heading">
+            <p className="eyebrow">CONTA</p>
+            <h1>Meu perfil</h1>
+            <p className="heading-copy">Consulte seus dados e mantenha sua conta segura.</p>
           </div>
-        )}
-        <footer className="page-footer">ObraMaster © {new Date().getFullYear()} · Sistema de gestão de obras</footer>
-      </main>
+
+          {carregandoPerfil ? (
+            <section className="notice-card" role="status">Carregando seus dados…</section>
+          ) : erroPerfil ? (
+            <section className="notice-card error-card" role="alert">
+              <h2>Não foi possível carregar seu perfil</h2>
+              <p>{erroPerfil}</p>
+            </section>
+          ) : (
+            <div className="profile-grid">
+              <section className="panel personal-panel">
+                <div className="panel-heading">
+                  <div><p className="eyebrow">SEU CADASTRO</p><h2>Dados pessoais e contato</h2></div>
+                  <span className="panel-icon" aria-hidden="true">◉</span>
+                </div>
+                <dl className="details-list">
+                  <div className="detail-row"><dt>Nome</dt><dd>{usuario.nome}</dd></div>
+                  <div className="detail-row"><dt>E-mail</dt><dd>{usuario.email}</dd></div>
+                  <div className="detail-row"><dt>Tipo de usuário</dt><dd><span className="role-badge">{tiposUsuario[usuario.tipo] || usuario.tipo}</span></dd></div>
+                </dl>
+                <p className="private-note"><span aria-hidden="true">✓</span> Estas informações pertencem à sua conta.</p>
+              </section>
+
+              <section className="panel password-panel">
+                <div className="panel-heading">
+                  <div><p className="eyebrow">SEGURANÇA</p><h2>Alteração de senha</h2></div>
+                  <span className="panel-icon" aria-hidden="true">⌑</span>
+                </div>
+                <p className="section-copy">Use sua senha atual para definir uma nova senha de acesso.</p>
+                <form onSubmit={enviarTrocaSenha} noValidate>
+                  <Input label="Senha atual" type="password" name="senhaAtual" autoComplete="current-password" value={campos.senhaAtual} onChange={atualizarCampo} required />
+                  <Input label="Nova senha" type="password" name="novaSenha" autoComplete="new-password" value={campos.novaSenha} onChange={atualizarCampo} required />
+                  <Input label="Confirmar nova senha" type="password" name="confirmarSenha" autoComplete="new-password" value={campos.confirmarSenha} onChange={atualizarCampo} required />
+                  {mensagem && <p className={`form-message ${mensagem.tipo}`} role={mensagem.tipo === 'erro' ? 'alert' : 'status'}>{mensagem.texto}</p>}
+                  <Button type="submit" disabled={salvando} className="submit-button">{salvando ? 'Salvando…' : 'Alterar senha'}<span aria-hidden="true">→</span></Button>
+                </form>
+              </section>
+            </div>
+          )}
+          <footer className="page-footer">ObraMaster © {new Date().getFullYear()} · Sistema de gestão de obras</footer>
+        </main>
+      </div>
     </div>
   )
 }
