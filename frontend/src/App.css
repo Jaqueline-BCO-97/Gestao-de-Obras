@@ -1,7 +1,0 @@
-#root { min-height: 100vh; }
-
-.entry-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #f4f7fa; color: #18384c; }
-.entry-screen h1 { margin: 0; font-size: 34px; letter-spacing: -.05em; }
-.entry-screen h1 span { color: #168ab5; }
-.entry-screen p { margin: 0 0 8px; color: #718591; }
-.entry-link { padding: 12px 24px; border-radius: 8px; background: #103d52; color: #fff; font-size: 14px; font-weight: 600; text-decoration: none; }
