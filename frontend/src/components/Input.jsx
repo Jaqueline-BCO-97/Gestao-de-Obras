@@ -3,18 +3,20 @@
  * @param {string} label - texto exibido acima do input
  * @param {ReactNode} icon - ícone opcional exibido dentro do input, à esquerda
  * @param {string} type - tipo do input HTML (padrão: "text")
+ * @param {string} className - classes extras pro espaçamento externo (ex: mb-3 em vez do padrão mb-4)
+ * @param {string} fieldClassName - classes extras pra caixa que envolve o input (ex: reduzir altura numa tela mais compacta)
  */
 
-export default function Input({ label, icon, type = "text", id, name, ...props }) {
+export default function Input({ label, icon, type = "text", id, name, className = "", fieldClassName = "", ...props }) {
   const inputId = id || name
   return (
-    <div className="mb-4">
+    <div className={`mb-4 ${className}`}>
       {label && (
         <label htmlFor={inputId} className="block text-sm font-medium text-ink mb-1.5">
           {label}
         </label>
       )}
-           <div className="flex items-center gap-2 border border-ink/15 rounded-lg px-3 py-3 bg-white focus-within:border-primary">
+      <div className={`flex items-center gap-2 border border-ink/15 rounded-lg px-3 py-3 bg-white focus-within:border-primary ${fieldClassName}`}>
         {icon && <span className="text-ink/40">{icon}</span>}
         <input
           id={inputId}
