@@ -75,13 +75,13 @@ async function executarSeed() {
   // ---------------------------------------------------------------------------
   // 1. Verificação de Segurança de Ambiente
   // ---------------------------------------------------------------------------
-  // Verificamos a variável de ambiente NODE_ENV.
-  // Se for "production", recusamos a execução para proteger o banco de produção de dados fictícios.
+  // Verificamos a variável de ambiente NODE_ENV para saber em qual ambiente estamos rodando.
+  // Se for "production", lançamos um erro para interromper imediatamente a execução
+  // e proteger o banco de dados de produção contra a inserção de dados fictícios.
   if (process.env.NODE_ENV === "production") {
-    // Exibe mensagem de erro didática no console
-    console.error("ERRO: O seed de teste não pode ser executado em ambiente de produção (NODE_ENV=production)!");
-    // Encerra a execução do processo Node.js imediatamente com código de erro 1
-    process.exit(1);
+    // Lança uma exceção (Error) que interrompe o fluxo e será capturada pelo catch da função main(),
+    // permitindo que o bloco finally feche a conexão com o banco e o processo encerre com código 1.
+    throw new Error("O seed de teste não pode ser executado em ambiente de produção (NODE_ENV=production)!");
   }
 
   // Mensagem informativa no console para acompanhar o progresso

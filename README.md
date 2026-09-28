@@ -38,7 +38,9 @@ npx prisma migrate dev
 ```
 
 ### Seed de teste
-> ⚠️ **Aviso**: usar só em banco de desenvolvimento!
+> ⚠️ **Aviso**: usar só em banco de desenvolvimento! Confira o `DATABASE_URL` antes de rodar.
+>
+> ℹ️ **Atenção**: se a senha de um usuário de teste for trocada, rodar o seed de novo **NÃO** a restaura (o seed mantém os dados já existentes no banco).
 
 Popular o banco com dados fictícios para testes manuais:
 ```
