@@ -37,6 +37,19 @@ cd backend
 npx prisma migrate dev
 ```
 
+### Seed de teste
+> ⚠️ **Aviso**: usar só em banco de desenvolvimento!
+
+Popular o banco com dados fictícios para testes manuais:
+```
+cd backend && npx prisma db seed
+```
+
+Logins de teste criados (vinculados à empresa "Empresa Teste", senha padrão: `Teste@123`):
+- **ADMIN**: `admin@teste.com`
+- **COLABORADOR**: `colaborador@teste.com`
+- **CLIENTE**: `cliente@teste.com`
+
 **Frontend** (Vite + React):
 ```
 cd frontend
