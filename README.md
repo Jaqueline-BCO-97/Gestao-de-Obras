@@ -44,8 +44,9 @@ npx prisma migrate dev
 
 Popular o banco com dados fictícios para testes manuais:
 ```
-cd backend && npx prisma db seed
+cd backend && SEED_CONFIRMA=sim npx prisma db seed
 ```
+A variável `SEED_CONFIRMA=sim` funciona como uma trava de segurança para evitar execuções acidentais e garantir que o seed seja rodado de forma consciente.
 
 Logins de teste criados (vinculados à empresa "Empresa Teste", senha padrão: `Teste@123`):
 - **ADMIN**: `admin@teste.com`

@@ -7,10 +7,11 @@
 // O que este script faz:
 // 1. Carrega as variáveis de ambiente do arquivo .env
 // 2. Bloqueia a execução caso esteja rodando em ambiente de produção (NODE_ENV=production)
-// 3. Procura uma empresa chamada "Empresa Teste" (cria se ainda não existir)
-// 4. Cria 3 usuários de teste (ADMIN, COLABORADOR e CLIENTE) vinculados a essa empresa
-// 5. Utiliza 'upsert' com update vazio para não alterar usuários existentes e evitar duplicações
-// 6. Encerra a conexão com o banco de dados com segurança no bloco 'finally'
+// 3. Exige confirmação explícita via variável de ambiente (SEED_CONFIRMA=sim)
+// 4. Procura uma empresa chamada "Empresa Teste" (cria se ainda não existir)
+// 5. Cria 3 usuários de teste (ADMIN, COLABORADOR e CLIENTE) vinculados a essa empresa
+// 6. Utiliza 'upsert' com update vazio para não alterar usuários existentes e evitar duplicações
+// 7. Encerra a conexão com o banco de dados com segurança no bloco 'finally'
 // =============================================================================
 
 // Importa o módulo nativo 'path' do Node.js, utilizado para resolver e montar caminhos de arquivos
@@ -84,11 +85,23 @@ async function executarSeed() {
     throw new Error("O seed de teste não pode ser executado em ambiente de produção (NODE_ENV=production)!");
   }
 
+  // ---------------------------------------------------------------------------
+  // 2. Confirmação Explícita de Execução (Segunda Trava de Segurança)
+  // ---------------------------------------------------------------------------
+  // Exigimos que a variável de ambiente SEED_CONFIRMA tenha o valor exato "sim".
+  // Esta verificação protege contra execuções acidentais em qualquer ambiente,
+  // impedindo o avanço do script antes de realizar qualquer acesso ao banco de dados.
+  if (process.env.SEED_CONFIRMA !== "sim") {
+    // Lança um erro detalhado caso a variável não contenha exatamente o valor "sim",
+    // instruindo o usuário a executar com SEED_CONFIRMA=sim para confirmar que sabe o que está fazendo.
+    throw new Error("É preciso rodar com SEED_CONFIRMA=sim para confirmar que sabe o que está fazendo.");
+  }
+
   // Mensagem informativa no console para acompanhar o progresso
   console.log("Iniciando execução do seed de dados de teste...");
 
   // ---------------------------------------------------------------------------
-  // 2. Geração do Hash da Senha com Bcrypt
+  // 3. Geração do Hash da Senha com Bcrypt
   // ---------------------------------------------------------------------------
   // Nunca salvamos senhas em texto puro no banco de dados.
   // Usamos bcrypt.hash para gerar uma versão criptografada e segura da senha "Teste@123".
@@ -96,7 +109,7 @@ async function executarSeed() {
   const senhaHash = await bcrypt.hash(SENHA_PADRAO, BCRYPT_ROUNDS);
 
   // ---------------------------------------------------------------------------
-  // 3. Procura ou Criação da Empresa de Teste
+  // 4. Procura ou Criação da Empresa de Teste
   // ---------------------------------------------------------------------------
   // O campo 'nome' da Empresa não possui '@unique' no schema.prisma.
   // Por isso, usamos findFirst para verificar se já existe uma empresa com esse nome cadastrada.
@@ -123,7 +136,7 @@ async function executarSeed() {
   }
 
   // ---------------------------------------------------------------------------
-  // 4. Criação ou Garantia dos Usuários com Upsert
+  // 5. Criação ou Garantia dos Usuários com Upsert
   // ---------------------------------------------------------------------------
   // Percorremos cada um dos 3 usuários da lista definida anteriormente
   for (const dadosUsuario of USUARIOS_TESTE) {
