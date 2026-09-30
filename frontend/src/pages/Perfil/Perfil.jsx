@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import Button from '../../components/Button.jsx'
 import Input from '../../components/Input.jsx'
-import { buscarUsuarioAtual, alterarSenha } from '../../services/auth.js'
+import { buscarUsuarioAtual, alterarSenha, encerrarSessao } from '../../services/auth.js'
 
 // Chave usada no localStorage pra guardar o token JWT do usuário logado.
-const TOKEN_KEY = 'token'
 
 // Tradução do enum TipoUsuario (que vem do banco em maiúsculas, tipo "ADMIN")
 // pra um texto mais bonito de mostrar na tela, tipo "Admin".
@@ -52,7 +51,7 @@ export default function Perfil() {
           setErroPerfil(erro.message)
           // Se o erro for 401 (não autorizado), o token guardado é inválido —
           // apaga ele pra não ficar tentando de novo com um token morto.
-          if (erro.status === 401) localStorage.removeItem(TOKEN_KEY)
+          if (erro.status === 401) encerrarSessao()
         }
       })
       .finally(() => {
