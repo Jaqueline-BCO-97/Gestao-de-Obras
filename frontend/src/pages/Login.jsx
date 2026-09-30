@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { entrar, salvarSessao } from '../services/auth.js'
 import { obterRotaDashboard } from '../routes/dashboardRoutes.js'
+import { CONTAS_DEMO } from '../config/demo.js'
 
 function Icone({ tipo, className = 'h-5 w-5' }) {
   const propriedades = {
@@ -54,6 +55,7 @@ export default function Login() {
   const [erroLogin, setErroLogin] = useState('')
   const [aviso, setAviso] = useState('')
   const [carregando, setCarregando] = useState(false)
+  const [tipoDemoCarregando, setTipoDemoCarregando] = useState(null)
 
   function validar() {
     const novosErros = {}
@@ -67,15 +69,15 @@ export default function Login() {
     return Object.keys(novosErros).length === 0
   }
 
-  async function enviar(event) {
-    event.preventDefault()
+  async function autenticar(emailLogin, senhaLogin, tipoDemo = null) {
     setErroLogin('')
     setAviso('')
-    if (!validar()) return
+    if (!tipoDemo && !validar()) return
 
     setCarregando(true)
+    setTipoDemoCarregando(tipoDemo)
     try {
-      const sessao = await entrar(email.trim(), senha)
+      const sessao = await entrar(emailLogin.trim(), senhaLogin)
       const destino = obterRotaDashboard(sessao.usuario?.tipo)
       if (!sessao.token || !sessao.usuario || !destino) {
         setErroLogin('O servidor retornou um perfil de acesso não reconhecido. Entre em contato com o suporte.')
@@ -84,10 +86,25 @@ export default function Login() {
       salvarSessao(sessao, lembrarDeMim)
       window.location.assign(destino)
     } catch (erro) {
-      setErroLogin(mensagemDeErro(erro))
+      if (tipoDemo && erro.status === 401) {
+        setErroLogin('A conta de demonstração não existe ou ainda não foi preparada. No banco de demonstração, execute: cd backend && npx prisma db seed.')
+      } else {
+        setErroLogin(mensagemDeErro(erro))
+      }
     } finally {
       setCarregando(false)
+      setTipoDemoCarregando(null)
     }
+  }
+
+  function enviar(event) {
+    event.preventDefault()
+    return autenticar(email, senha)
+  }
+
+  function entrarComoDemo(tipo) {
+    const credenciais = CONTAS_DEMO[tipo]
+    return autenticar(credenciais.email, credenciais.senha, tipo)
   }
 
   function informarRecursoIndisponivel(recurso) {
@@ -171,11 +188,16 @@ export default function Login() {
           <section className="mt-8 rounded-2xl border border-dashed border-slate-300 bg-white/70 p-4 sm:p-5" aria-label="Acessos de demonstração">
             <h3 className="text-xs font-semibold tracking-wide text-slate-600">ACESSOS DE DEMONSTRAÇÃO</h3>
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {['Entrar como Cliente', 'Entrar como Admin'].map((texto) => (
-                <button key={texto} type="button" onClick={() => informarRecursoIndisponivel('O acesso de demonstração')} className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-navy transition hover:border-slate-300 hover:bg-slate-50">{texto}</button>
+              {[
+                { tipo: 'CLIENTE', texto: 'Entrar como Cliente' },
+                { tipo: 'ADMIN', texto: 'Entrar como Admin' },
+              ].map(({ tipo, texto }) => (
+                <button key={tipo} type="button" disabled={carregando} onClick={() => entrarComoDemo(tipo)} className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-navy transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60">
+                  {tipoDemoCarregando === tipo ? 'Conectando…' : texto}
+                </button>
               ))}
             </div>
-            <p className="mt-3 text-[11px] leading-4 text-slate-500">Credenciais de demonstração não configuradas neste ambiente.</p>
+            <p className="mt-3 text-[11px] leading-4 text-slate-500">Contas públicas para testar o acesso como cliente e administrador.</p>
           </section>
         </div>
       </section>

@@ -1,7 +1,7 @@
 export const dashboardRoutes = {
-  CLIENTE: { path: '/dashboard/cliente', titulo: 'Painel do cliente' },
+  CLIENTE: { path: '/perfil', titulo: 'Meu perfil' },
   COLABORADOR: { path: '/dashboard/colaborador', titulo: 'Painel do colaborador' },
-  ADMIN: { path: '/dashboard/admin', titulo: 'Painel administrativo' },
+  ADMIN: { path: '/perfil', titulo: 'Meu perfil' },
 }
 
 export function obterRotaDashboard(tipo) {
