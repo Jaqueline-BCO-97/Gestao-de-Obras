@@ -15,11 +15,24 @@ const {
   buscarUsuarioPorId,
   buscarPerfilUsuarioPorId,
   atualizarSenhaUsuario,
+  criarUsuarioColaborador,
 } = require("./src/repositories/usuarioRepository");
+const {
+  listarObras,
+  buscarObraPorId,
+  criarObra,
+} = require("./src/repositories/obraRepository");
 const authMiddleware = require("./src/middlewares/authMiddleware");
 
 const app = express();
 app.use(express.json());
+
+function exigirEmpresaDoToken(req, res, next) {
+  if (typeof req.usuario?.empresaId !== "string" || !req.usuario.empresaId) {
+    return res.status(403).json({ erro: "Usuário sem empresa vinculada" });
+  }
+  return next();
+}
 
 const PORT = process.env.PORT || 3000;
 
@@ -111,9 +124,9 @@ app.get("/auth/me", authMiddleware, async (req, res) => {
 });
 
 // Lista usuários do banco (model Usuario do Prisma) — rota privada protegida
-app.get("/usuarios", authMiddleware, async (req, res) => {
+app.get("/usuarios", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
   try {
-    const usuarios = await listarUsuarios();
+    const usuarios = await listarUsuarios(req.usuario.empresaId);
     res.json(usuarios);
   } catch (erro) {
     if (erro.code === "DATABASE_NOT_CONFIGURED") {
@@ -121,6 +134,93 @@ app.get("/usuarios", authMiddleware, async (req, res) => {
     }
     console.error("Erro ao listar usuários:", erro.message);
     res.status(500).json({ erro: "Erro ao listar usuários" });
+  }
+});
+
+// Cadastro de colaborador vinculado à empresa do usuário autenticado.
+app.post("/colaboradores", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
+  try {
+    const { nome, email, senha } = req.body || {};
+    if (
+      typeof nome !== "string" || !nome.trim() ||
+      typeof email !== "string" || !email.trim() ||
+      typeof senha !== "string" || !senha
+    ) {
+      return res.status(400).json({ erro: "Nome, e-mail e senha são obrigatórios" });
+    }
+
+    const senhaHash = await bcrypt.hash(senha, 10);
+    const colaborador = await criarUsuarioColaborador({
+      empresaId: req.usuario.empresaId,
+      nome: nome.trim(),
+      email: email.trim().toLowerCase(),
+      senhaHash,
+    });
+    return res.status(201).json({ colaborador });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") {
+      return res.status(503).json({ erro: erro.message });
+    }
+    if (erro.code === "P2002") {
+      return res.status(409).json({ erro: "E-mail já cadastrado" });
+    }
+    console.error("Erro ao cadastrar colaborador:", erro.message);
+    return res.status(500).json({ erro: "Erro ao cadastrar colaborador" });
+  }
+});
+
+// Obras são sempre criadas e consultadas dentro da empresa do token JWT.
+app.post("/obras", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
+  try {
+    const { nome, descricao, endereco } = req.body || {};
+    if (typeof nome !== "string" || !nome.trim()) {
+      return res.status(400).json({ erro: "Nome da obra é obrigatório" });
+    }
+    for (const [campo, valor] of [["descricao", descricao], ["endereco", endereco]]) {
+      if (valor !== undefined && typeof valor !== "string") {
+        return res.status(400).json({ erro: `Campo ${campo} deve ser texto` });
+      }
+    }
+    const obra = await criarObra({
+      empresaId: req.usuario.empresaId,
+      nome: nome.trim(),
+      descricao: descricao?.trim() || null,
+      endereco: endereco?.trim() || null,
+    });
+    return res.status(201).json({ obra });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") {
+      return res.status(503).json({ erro: erro.message });
+    }
+    console.error("Erro ao cadastrar obra:", erro.message);
+    return res.status(500).json({ erro: "Erro ao cadastrar obra" });
+  }
+});
+
+app.get("/obras", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
+  try {
+    const obras = await listarObras(req.usuario.empresaId);
+    return res.json(obras);
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") {
+      return res.status(503).json({ erro: erro.message });
+    }
+    console.error("Erro ao listar obras:", erro.message);
+    return res.status(500).json({ erro: "Erro ao listar obras" });
+  }
+});
+
+app.get("/obras/:id", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
+  try {
+    const obra = await buscarObraPorId(req.params.id, req.usuario.empresaId);
+    if (!obra) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.json({ obra });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") {
+      return res.status(503).json({ erro: erro.message });
+    }
+    console.error("Erro ao consultar obra:", erro.message);
+    return res.status(500).json({ erro: "Erro ao consultar obra" });
   }
 });
 

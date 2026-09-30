@@ -16,6 +16,7 @@ model Empresa {
   nome      String
   criadoEm  DateTime  @default(now())
   usuarios  Usuario[]
+  obras     Obra[]
 }
 
 // Usuário do sistema — pode ser CLIENTE, COLABORADOR ou ADMIN
@@ -28,6 +29,17 @@ model Usuario {
   senhaHash  String
   tipo       TipoUsuario
   criadoEm   DateTime    @default(now())
+}
+
+// Obra pertencente a uma única empresa; consultas da API sempre aplicam empresaId.
+model Obra {
+  id        String   @id @default(uuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  nome      String
+  descricao String?
+  endereco  String?
+  criadoEm  DateTime @default(now())
 }
 
 enum TipoUsuario {
