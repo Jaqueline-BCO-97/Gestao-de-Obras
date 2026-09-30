@@ -10,6 +10,9 @@
     "test-connection": "node scripts/test-db.js",
     "postinstall": "prisma generate || exit 0"
   },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",

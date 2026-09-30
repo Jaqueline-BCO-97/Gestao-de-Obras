@@ -37,6 +37,22 @@ cd backend
 npx prisma migrate dev
 ```
 
+### Seed de teste
+> ⚠️ **Aviso**: usar só em banco de desenvolvimento! Confira o `DATABASE_URL` antes de rodar.
+>
+> ℹ️ **Atenção**: se a senha de um usuário de teste for trocada, rodar o seed de novo **NÃO** a restaura (o seed mantém os dados já existentes no banco).
+
+Popular o banco com dados fictícios para testes manuais:
+```
+cd backend && SEED_CONFIRMA=sim npx prisma db seed
+```
+A variável `SEED_CONFIRMA=sim` funciona como uma trava de segurança para evitar execuções acidentais e garantir que o seed seja rodado de forma consciente.
+
+Logins de teste criados (vinculados à empresa "Empresa Teste", senha padrão: `Teste@123`):
+- **ADMIN**: `admin@teste.com`
+- **COLABORADOR**: `colaborador@teste.com`
+- **CLIENTE**: `cliente@teste.com`
+
 **Frontend** (Vite + React):
 ```
 cd frontend
