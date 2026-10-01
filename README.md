@@ -37,21 +37,21 @@ cd backend
 npx prisma migrate dev
 ```
 
-### Seed de teste
-> ⚠️ **Aviso**: usar só em banco de desenvolvimento! Confira o `DATABASE_URL` antes de rodar.
->
-> ℹ️ **Atenção**: se a senha de um usuário de teste for trocada, rodar o seed de novo **NÃO** a restaura (o seed mantém os dados já existentes no banco).
+### Acessos de demonstração
 
-Popular o banco com dados fictícios para testes manuais:
-```
-cd backend && SEED_CONFIRMA=sim npx prisma db seed
-```
-A variável `SEED_CONFIRMA=sim` funciona como uma trava de segurança para evitar execuções acidentais e garantir que o seed seja rodado de forma consciente.
+As duas contas abaixo pertencem à empresa **Empresa Demo** e usam a senha `Demo@12345`:
 
-Logins de teste criados (vinculados à empresa "Empresa Teste", senha padrão: `Teste@123`):
-- **ADMIN**: `admin@teste.com`
-- **COLABORADOR**: `colaborador@teste.com`
-- **CLIENTE**: `cliente@teste.com`
+| Perfil | E-mail | Senha |
+|---|---|---|
+| ADMIN | `admin@obramaster.demo` | `Demo@12345` |
+| CLIENTE | `cliente@obramaster.demo` | `Demo@12345` |
+
+> **Aviso:** crie essas contas somente em banco de desenvolvimento ou demonstração. As credenciais são públicas e não devem ser usadas em produção.
+
+Para criar ou redefinir as contas:
+```
+cd backend && npx prisma db seed
+```
 
 **Frontend** (Vite + React):
 ```

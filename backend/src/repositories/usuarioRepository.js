@@ -1,6 +1,6 @@
 const { getPrisma, isDbConfigured } = require("../config/db");
 
-async function listarUsuarios() {
+async function listarUsuarios(empresaId) {
   if (!isDbConfigured()) {
     const erro = new Error(
       "Banco não configurado. Defina DATABASE_URL no .env (PostgreSQL do Supabase)"
@@ -11,6 +11,7 @@ async function listarUsuarios() {
 
   const prisma = getPrisma();
   return prisma.usuario.findMany({
+    where: { empresaId },
     select: {
       id: true,
       empresaId: true,
@@ -20,6 +21,29 @@ async function listarUsuarios() {
       criadoEm: true,
     },
     orderBy: { criadoEm: "desc" },
+  });
+}
+
+async function criarUsuarioColaborador({ empresaId, nome, email, senhaHash }) {
+  if (!isDbConfigured()) {
+    const erro = new Error(
+      "Banco não configurado. Defina DATABASE_URL no .env (PostgreSQL do Supabase)"
+    );
+    erro.code = "DATABASE_NOT_CONFIGURED";
+    throw erro;
+  }
+
+  const prisma = getPrisma();
+  return prisma.usuario.create({
+    data: { empresaId, nome, email, senhaHash, tipo: "COLABORADOR" },
+    select: {
+      id: true,
+      empresaId: true,
+      nome: true,
+      email: true,
+      tipo: true,
+      criadoEm: true,
+    },
   });
 }
 
@@ -100,6 +124,7 @@ async function atualizarSenhaUsuario(id, novaSenhaHash) {
 
 module.exports = {
   listarUsuarios,
+  criarUsuarioColaborador,
   buscarUsuarioPorEmail,
   buscarUsuarioPorId,
   buscarPerfilUsuarioPorId,
