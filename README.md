@@ -29,7 +29,7 @@ Por padrão, a API sobe em `http://localhost:3000`.
 O backend precisa da string de conexão do banco (Supabase) e do segredo do JWT.
 
 - **Backend**: copie `cp .env.example .env` e preencha `DATABASE_URL` (Supabase) e `JWT_SECRET`. `MERCADOPAGO_ACCESS_TOKEN` e `CLOUDINARY_URL` ainda não são usados no código — ficam reservados para quando essas integrações forem implementadas.
-- **Frontend**: ainda não consome a API (é o Hello World padrão do Vite) — variável `VITE_API_URL` será adicionada quando a integração começar.
+- **Frontend**: as telas de Login e Perfil já consomem a API. A URL base vem de `VITE_API_URL` (padrão: `/api`).
 
 **Banco de dados** (migrations):
 ```
@@ -59,7 +59,7 @@ cd frontend
 npm install
 npm run dev -- --host
 ```
-TailwindCSS ainda **não** está instalado no frontend (planejado, não feito).
+TailwindCSS já está instalado e configurado no frontend.
 
 **Testes** (backend):
 ```
@@ -74,7 +74,7 @@ O frontend ainda não tem testes configurados.
 
 **ObraMaster** é uma plataforma web multiempresa (SaaS) de gestão de obras, voltada para pequenas empresas de construção e reforma que hoje controlam tudo manualmente.
 
-> 🎯 **Estado atual**: escopo, casos de uso, regras de negócio e arquitetura definidos; backend com autenticação funcionando (login, dados do usuário logado, troca de senha); frontend ainda no Hello World inicial.
+> 🎯 **Estado atual**: escopo, casos de uso, regras de negócio e arquitetura definidos; backend com autenticação (login, usuário logado, troca de senha), cadastro de colaboradores e obras básicas; frontend com Login e Perfil conectados à API real.
 
 ## 🎯 Problema Resolvido
 
@@ -138,7 +138,7 @@ flowchart LR
 ```mermaid
 flowchart TD
     UI[Frontend React] --> Routes[Rotas - backend/index.js]
-    Routes --> Middlewares[Middlewares - autenticação JWT]
+    Routes --> Middlewares[Middlewares - JWT e papel]
     Middlewares --> Repo[Repositories - acesso ao banco]
     Repo --> Data[(PostgreSQL via Prisma)]
     Routes --> Payment[Mercado Pago - planejado]
@@ -170,10 +170,10 @@ gestao-de-obras/
 │   │   └── schema.prisma
 │   └── tests/
 │
-└── docs/               ← planejado, ainda não criado
-    ├── escopo-do-projeto.md
-    ├── casos-de-uso/
-    └── arquitetura/
+└── docs/
+    ├── api-contract.md
+    ├── MER-ObraMaster.png
+    └── Diagrama-Arquitetura-ObraMaster.png
 ```
 
 ---
@@ -182,7 +182,7 @@ gestao-de-obras/
 
 ## 🎨 Frontend
 - React JS + Vite
-- TailwindCSS *(planejado, não instalado)*
+- TailwindCSS
 - React Router *(planejado)*
 
 ## 🛠️ Backend
@@ -262,8 +262,21 @@ sequenceDiagram
 | tipo | ENUM (CLIENTE / COLABORADOR / ADMIN) |
 | criadoEm | TIMESTAMP |
 
+### `Obra`
+| Campo | Tipo |
+|---|---|
+| id | UUID |
+| empresaId | UUID (FK → Empresa) |
+| nome | VARCHAR |
+| descricao | VARCHAR (opcional) |
+| endereco | VARCHAR (opcional) |
+| criadoEm | TIMESTAMP |
+
 ## 🔜 Planejado, ainda não criado no banco
-`obra`, `obra_evento` (linha do tempo/histórico), `obra_colaborador`, `tabela_preco` — ver detalhamento completo em `docs/escopo-do-projeto.md` (issue de contrato de dados pendente).
+`orcamento`, `obra_evento` (linha do tempo/histórico), `obra_colaborador`, `tabela_preco`, `pagamento`. Status, datas e valor da obra também ainda não existem.
+
+## 🗺️ MER
+![MER](docs/MER-ObraMaster.png)
 
 ---
 
@@ -272,18 +285,19 @@ sequenceDiagram
 ## ✅ Implementados
 ```
 GET   /health                    (status do servidor)
-GET   /usuarios                  (lista usuários — protegida)
+GET   /usuarios                  (lista usuários da empresa — protegida)
 POST  /auth/login                (login com e-mail/senha, retorna JWT)
 GET   /auth/me                   (dados do usuário autenticado — protegida)
 PATCH /usuarios/me/senha         (troca da própria senha — protegida)
+POST  /colaboradores             (cadastra colaborador — ADMIN)
+POST  /obras                     (cria obra na empresa do token — ADMIN)
+GET   /obras                     (lista obras da empresa — protegida)
+GET   /obras/:id                 (detalhe da obra, filtrado por empresa — protegida)
 ```
 
 ## 🔜 Planejados
 ```
 POST  /auth/register             (cadastro de empresa + admin)
-GET   /obras
-POST  /obras
-GET   /obras/:id
 PATCH /obras/:id/status
 POST  /obras/:id/andamento       (foto/anotação — Colaborador)
 POST  /obras/:id/pagamento       (Admin)
@@ -301,9 +315,11 @@ GET   /agenda
 - Autenticação via JWT
 - Hash de senha com Bcrypt
 - Rotas privadas protegidas por middleware de autenticação
+- Controle por papel (`exigirPapel`) na criação de obras e colaboradores
+- Isolamento multiempresa: `empresaId` vem do token em todas as consultas de obra
 
 ## 🔜 Planejado
-- Isolamento de dados por empresa (multi-tenant) nas rotas de obra
+- Filtro por papel e por obra atribuída nas leituras (hoje qualquer usuário da empresa lista as obras)
 - Dados sensíveis criptografados em trânsito (HTTPS) e repouso
 - Sem armazenamento direto de dados bancários — pagamento via gateway externo, só token/ID da transação será salvo
 - Conformidade com a LGPD no tratamento de dados pessoais
@@ -316,7 +332,7 @@ GET   /agenda
 cd backend
 npm test
 ```
-Cobre atualmente o fluxo de troca de senha (`/usuarios/me/senha`). Testes de frontend ainda não configurados.
+Cobre atualmente o fluxo de troca de senha (`/usuarios/me/senha`). Ainda faltam testes de isolamento entre empresas e de frontend.
 
 ---
 
@@ -331,16 +347,17 @@ Cobre atualmente o fluxo de troca de senha (`/usuarios/me/senha`). Testes de fro
 ## 🔨 Fase 1: MVP
 - [x] Login (e-mail/senha) com JWT
 - [x] Endpoint de troca de senha
+- [x] Cadastro de colaboradores e obras básicas (nome, descrição, endereço) restritos a ADMIN
+- [x] Frontend: telas de Login e Perfil conectadas à API real
 - [ ] Cadastro de empresa + admin (`/auth/register`)
 - [ ] Tabela de preços por empresa
-- [ ] Cadastro e gestão de obras pelo Admin
+- [ ] Gestão completa de obras (status, datas, valor)
 - [ ] Calendário/agenda consolidada
 - [ ] Registro de andamento (fotos + anotações) pelo Colaborador
 - [ ] Alocação de colaboradores por obra
 - [ ] Pagamento parcelado (50/50) via PIX/cartão
 - [ ] Acompanhamento de obra pelo Cliente
 - [ ] Histórico/log de auditoria
-- [ ] Frontend: telas de Login e Perfil conectadas à API real
 
 ## 🚀 Fase 2: Melhorias (pós-entrega)
 - [ ] Chat direto entre dono e cliente
