@@ -23,6 +23,7 @@ const {
   criarObra,
 } = require("./src/repositories/obraRepository");
 const authMiddleware = require("./src/middlewares/authMiddleware");
+const exigirPapel = require("./src/middlewares/exigirPapel");
 
 const app = express();
 app.use(express.json());
@@ -138,7 +139,8 @@ app.get("/usuarios", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
 });
 
 // Cadastro de colaborador vinculado à empresa do usuário autenticado.
-app.post("/colaboradores", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
+// Restrito a ADMIN: só o administrador da empresa pode criar contas de colaborador.
+app.post("/colaboradores", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
   try {
     const { nome, email, senha } = req.body || {};
     if (
@@ -170,7 +172,8 @@ app.post("/colaboradores", authMiddleware, exigirEmpresaDoToken, async (req, res
 });
 
 // Obras são sempre criadas e consultadas dentro da empresa do token JWT.
-app.post("/obras", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
+// Criação restrita a ADMIN: leitura (GET) continua liberada pra qualquer usuário autenticado da empresa.
+app.post("/obras", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
   try {
     const { nome, descricao, endereco } = req.body || {};
     if (typeof nome !== "string" || !nome.trim()) {
