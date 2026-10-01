@@ -48,7 +48,7 @@ export function encerrarSessao() {
   sessionStorage.removeItem(USER_KEY)
 }
 
-function obterToken() {
+export function obterToken() {
   return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY)
 }
 
