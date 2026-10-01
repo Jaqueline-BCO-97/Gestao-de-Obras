@@ -6,7 +6,7 @@
 
 ### Transforme cadernos, planilhas e grupos de WhatsApp em um histórico único, auditável e acessível para todos os envolvidos na obra.
 
-![React](https://img.shields.io/badge/Frontend-React_JS-61DAFB?style=for-the-badge&logo=react) ![Node.js](https://img.shields.io/badge/Backend-Node.js-339933?style=for-the-badge&logo=node.js) ![Express](https://img.shields.io/badge/API-Express-000000?style=for-the-badge) ![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL-4169E1?style=for-the-badge&logo=postgresql) ![JWT](https://img.shields.io/badge/Auth-JWT-010101?style=for-the-badge&logo=jsonwebtokens) ![Mercado Pago](https://img.shields.io/badge/Pagamentos-Mercado_Pago-00B1EA?style=for-the-badge)
+![React](https://img.shields.io/badge/Frontend-React_JS-61DAFB?style=for-the-badge&logo=react) ![Node.js](https://img.shields.io/badge/Backend-Node.js-339933?style=for-the-badge&logo=node.js) ![Express](https://img.shields.io/badge/API-Express-000000?style=for-the-badge) ![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL-4169E1?style=for-the-badge&logo=postgresql) ![JWT](https://img.shields.io/badge/Auth-JWT-010101?style=for-the-badge&logo=jsonwebtokens) ![Mercado Pago](https://img.shields.io/badge/Pagamentos-Mercado_Pago_(planejado)-00B1EA?style=for-the-badge)
 
 ---
 
@@ -21,21 +21,35 @@ Pré-requisitos:
 ```
 cd backend
 npm install
-node index.js
+cp .env.example .env     # depois preencha DATABASE_URL e JWT_SECRET
+npm run dev              # desenvolvimento (reinicia ao salvar)
 ```
-Por padrão, a API sobe em `http://localhost:3000`.
+Para rodar sem reinício automático, use `npm start`. Por padrão, a API sobe em `http://localhost:3000` (ou na porta definida em `PORT`). O `npm install` já executa `prisma generate` automaticamente.
+
+Para conferir se a conexão com o banco está funcionando:
+```
+cd backend
+npm run test-connection
+```
 
 **Configuração de Ambiente (.env)**:
-O backend precisa da string de conexão do banco (Supabase) e do segredo do JWT.
+O backend precisa da string de conexão do banco (Supabase) e do segredo do JWT. O arquivo `backend/.env.example` traz três variáveis:
 
-- **Backend**: copie `cp .env.example .env` e preencha `DATABASE_URL` (Supabase) e `JWT_SECRET`. `MERCADOPAGO_ACCESS_TOKEN` e `CLOUDINARY_URL` ainda não são usados no código — ficam reservados para quando essas integrações forem implementadas.
-- **Frontend**: as telas de Login e Perfil já consomem a API. A URL base vem de `VITE_API_URL` (padrão: `/api`).
+| Variável | Para que serve |
+|---|---|
+| `PORT` | Porta da API (padrão: `3000`) |
+| `DATABASE_URL` | Connection string do PostgreSQL no Supabase (modo Pooler) |
+| `JWT_SECRET` | Segredo usado para assinar os tokens de login (validade de 8h) |
+
+- `MERCADOPAGO_ACCESS_TOKEN` e `CLOUDINARY_URL` ainda não são usados no código nem constam no `.env.example` — serão adicionados quando essas integrações forem implementadas.
+- **Frontend**: as telas de Login e Perfil já consomem a API. Em desenvolvimento, o Vite encaminha `/api` para `http://localhost:3000` (ver `frontend/vite.config.js`), então não é preciso configurar nada se o backend estiver rodando localmente. Para apontar para outra API, defina `VITE_API_URL` em `frontend/.env` (padrão: `/api`).
 
 **Banco de dados** (migrations):
 ```
 cd backend
 npx prisma migrate dev
 ```
+Migrations existentes: `init_usuarios` (Empresa e Usuário) e `add_obras` (Obra).
 
 ### Acessos de demonstração
 
@@ -46,7 +60,9 @@ As duas contas abaixo pertencem à empresa **Empresa Demo** e usam a senha `Demo
 | ADMIN | `admin@obramaster.demo` | `Demo@12345` |
 | CLIENTE | `cliente@obramaster.demo` | `Demo@12345` |
 
-> **Aviso:** crie essas contas somente em banco de desenvolvimento ou demonstração. As credenciais são públicas e não devem ser usadas em produção.
+A tela de Login tem atalhos para entrar direto com essas duas contas. Não existe conta de demonstração de COLABORADOR: para criar uma, entre como ADMIN e use `POST /colaboradores`.
+
+> **Aviso:** crie essas contas somente em banco de desenvolvimento ou demonstração. As credenciais são públicas e não devem ser usadas em produção. O seed se recusa a rodar quando `NODE_ENV=production`.
 
 Para criar ou redefinir as contas:
 ```
@@ -59,6 +75,7 @@ cd frontend
 npm install
 npm run dev -- --host
 ```
+Outros scripts: `npm run build` (build de produção), `npm run lint` e `npm run preview`.
 TailwindCSS já está instalado e configurado no frontend.
 
 **Testes** (backend):
@@ -66,7 +83,7 @@ TailwindCSS já está instalado e configurado no frontend.
 cd backend
 npm test
 ```
-O frontend ainda não tem testes configurados.
+O frontend ainda não tem testes configurados. Detalhes na seção [Testes](#-testes).
 
 ---
 
@@ -74,7 +91,7 @@ O frontend ainda não tem testes configurados.
 
 **ObraMaster** é uma plataforma web multiempresa (SaaS) de gestão de obras, voltada para pequenas empresas de construção e reforma que hoje controlam tudo manualmente.
 
-> 🎯 **Estado atual**: escopo, casos de uso, regras de negócio e arquitetura definidos; backend com autenticação (login, usuário logado, troca de senha), cadastro de colaboradores e obras básicas; frontend com Login e Perfil conectados à API real.
+> 🎯 **Estado atual**: escopo, casos de uso, regras de negócio e arquitetura definidos; backend com autenticação (login, usuário logado, troca de senha), cadastro de colaboradores e obras básicas; frontend com Login e Perfil conectados à API real e um painel provisório para o Colaborador (ainda sem funcionalidades).
 
 ## 🎯 Problema Resolvido
 
@@ -127,8 +144,8 @@ flowchart LR
     C --> D[Repositories]
     D --> E[Prisma]
     E --> F[(PostgreSQL - Supabase)]
-    D --> G[Gateway de Pagamento - Mercado Pago]
-    D --> H[Storage de Fotos - Cloudinary]
+    D -.planejado.-> G[Gateway de Pagamento - Mercado Pago]
+    D -.planejado.-> H[Storage de Fotos - Cloudinary]
 ```
 
 ---
@@ -154,26 +171,32 @@ gestao-de-obras/
 │
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   ├── services/
-│   │   ├── routes/
-│   │   └── tests/
+│   │   ├── pages/          (Login, Perfil, DashboardPlaceholder)
+│   │   ├── components/     (Button, Card, Input, Modal)
+│   │   ├── services/       (auth.js — chamadas à API e sessão)
+│   │   ├── routes/         (dashboardRoutes.js — destino por papel)
+│   │   ├── config/         (demo.js — contas de demonstração)
+│   │   └── assets/
+│   └── vite.config.js      (proxy /api → localhost:3000)
 │
 ├── backend/
+│   ├── index.js            (servidor Express e todas as rotas)
 │   ├── src/
 │   │   ├── repositories/
-│   │   ├── middlewares/
-│   │   └── config/
+│   │   ├── middlewares/    (authMiddleware, exigirPapel)
+│   │   └── config/         (db.js — cliente Prisma)
 │   ├── prisma/
-│   │   └── schema.prisma
-│   └── tests/
+│   │   ├── schema.prisma
+│   │   ├── migrations/
+│   │   └── seed.js
+│   ├── scripts/            (test-db.js)
+│   ├── tests/              (trocaSenha.test.js)
+│   └── .env.example
 │
 └── docs/
     ├── api-contract.md
-    ├── MER-ObraMaster.png
-    └── Diagrama-Arquitetura-ObraMaster.png
+    ├── MER-ObraMaster.jpeg
+    └── Diagrama-Arquitetura-ObraMaster.jpeg
 ```
 
 ---
@@ -181,15 +204,16 @@ gestao-de-obras/
 # ⚙️ Stack Tecnológica
 
 ## 🎨 Frontend
-- React JS + Vite
-- TailwindCSS
-- React Router *(planejado)*
+- React 19 + Vite
+- TailwindCSS 3
+- Roteamento simples por `window.location` (React Router *planejado*)
 
 ## 🛠️ Backend
-- Node.js + Express
+- Node.js + Express 5
 - Prisma ORM v6
-- JWT (autenticação)
+- JWT (autenticação, token válido por 8h)
 - Bcrypt (hash de senha)
+- Testes com o runner nativo do Node (`node --test`)
 
 ## 🗄️ Banco de Dados
 - PostgreSQL (hospedado no Supabase)
@@ -238,6 +262,8 @@ sequenceDiagram
 - **RN8** — Pagamento padrão dividido em 2 parcelas: 50% na aprovação do orçamento, 50% na conclusão da obra
 - **RN9** — Isolamento total de dados entre empresas (multiempresa)
 
+> Das regras acima, hoje só a **RN9** está implementada (via `empresaId` do token em todas as consultas de obra). As demais dependem de funcionalidades ainda planejadas (status, pagamento, agenda, histórico, notificações).
+
 ---
 
 # 🗃️ Modelagem de Dados
@@ -276,18 +302,23 @@ sequenceDiagram
 `orcamento`, `obra_evento` (linha do tempo/histórico), `obra_colaborador`, `tabela_preco`, `pagamento`. Status, datas e valor da obra também ainda não existem.
 
 ## 🗺️ MER
-![MER](docs/MER-ObraMaster.png)
+O diagrama abaixo mostra o modelo completo (as tabelas implementadas e as planejadas):
+
+![MER](docs/MER-ObraMaster.jpeg)
 
 ---
 
 # 🌐 Endpoints da API
 
+> O arquivo [`docs/api-contract.md`](docs/api-contract.md) descreve o contrato **desejado** da API e ainda não reflete exatamente o que está implementado (nomes de campos, formato das respostas e rotas ainda não criadas). Em caso de divergência, vale a lista abaixo.
+
 ## ✅ Implementados
 ```
-GET   /health                    (status do servidor)
-GET   /usuarios                  (lista usuários da empresa — protegida)
+GET   /                          (hello world do backend)
+GET   /health                    (status do servidor e do banco)
 POST  /auth/login                (login com e-mail/senha, retorna JWT)
 GET   /auth/me                   (dados do usuário autenticado — protegida)
+GET   /usuarios                  (lista usuários da empresa — protegida)
 PATCH /usuarios/me/senha         (troca da própria senha — protegida)
 POST  /colaboradores             (cadastra colaborador — ADMIN)
 POST  /obras                     (cria obra na empresa do token — ADMIN)
@@ -312,11 +343,11 @@ GET   /agenda
 # 🔐 Segurança
 
 ## ✅ Implementado
-- Autenticação via JWT
+- Autenticação via JWT (token com validade de 8h)
 - Hash de senha com Bcrypt
 - Rotas privadas protegidas por middleware de autenticação
 - Controle por papel (`exigirPapel`) na criação de obras e colaboradores
-- Isolamento multiempresa: `empresaId` vem do token em todas as consultas de obra
+- Isolamento multiempresa: `empresaId` vem do token em todas as consultas de obra e de usuários
 
 ## 🔜 Planejado
 - Filtro por papel e por obra atribuída nas leituras (hoje qualquer usuário da empresa lista as obras)
@@ -334,6 +365,10 @@ npm test
 ```
 Cobre atualmente o fluxo de troca de senha (`/usuarios/me/senha`). Ainda faltam testes de isolamento entre empresas e de frontend.
 
+- Os testes usam o banco real. Com `DATABASE_URL` configurada, eles criam um usuário temporário na primeira empresa encontrada (ou criam uma "Empresa de Testes") e o removem ao final — **use somente banco de desenvolvimento**.
+- Sem `DATABASE_URL`, apenas o teste de acesso sem token roda; os demais são marcados como ignorados (*skipped*).
+- Ainda não há pipeline de CI no repositório — por isso o selo no topo continua como "pending setup".
+
 ---
 
 # 📈 Roadmap
@@ -341,14 +376,17 @@ Cobre atualmente o fluxo de troca de senha (`/usuarios/me/senha`). Ainda faltam 
 ## ✏️ Fundação do Projeto
 - [x] Definição de escopo e visão do produto
 - [x] Especificação de casos de uso e regras de negócio
-- [x] Modelagem inicial de dados (Empresa, Usuário)
+- [x] Modelagem inicial de dados (Empresa, Usuário, Obra)
 - [x] Estrutura de pastas frontend/backend
+- [x] Documentação: contrato de API, MER e diagrama de arquitetura
+- [x] Seed com contas de demonstração (ADMIN e CLIENTE)
 
 ## 🔨 Fase 1: MVP
 - [x] Login (e-mail/senha) com JWT
 - [x] Endpoint de troca de senha
 - [x] Cadastro de colaboradores e obras básicas (nome, descrição, endereço) restritos a ADMIN
 - [x] Frontend: telas de Login e Perfil conectadas à API real
+- [ ] Frontend: painéis por perfil (hoje o Colaborador cai em um painel provisório; "Esqueci minha senha" e "Cadastre-se como cliente" ainda não estão disponíveis)
 - [ ] Cadastro de empresa + admin (`/auth/register`)
 - [ ] Tabela de preços por empresa
 - [ ] Gestão completa de obras (status, datas, valor)
@@ -358,6 +396,7 @@ Cobre atualmente o fluxo de troca de senha (`/usuarios/me/senha`). Ainda faltam 
 - [ ] Pagamento parcelado (50/50) via PIX/cartão
 - [ ] Acompanhamento de obra pelo Cliente
 - [ ] Histórico/log de auditoria
+- [ ] Testes de isolamento entre empresas, testes de frontend e CI
 
 ## 🚀 Fase 2: Melhorias (pós-entrega)
 - [ ] Chat direto entre dono e cliente
@@ -403,4 +442,3 @@ Este projeto é acadêmico (TCC) e pode ser adaptado para fins educacionais, com
 ### Simples para a sua empresa. Transparente para o seu cliente.
 
 ## "Sua obra merece mais que um caderno."
-
