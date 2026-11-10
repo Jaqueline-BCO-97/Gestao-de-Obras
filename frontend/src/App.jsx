@@ -1,24 +1,107 @@
-import Perfil from './pages/Perfil/Perfil.jsx'
+// Importa os componentes principais de roteamento da biblioteca react-router-dom
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+
+// Importa o componente ProtectedRoute responsável por barrar usuários não logados
+import ProtectedRoute from './components/ProtectedRoute.jsx'
+
+// Importa o componente da tela de Login
 import Login from './pages/Login.jsx'
-import DashboardPlaceholder from './pages/DashboardPlaceholder.jsx'
-import { dashboardRoutes } from './routes/dashboardRoutes.js'
-import { obterToken } from './services/auth.js'
 
-function RotaProtegida({ children }) {
-  if (!obterToken()) {
-    window.location.assign('/')
-    return null
-  }
-  return children
-}
+// Importa a página temporária do painel do cliente
+import Cliente from './pages/Cliente.jsx'
 
+// Importa a página temporária de detalhes da obra com parâmetro :id
+import ClienteObra from './pages/ClienteObra.jsx'
+
+// Importa a página temporária do painel do administrador
+import Admin from './pages/Admin.jsx'
+
+// Importa a página temporária da listagem de obras do administrador
+import AdminObras from './pages/AdminObras.jsx'
+
+// Importa a página temporária do painel do colaborador
+import Colaborador from './pages/Colaborador.jsx'
+
+// Importa a página de Perfil para manter a funcionalidade já existente no sistema
+import Perfil from './pages/Perfil/Perfil.jsx'
+
+// Componente raiz da aplicação (App) que define a estrutura de rotas do frontend
 export default function App() {
-  const caminho = window.location.pathname
+  // Retorna a árvore de componentes com o provedor de roteamento e as rotas
+  return (
+    // O BrowserRouter gerencia o histórico de navegação baseado na URL do navegador
+    <BrowserRouter>
+      {/* O componente Routes agrupa as rotas e renderiza a primeira que coincidir com a URL atual */}
+      <Routes>
+        {/* Rota inicial (/): Redireciona automaticamente para a tela de login */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
 
-  if (caminho === '/perfil') return <RotaProtegida><Perfil /></RotaProtegida>
+        {/* Rota pública de login (/login): Não requer autenticação */}
+        <Route path="/login" element={<Login />} />
 
-  const dashboard = Object.values(dashboardRoutes).find(({ path }) => path === caminho)
-  if (dashboard) return <RotaProtegida><DashboardPlaceholder titulo={dashboard.titulo} /></RotaProtegida>
+        {/* Rota protegida do painel do cliente (/cliente): Exige autenticação */}
+        <Route
+          path="/cliente"
+          element={
+            <ProtectedRoute>
+              <Cliente />
+            </ProtectedRoute>
+          }
+        />
 
-  return <Login />
+        {/* Rota protegida com parâmetro dinâmico (:id) para ver uma obra específica (/cliente/obra/:id) */}
+        <Route
+          path="/cliente/obra/:id"
+          element={
+            <ProtectedRoute>
+              <ClienteObra />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Rota protegida do painel administrativo (/admin): Exige autenticação */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <Admin />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Rota protegida de gerenciamento de obras do administrador (/admin/obras): Exige autenticação */}
+        <Route
+          path="/admin/obras"
+          element={
+            <ProtectedRoute>
+              <AdminObras />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Rota protegida do painel do colaborador (/colaborador): Exige autenticação */}
+        <Route
+          path="/colaborador"
+          element={
+            <ProtectedRoute>
+              <Colaborador />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Rota protegida de perfil (/perfil): Preservada do desenvolvimento anterior */}
+        <Route
+          path="/perfil"
+          element={
+            <ProtectedRoute>
+              <Perfil />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Rota coringa (*): Qualquer caminho digitado que não exista redireciona para /login */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </BrowserRouter>
+  )
 }
