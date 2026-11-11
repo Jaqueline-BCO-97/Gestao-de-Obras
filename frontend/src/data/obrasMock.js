@@ -9,6 +9,10 @@ export const obrasMock = [
     id: 1,
     // Título ou nome fantasia descritivo da obra
     titulo: 'Construção Residencial Alphaville',
+    // Nome do cliente proprietário da obra
+    cliente: 'Beatriz Silveira',
+    // Lista de identificadores dos colaboradores alocados nesta obra
+    colaboradores: [1, 2],
     // Endereço completo onde a obra será realizada
     endereco: 'Alameda dos Ipês, 120 - Residencial Alphaville, Barueri - SP',
     // Situação atual da obra no ciclo de vida da construção
@@ -80,6 +84,10 @@ export const obrasMock = [
     id: 2,
     // Título da obra
     titulo: 'Reforma Completa de Apartamento Jardins',
+    // Nome do cliente proprietário da obra
+    cliente: 'Marcos Vinícius Prado',
+    // Lista de identificadores dos colaboradores alocados nesta obra
+    colaboradores: [1, 3],
     // Endereço do local da obra
     endereco: 'Rua Oscar Freire, 850 - Apto 71, Cerqueira César, São Paulo - SP',
     // Status indicando que os serviços estão sendo executados no momento
@@ -151,6 +159,10 @@ export const obrasMock = [
     id: 3,
     // Título da obra
     titulo: 'Modernização de Fachada Edifício Horizonte',
+    // Nome do cliente proprietário da obra
+    cliente: 'Condomínio Edifício Horizonte',
+    // Lista de identificadores dos colaboradores alocados nesta obra
+    colaboradores: [2, 4],
     // Endereço da obra
     endereco: 'Av. Atlântica, 2140 - Copacabana, Rio de Janeiro - RJ',
     // Status indicando que a obra física terminou e aguarda vistoria
@@ -230,6 +242,10 @@ export const obrasMock = [
     id: 4,
     // Título da obra
     titulo: 'Espaço Gourmet e Área de Lazer Campinas',
+    // Nome do cliente proprietário da obra
+    cliente: 'Fernanda Cristina Rocha',
+    // Lista de identificadores dos colaboradores alocados nesta obra
+    colaboradores: [3, 4],
     // Endereço da obra
     endereco: 'Rua das Acácias, 45 - Parque Prado, Campinas - SP',
     // Status de obra 100% finalizada e entregue

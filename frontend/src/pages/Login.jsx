@@ -51,10 +51,14 @@ function Icone({ tipo, className = 'h-5 w-5' }) {
 const beneficios = [
   // Benefício 1: orçamentos
   { icone: 'sparkles', texto: 'Orçamentos digitais com aprovação em poucos cliques' },
+   // Benefício 1: orçamentos
+  { icone: 'sparkles', texto: 'Agenda sem conflito de datas' },
   // Benefício 2: execução
-  { icone: 'building', texto: 'Acompanhamento de execução com timeline e progresso' },
+  { icone: 'building', texto: 'Fotos para acompanhamento de andamento para o cliente' },
   // Benefício 3: relatórios
-  { icone: 'shield', texto: 'Pagamentos, relatórios e auditoria centralizados' },
+  { icone: 'shield', texto: 'Pagamento em 2 parcelas pelo app' },
+  // Benefício 3: relatórios
+  { icone: 'shield', texto: 'Histórico que vale como comprovante' },
 ]
 
 // Função auxiliar que traduz códigos de status HTTP em mensagens amigáveis em português
@@ -350,7 +354,7 @@ export default function Login() {
               onClick={() => informarRecursoIndisponivel('O cadastro de cliente')}
               className="font-semibold text-[#087eae] hover:text-[#0c2d43]"
             >
-              Cadastre-se como cliente
+              Cadastre sua empresa
             </button>
           </p>
 
