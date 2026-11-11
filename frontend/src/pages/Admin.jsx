@@ -109,13 +109,6 @@ export default function Admin() {
             >
               Gestão de Obras
             </Link>
-            {/* Link alternativo para visualizar a perspectiva do colaborador */}
-            <Link
-              to="/colaborador"
-              className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition"
-            >
-              Visão Colaborador
-            </Link>
             {/* Link para a tela de perfil */}
             <Link
               to="/perfil"

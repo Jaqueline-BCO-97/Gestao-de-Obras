@@ -22,6 +22,9 @@ import AdminObras from './pages/AdminObras.jsx'
 // Importa a página temporária do painel do colaborador
 import Colaborador from './pages/Colaborador.jsx'
 
+// Importa a página de registro de andamento da obra pelo colaborador
+import ColaboradorObra from './pages/ColaboradorObra.jsx'
+
 // Importa a página de Perfil para manter a funcionalidade já existente no sistema
 import Perfil from './pages/Perfil/Perfil.jsx'
 
@@ -39,57 +42,67 @@ export default function App() {
         {/* Rota pública de login (/login): Não requer autenticação */}
         <Route path="/login" element={<Login />} />
 
-        {/* Rota protegida do painel do cliente (/cliente): Exige autenticação */}
+        {/* Rota protegida do painel do cliente (/cliente): Exige perfil CLIENTE */}
         <Route
           path="/cliente"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute perfisPermitidos={['CLIENTE']}>
               <Cliente />
             </ProtectedRoute>
           }
         />
 
-        {/* Rota protegida com parâmetro dinâmico (:id) para ver uma obra específica (/cliente/obra/:id) */}
+        {/* Rota protegida com parâmetro dinâmico (:id) para ver uma obra específica (/cliente/obra/:id): Exige perfil CLIENTE */}
         <Route
           path="/cliente/obra/:id"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute perfisPermitidos={['CLIENTE']}>
               <ClienteObra />
             </ProtectedRoute>
           }
         />
 
-        {/* Rota protegida do painel administrativo (/admin): Exige autenticação */}
+        {/* Rota protegida do painel administrativo (/admin): Exige perfil ADMIN */}
         <Route
           path="/admin"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute perfisPermitidos={['ADMIN']}>
               <Admin />
             </ProtectedRoute>
           }
         />
 
-        {/* Rota protegida de gerenciamento de obras do administrador (/admin/obras): Exige autenticação */}
+        {/* Rota protegida de gerenciamento de obras do administrador (/admin/obras): Exige perfil ADMIN */}
         <Route
           path="/admin/obras"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute perfisPermitidos={['ADMIN']}>
               <AdminObras />
             </ProtectedRoute>
           }
         />
 
-        {/* Rota protegida do painel do colaborador (/colaborador): Exige autenticação */}
+        {/* Rota protegida do painel do colaborador (/colaborador): Exige perfil COLABORADOR */}
         <Route
           path="/colaborador"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute perfisPermitidos={['COLABORADOR']}>
               <Colaborador />
             </ProtectedRoute>
           }
         />
 
-        {/* Rota protegida de perfil (/perfil): Preservada do desenvolvimento anterior */}
+        {/* Rota protegida de registro de andamento da obra (/colaborador/obra/:id): Exige perfil COLABORADOR */}
+        <Route
+          path="/colaborador/obra/:id"
+          element={
+            <ProtectedRoute perfisPermitidos={['COLABORADOR']}>
+              <ColaboradorObra />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Rota protegida de perfil (/perfil): Acesso permitido para todos os perfis autenticados */}
         <Route
           path="/perfil"
           element={

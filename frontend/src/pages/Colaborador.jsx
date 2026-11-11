@@ -133,20 +133,6 @@ export default function Colaborador() {
             >
               Minhas Obras
             </Link>
-            {/* Link para visualização do painel administrativo */}
-            <Link
-              to="/admin"
-              className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition"
-            >
-              Painel Admin
-            </Link>
-            {/* Link para a tela de gestão de obras */}
-            <Link
-              to="/admin/obras"
-              className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition"
-            >
-              Gestão de Obras
-            </Link>
             {/* Link para a página de perfil */}
             <Link
               to="/perfil"
@@ -402,22 +388,33 @@ export default function Colaborador() {
 
                 </div>
 
-                {/* Rodapé do cartão contendo apenas o botão de ação operacional (sem valores financeiros) */}
+                {/* Rodapé do cartão contendo apenas as ações operacionais (sem valores financeiros) */}
                 <div className="border-t border-slate-100 pt-3 mt-4 flex items-center justify-between gap-3">
                   {/* Informação visual de status operacional */}
                   <span className="text-[11px] text-slate-400 flex items-center gap-1">
                     <span>🏗️</span> Canteiro Ativo
                   </span>
 
-                  {/* Botão para visualizar informações de canteiro */}
-                  <Button
-                    variant="compact"
-                    onClick={() => handleVerCanteiro(obra)}
-                    className="text-xs py-1.5 px-3"
-                    icon="→"
-                  >
-                    Ver Canteiro
-                  </Button>
+                  {/* Ações operacionais da obra */}
+                  <div className="flex items-center gap-2">
+                    {/* Botão para visualizar resumo do canteiro */}
+                    <Button
+                      variant="outline"
+                      onClick={() => handleVerCanteiro(obra)}
+                      className="text-xs py-1.5 px-3"
+                    >
+                      Ver Canteiro
+                    </Button>
+                    {/* Botão que leva à página de registro de andamento da obra */}
+                    <Button
+                      variant="compact"
+                      onClick={() => navigate(`/colaborador/obra/${obra.id}`)}
+                      className="text-xs py-1.5 px-3"
+                      icon="→"
+                    >
+                      Gerenciar obra
+                    </Button>
+                  </div>
                 </div>
 
               </Card>
