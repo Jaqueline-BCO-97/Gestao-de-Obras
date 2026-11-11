@@ -77,16 +77,19 @@ export function salvarSessao({ token, usuario }, lembrarDeMim) {
 
 // Função para simular uma sessão mock (útil para desenvolvimento, testes e navegação sem backend)
 export function salvarSessaoMock(tipo = 'CLIENTE') {
+  // Define o nome amigável do usuário: para COLABORADOR usamos o nome do profissional fake, senão o padrão
+  const nomeUsuario = tipo === 'COLABORADOR' ? 'Carlos Eduardo da Silva' : `Usuário Demonstração (${tipo})`
+
   // Cria um objeto de sessão simulada com dados válidos de teste
   const sessaoMock = {
     // Token simulado para autorização mock
     token: `mock-token-${tipo.toLowerCase()}-123456`,
     // Dados fictícios de usuário de acordo com o perfil solicitado
     usuario: {
-      // Identificador único numérico fictício
-      id: 999,
+      // Identificador único numérico fictício (1 para colaborador para casar com o mock de obras, ou 999)
+      id: tipo === 'COLABORADOR' ? 1 : 999,
       // Nome amigável de exibição do usuário
-      nome: `Usuário Demonstração (${tipo})`,
+      nome: nomeUsuario,
       // E-mail fictício de teste
       email: `demo.${tipo.toLowerCase()}@obramaster.local`,
       // Perfil/tipo do usuário (CLIENTE, ADMIN ou COLABORADOR)

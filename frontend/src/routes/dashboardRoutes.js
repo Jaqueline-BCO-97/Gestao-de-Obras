@@ -37,6 +37,8 @@ export const ROTAS = {
   ADMIN_OBRAS: '/admin/obras',
   // Rota do painel do colaborador
   COLABORADOR: '/colaborador',
+  // Rota com parâmetro dinâmico (:id) para registrar andamento de obra pelo colaborador
+  COLABORADOR_OBRA: '/colaborador/obra/:id',
   // Rota para visualização e edição de perfil da conta
   PERFIL: '/perfil',
 }

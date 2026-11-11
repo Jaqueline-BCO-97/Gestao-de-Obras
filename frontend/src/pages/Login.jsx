@@ -51,10 +51,14 @@ function Icone({ tipo, className = 'h-5 w-5' }) {
 const beneficios = [
   // Benefício 1: orçamentos
   { icone: 'sparkles', texto: 'Orçamentos digitais com aprovação em poucos cliques' },
+   // Benefício 1: orçamentos
+  { icone: 'sparkles', texto: 'Agenda sem conflito de datas' },
   // Benefício 2: execução
-  { icone: 'building', texto: 'Acompanhamento de execução com timeline e progresso' },
+  { icone: 'building', texto: 'Fotos para acompanhamento de andamento para o cliente' },
   // Benefício 3: relatórios
-  { icone: 'shield', texto: 'Pagamentos, relatórios e auditoria centralizados' },
+  { icone: 'shield', texto: 'Pagamento em 2 parcelas pelo app' },
+  // Benefício 3: relatórios
+  { icone: 'shield', texto: 'Histórico que vale como comprovante' },
 ]
 
 // Função auxiliar que traduz códigos de status HTTP em mensagens amigáveis em português
@@ -189,8 +193,8 @@ export default function Login() {
 
   // Função para acionar o login rápido com credenciais de demonstração
   function entrarComoDemo(tipo) {
-    // Recupera as credenciais da conta demo do arquivo de configuração
-    const credenciais = CONTAS_DEMO[tipo]
+    // Recupera as credenciais da conta demo do arquivo de configuração (ou fallback seguro com credencial padrão)
+    const credenciais = CONTAS_DEMO[tipo] || { email: 'colaborador@obramaster.demo', senha: 'Demo@12345' }
     // Dispara a autenticação usando as credenciais demo
     return autenticar(credenciais.email, credenciais.senha, tipo)
   }
@@ -350,31 +354,45 @@ export default function Login() {
               onClick={() => informarRecursoIndisponivel('O cadastro de cliente')}
               className="font-semibold text-[#087eae] hover:text-[#0c2d43]"
             >
-              Cadastre-se como cliente
+              Cadastre sua empresa
             </button>
           </p>
 
           {/* Seção com botões de atalho para demonstração e testes rápidos */}
           <section className="mt-8 rounded-2xl border border-dashed border-slate-300 bg-white/70 p-4 sm:p-5" aria-label="Acessos de demonstração">
+            {/* Título da seção de acessos de demonstração */}
             <h3 className="text-xs font-semibold tracking-wide text-slate-600">ACESSOS DE DEMONSTRAÇÃO</h3>
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {/* Grade responsiva com 3 colunas em telas maiores para acomodar os 3 perfis */}
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
               {[
+                // Botão de acesso rápido para o perfil Cliente
                 { tipo: 'CLIENTE', texto: 'Entrar como Cliente' },
+                // Botão de acesso rápido para o perfil Administrador
                 { tipo: 'ADMIN', texto: 'Entrar como Admin' },
+                // Botão de acesso rápido para o perfil Colaborador
+                { tipo: 'COLABORADOR', texto: 'Entrar como Colaborador' },
               ].map(({ tipo, texto }) => (
+                // Renderiza o botão para cada perfil de demonstração
                 <button
+                  // Chave de identificação exclusiva exigida pelo React
                   key={tipo}
+                  // Define tipo button para não disparar submissão acidental de formulário
                   type="button"
+                  // Desabilita o botão se já houver requisição de login em andamento
                   disabled={carregando}
+                  // Dispara o login de demonstração correspondente ao ser clicado
                   onClick={() => entrarComoDemo(tipo)}
+                  // Estilos visuais de borda, padding, cores e estados de hover e disabled
                   className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-[#0c2d43] transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
                 >
+                  {/* Se este perfil estiver conectando, mostra feedback; senão, mostra o texto padrão */}
                   {tipoDemoCarregando === tipo ? 'Conectando…' : texto}
                 </button>
               ))}
             </div>
+            {/* Descrição informativa atualizada mencionando cliente, administrador e colaborador */}
             <p className="mt-3 text-[11px] leading-4 text-slate-500">
-              Contas públicas para testar o acesso como cliente e administrador.
+              Contas públicas para testar o acesso como cliente, administrador e colaborador.
             </p>
           </section>
         </div>

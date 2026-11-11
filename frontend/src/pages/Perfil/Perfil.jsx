@@ -1,7 +1,19 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Button from '../../components/Button.jsx'
 import Input from '../../components/Input.jsx'
 import { buscarUsuarioAtual, alterarSenha, encerrarSessao } from '../../services/auth.js'
+import { obterRotaDashboard } from '../../routes/dashboardRoutes.js'
+
+// Função auxiliar para recuperar dados do usuário mock/local quando a API estiver offline
+function obterUsuarioLocal() {
+  try {
+    const dados = localStorage.getItem('usuario') || sessionStorage.getItem('usuario')
+    return dados ? JSON.parse(dados) : null
+  } catch {
+    return null
+  }
+}
 
 // Chave usada no localStorage pra guardar o token JWT do usuário logado.
 
@@ -14,9 +26,16 @@ const tiposUsuario = {
 }
 
 export default function Perfil() {
-  // Dados do usuário logado (nome, email, tipo), vindos do backend.
-  // Começa null porque ainda não carregou nada.
-  const [usuario, setUsuario] = useState(null)
+  // Hook de navegação do React Router para transicionar de rota sem recarregar a tela
+  const navigate = useNavigate()
+
+  // Dados do usuário logado (nome, email, tipo), inicializados a partir do armazenamento local ou nulos
+  const [usuario, setUsuario] = useState(() => obterUsuarioLocal())
+
+  // Identifica o perfil do usuário atual para descobrir a rota do seu dashboard
+  const tipoPerfil = usuario?.tipo || obterUsuarioLocal()?.tipo
+  // Rota de retorno correspondente ao perfil logado (Admin -> /admin, Cliente -> /cliente, Colaborador -> /colaborador)
+  const rotaDashboard = obterRotaDashboard(tipoPerfil) || '/login'
 
   // Controla se ainda está esperando a resposta do /auth/me.
   const [carregandoPerfil, setCarregandoPerfil] = useState(true)
@@ -48,10 +67,15 @@ export default function Perfil() {
       })
       .catch((erro) => {
         if (ativo) {
-          setErroPerfil(erro.message)
-          // Se o erro for 401 (não autorizado), o token guardado é inválido —
-          // apaga ele pra não ficar tentando de novo com um token morto.
-          if (erro.status === 401) encerrarSessao()
+          // Se já houver usuário na sessão local (modo mock / demonstração), usa os dados locais
+          const dadosLocais = obterUsuarioLocal()
+          if (dadosLocais) {
+            setUsuario(dadosLocais)
+          } else {
+            setErroPerfil(erro.message)
+            // Se o erro for 401 (não autorizado), o token guardado é inválido — apaga ele
+            if (erro.status === 401) encerrarSessao()
+          }
         }
       })
       .finally(() => {
@@ -132,9 +156,21 @@ export default function Perfil() {
       {/* ---------- CONTEÚDO PRINCIPAL ---------- */}
       <div className="min-w-0 flex-1">
 
-        {/* Barra superior, com o texto "MINHA CONTA" (era "ÁREA DO CLIENTE" antes) */}
-        <header className="flex min-h-[62px] items-center border-b border-slate-200 bg-white px-[clamp(22px,4vw,52px)] max-[620px]:min-h-[54px] max-[620px]:px-[18px]">
-          <div className="grid gap-[3px]"><span className="text-[9px] font-bold tracking-[.08em] text-slate-500">MINHA CONTA</span><strong className="text-[13px] font-semibold text-navy">Perfil</strong></div>
+        {/* Barra superior com o texto "MINHA CONTA" e o botão "← Voltar" visível tanto no desktop quanto no celular */}
+        <header className="flex min-h-[62px] items-center justify-between border-b border-slate-200 bg-white px-[clamp(22px,4vw,52px)] max-[620px]:min-h-[54px] max-[620px]:px-[18px]">
+          {/* Identificação da página */}
+          <div className="grid gap-[3px]">
+            <span className="text-[9px] font-bold tracking-[.08em] text-slate-500">MINHA CONTA</span>
+            <strong className="text-[13px] font-semibold text-navy">Perfil</strong>
+          </div>
+          {/* Botão de retorno que leva diretamente ao dashboard do perfil logado (Cliente, Admin ou Colaborador) */}
+          <Button
+            variant="outline"
+            onClick={() => navigate(rotaDashboard)}
+            className="text-xs py-1.5 px-3"
+          >
+            ← Voltar
+          </Button>
         </header>
 
         <main className="mx-auto w-[min(1120px,calc(100%-64px))] py-7 max-[920px]:w-[min(720px,calc(100%-44px))] max-[620px]:w-[calc(100%-32px)] max-[620px]:py-[23px] max-[360px]:w-[calc(100%-24px)]">
