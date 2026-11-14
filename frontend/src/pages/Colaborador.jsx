@@ -11,10 +11,10 @@ import Card from '../components/Card.jsx'
 import Button from '../components/Button.jsx'
 
 // Importa os dados das obras e a função auxiliar de obtenção de cores de status
-import { obrasMock, obterCoresStatus } from '../data/obrasMock.js'
+import { obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a lista mockada de colaboradores para buscar os dados do colaborador logado
-import { colaboradoresMock } from '../data/colaboradoresMock.js'
+import { colaboradoresMock, obterObrasDoColaborador } from '../data/colaboradoresMock.js'
 
 // Importa a função para encerrar a sessão do usuário
 import { encerrarSessao } from '../services/auth.js'
@@ -40,19 +40,10 @@ export default function Colaborador() {
     funcao: 'Mestre de Obras',
     // Telefone
     telefone: '(11) 98765-4321',
-    // Obras atribuídas
-    obrasAtribuidas: [1, 2],
   }
 
-  // Filtra ESTRITAMENTE as obras atribuídas a este colaborador fake (sem exibir obras de outros)
-  const minhasObras = obrasMock.filter((obra) => {
-    // Verifica se o ID 1 está presente na lista de colaboradores da obra
-    const estaNaListaDaObra = obra.colaboradores && obra.colaboradores.includes(idColaboradorLogado)
-    // Verifica se o ID da obra está presente na lista de obras atribuídas do colaborador
-    const estaNaListaDoColaborador = colaboradorLogado.obrasAtribuidas && colaboradorLogado.obrasAtribuidas.includes(obra.id)
-    // Retorna verdadeiro se qualquer um dos dois critérios for atendido
-    return estaNaListaDaObra || estaNaListaDoColaborador
-  })
+  // Obtém somente as obras cuja escala inclui o ID do colaborador conectado
+  const minhasObras = obterObrasDoColaborador(colaboradorLogado.id)
 
   // Quantidade total de obras atribuídas ao colaborador
   const totalMinhasObras = minhasObras.length

@@ -11,7 +11,7 @@ import Button from '../components/Button.jsx'
 import { obrasMock, formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a lista mockada de colaboradores para cruzar os dados dos membros da equipe
-import { colaboradoresMock } from '../data/colaboradoresMock.js'
+import { obterColaboradoresDaObra } from '../data/colaboradoresMock.js'
 
 // Importa a função de logout do serviço de autenticação
 import { encerrarSessao } from '../services/auth.js'
@@ -55,12 +55,10 @@ export default function Admin() {
   }
 
   // Função auxiliar para obter os nomes dos colaboradores alocados em uma obra
-  function obterNomesColaboradores(idsColaboradores = []) {
-    // Filtra a lista de colaboradores procurando quem possui ID presente na lista da obra
-    return colaboradoresMock
-      // Filtra os colaboradores pelos IDs correspondentes
-      .filter((colaborador) => idsColaboradores.includes(colaborador.id))
-      // Mapeia para retornar apenas o primeiro nome e sobrenome
+  function obterNomesColaboradores(obra) {
+    // Busca os colaboradores da obra usando a lista de IDs mantida na própria obra
+    return obterColaboradoresDaObra(obra)
+      // Mapeia os colaboradores encontrados para retornar somente seus nomes
       .map((colaborador) => colaborador.nome)
   }
 
@@ -278,7 +276,7 @@ export default function Admin() {
               // Obtém o estilo visual e cores correspondentes ao status da obra
               const cores = obterCoresStatus(obra.status)
               // Obtém os nomes dos colaboradores alocados nesta obra específica
-              const nomesColaboradores = obterNomesColaboradores(obra.colaboradores)
+              const nomesColaboradores = obterNomesColaboradores(obra)
 
               // Retorna a renderização do card reutilizável
               return (
