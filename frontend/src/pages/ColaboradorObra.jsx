@@ -11,7 +11,7 @@ import Button from '../components/Button.jsx'
 import { obrasMock, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a lista mockada de colaboradores para cruzar os dados do colaborador fake
-import { colaboradoresMock } from '../data/colaboradoresMock.js'
+import { colaboradoresMock, obterObrasDoColaborador } from '../data/colaboradoresMock.js'
 
 // Componente da página de Registro de Andamento da Obra pelo Colaborador (/colaborador/obra/:id)
 export default function ColaboradorObra() {
@@ -32,8 +32,6 @@ export default function ColaboradorObra() {
     nome: 'Carlos Eduardo da Silva',
     // Função operacional
     funcao: 'Mestre de Obras',
-    // Lista de obras atribuídas
-    obrasAtribuidas: [1, 2],
   }
 
   // Busca na lista mockada a obra cujo identificador coincide com o ID da rota
@@ -125,13 +123,8 @@ export default function ColaboradorObra() {
     )
   }
 
-  // Verifica se a obra encontrada está de fato atribuída ao colaborador fake de ID 1
-  const estaAtribuida = Boolean(
-    // Critério 1: o ID 1 está presente no array de colaboradores da obra
-    (obra.colaboradores && obra.colaboradores.includes(idColaboradorLogado)) ||
-    // Critério 2: o ID da obra está presente nas obras atribuídas do colaborador
-    (colaboradorLogado.obrasAtribuidas && colaboradorLogado.obrasAtribuidas.includes(obra.id))
-  )
+  // Verifica se a obra aparece na escala oficial deste colaborador
+  const estaAtribuida = obterObrasDoColaborador(colaboradorLogado.id).some((obraDoColaborador) => obraDoColaborador.id === obra.id)
 
   // Se a obra NÃO estiver atribuída a este colaborador, exibe aviso amigável de restrição de acesso
   if (!estaAtribuida) {

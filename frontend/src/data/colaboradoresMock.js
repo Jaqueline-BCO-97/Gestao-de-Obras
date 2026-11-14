@@ -1,6 +1,9 @@
 // Arquivo de dados simulados (mock) contendo a lista de colaboradores da empresa
 // Usado temporariamente na interface antes da integração definitiva com o banco de dados
 
+// Importa a lista de obras, que é a fonte única dos colaboradores escalados em cada obra
+import { obrasMock } from './obrasMock.js'
+
 // Lista de colaboradores fictícios cadastrados no sistema
 export const colaboradoresMock = [
   // Colaborador 1: Mestre de obras responsável pela coordenação direta no canteiro
@@ -13,8 +16,6 @@ export const colaboradoresMock = [
     funcao: 'Mestre de Obras',
     // Telefone celular formatado para contato
     telefone: '(11) 98765-4321',
-    // Lista de identificadores das obras em que o colaborador está alocado
-    obrasAtribuidas: [1, 2],
   },
   // Colaborador 2: Engenheira civil responsável pelo acompanhamento técnico
   {
@@ -26,8 +27,6 @@ export const colaboradoresMock = [
     funcao: 'Engenheira Civil',
     // Telefone celular formatado para contato
     telefone: '(11) 97654-3210',
-    // Lista de identificadores das obras atribuídas a ela
-    obrasAtribuidas: [1, 3],
   },
   // Colaborador 3: Eletricista chefe responsável pelas instalações prediais
   {
@@ -39,8 +38,6 @@ export const colaboradoresMock = [
     funcao: 'Eletricista Chefe',
     // Telefone celular formatado para contato
     telefone: '(11) 96543-2109',
-    // Lista de identificadores das obras atribuídas a ele
-    obrasAtribuidas: [2, 4],
   },
   // Colaborador 4: Técnica em edificações especialista em acabamentos e conferência
   {
@@ -52,10 +49,22 @@ export const colaboradoresMock = [
     funcao: 'Técnica em Edificações',
     // Telefone celular formatado para contato
     telefone: '(19) 95432-1098',
-    // Lista de identificadores das obras atribuídas a ela
-    obrasAtribuidas: [3, 4],
   },
 ]
+
+// Devolve as obras que incluem o identificador do colaborador na escala
+export function obterObrasDoColaborador(idColaborador) {
+  // Mantém somente as obras cuja lista de colaboradores contém o identificador informado
+  return obrasMock.filter((obra) => obra.colaboradores?.includes(idColaborador))
+}
+
+// Devolve os colaboradores escalados para a obra recebida
+export function obterColaboradoresDaObra(obra) {
+  // Lê os identificadores da obra, ou usa uma lista vazia se ela não tiver escala
+  const idsColaboradores = obra?.colaboradores || []
+  // Mantém somente os colaboradores cujos identificadores aparecem na lista da obra
+  return colaboradoresMock.filter((colaborador) => idsColaboradores.includes(colaborador.id))
+}
 
 // Exportação padrão do array de colaboradores para permitir diferentes estilos de importação
 export default colaboradoresMock

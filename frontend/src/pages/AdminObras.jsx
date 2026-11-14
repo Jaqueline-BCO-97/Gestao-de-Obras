@@ -14,7 +14,7 @@ import Button from '../components/Button.jsx'
 import { obrasMock, formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a lista de colaboradores mockados para exibir os membros da equipe alocada
-import { colaboradoresMock } from '../data/colaboradoresMock.js'
+import { obterColaboradoresDaObra } from '../data/colaboradoresMock.js'
 
 // Importa a função de logout para permitir ao administrador encerrar a sessão
 import { encerrarSessao } from '../services/auth.js'
@@ -59,10 +59,10 @@ export default function AdminObras() {
     navigate('/login')
   }
 
-  // Função auxiliar para buscar os colaboradores completos a partir de uma lista de IDs
-  function obterColaboradores(idsColaboradores = []) {
-    // Retorna os objetos de colaborador correspondentes aos IDs recebidos
-    return colaboradoresMock.filter((colaborador) => idsColaboradores.includes(colaborador.id))
+  // Função auxiliar para buscar os colaboradores completos que estão escalados na obra
+  function obterColaboradores(obra) {
+    // Usa a função compartilhada para consultar os IDs registrados na obra
+    return obterColaboradoresDaObra(obra)
   }
 
   // Função disparada ao clicar no botão visual "Ver" de uma obra
@@ -292,7 +292,7 @@ export default function AdminObras() {
                     // Obtém as cores do status da obra atual
                     const cores = obterCoresStatus(obra.status)
                     // Obtém os dados completos dos colaboradores alocados
-                    const colaboradoresAlocados = obterColaboradores(obra.colaboradores)
+                    const colaboradoresAlocados = obterColaboradores(obra)
 
                     // Retorna a linha da tabela
                     return (
