@@ -178,7 +178,9 @@ async function registrarAndamento({ obraId, empresaId, usuarioId, tipo, descrica
     if (!obra) return null;
 
     const funcionario = await tx.funcionario.findFirst({
-      where: { empresaId, usuarioId },
+      // A consulta exige ativo:true dentro da transação; uma escala antiga não
+      // deve permitir novo registro se o funcionário foi desativado.
+      where: { empresaId, usuarioId, ativo: true },
       select: {
         id: true,
         empresaId: true,

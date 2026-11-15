@@ -55,6 +55,7 @@ require.cache[usuarioRepositoryPath] = {
   loaded: true,
   exports: {
     buscarPerfilUsuarioPorId: async (id) => localizar(perfis, { id }),
+    buscarFuncionarioPorUsuarioId: async (usuarioId) => localizar(funcionarios, { usuarioId }),
     listarUsuarios: async () => [],
     buscarUsuarioPorEmail: async () => null,
     buscarUsuarioPorId: async () => null,

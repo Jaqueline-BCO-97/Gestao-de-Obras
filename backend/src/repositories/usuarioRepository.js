@@ -99,6 +99,23 @@ async function buscarPerfilUsuarioPorId(id) {
   });
 }
 
+// Consulta o cadastro profissional vinculado ao login, incluindo o estado de
+// atividade e a empresa para validar sessões de colaboradores em cada pedido.
+async function buscarFuncionarioPorUsuarioId(usuarioId) {
+  if (!isDbConfigured()) {
+    const erro = new Error(
+      "Banco não configurado. Defina DATABASE_URL no .env (PostgreSQL do Supabase)"
+    );
+    erro.code = "DATABASE_NOT_CONFIGURED";
+    throw erro;
+  }
+
+  return getPrisma().funcionario.findUnique({
+    where: { usuarioId },
+    select: { id: true, empresaId: true, ativo: true },
+  });
+}
+
 async function atualizarSenhaUsuario(id, novaSenhaHash) {
   if (!isDbConfigured()) {
     const erro = new Error(
@@ -129,5 +146,6 @@ module.exports = {
   buscarUsuarioPorEmail,
   buscarUsuarioPorId,
   buscarPerfilUsuarioPorId,
+  buscarFuncionarioPorUsuarioId,
   atualizarSenhaUsuario,
 };

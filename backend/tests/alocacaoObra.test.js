@@ -80,6 +80,7 @@ require.cache[userRepositoryPath] = {
       const { senhaHash, ...perfil } = encontrar(usuarios, { id }) || {};
       return perfil.id ? perfil : null;
     },
+    buscarFuncionarioPorUsuarioId: async (usuarioId) => encontrar(funcionarios, { usuarioId }) || null,
     listarUsuarios: async () => [],
     buscarUsuarioPorEmail: async () => null,
     buscarUsuarioPorId: async () => null,

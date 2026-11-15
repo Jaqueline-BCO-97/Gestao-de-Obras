@@ -14,6 +14,7 @@ const {
   buscarUsuarioPorEmail,
   buscarUsuarioPorId,
   buscarPerfilUsuarioPorId,
+  buscarFuncionarioPorUsuarioId,
   atualizarSenhaUsuario,
   criarUsuarioColaborador,
 } = require("./src/repositories/usuarioRepository");
@@ -73,6 +74,19 @@ app.post("/auth/login", async (req, res) => {
       return res.status(401).json({ erro: "Credenciais inválidas" });
     }
 
+    if (usuario.tipo === "COLABORADOR") {
+      const funcionario = await buscarFuncionarioPorUsuarioId(usuario.id);
+      // Usa a mesma resposta genérica de credenciais para não revelar se um
+      // colaborador existe, foi desativado ou está associado a outra empresa.
+      if (
+        !funcionario ||
+        funcionario.ativo !== true ||
+        funcionario.empresaId !== usuario.empresaId
+      ) {
+        return res.status(401).json({ erro: "Credenciais inválidas" });
+      }
+    }
+
     const secret = process.env.JWT_SECRET;
     if (!secret) {
       console.error("JWT_SECRET não configurado nas variáveis de ambiente");
@@ -103,8 +117,11 @@ app.post("/auth/login", async (req, res) => {
       },
     });
   } catch (erro) {
-    if (erro.code === "DATABASE_NOT_CONFIGURED") {
-      return res.status(503).json({ erro: erro.message });
+    if (
+      erro.code === "DATABASE_NOT_CONFIGURED" ||
+      (typeof erro.name === "string" && erro.name.startsWith("PrismaClient"))
+    ) {
+      return res.status(503).json({ erro: "Não foi possível validar as credenciais no momento" });
     }
     console.error("Erro ao realizar login:", erro.message);
     return res.status(500).json({ erro: "Erro ao realizar login" });
