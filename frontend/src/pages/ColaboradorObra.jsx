@@ -8,7 +8,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import Button from '../components/Button.jsx'
 
 // Importa a lista mockada de obras e a função auxiliar de cores de status
-import { obrasMock, obterCoresStatus } from '../data/obrasMock.js'
+import { obrasMock, obterCoresStatus, filtrarEventosPorPerfil, ROTULOS_EVENTO } from '../data/obrasMock.js'
 
 // Importa a lista mockada de colaboradores para cruzar os dados do colaborador fake
 import { colaboradoresMock, obterObrasDoColaborador } from '../data/colaboradoresMock.js'
@@ -57,7 +57,7 @@ export default function ColaboradorObra() {
     // Se a obra possuir histórico prévio na timeline, inicializa com esses dados convertidos
     if (obra?.timeline && Array.isArray(obra.timeline)) {
       // Inverte para colocar os mais recentes no topo da lista
-      return [...obra.timeline].reverse().map((item, index) => ({
+      return [...filtrarEventosPorPerfil(obra.timeline, 'COLABORADOR')].reverse().map((item, index) => ({
         // Identificador exclusivo fictício para cada item da timeline existente
         id: `timeline-${index}`,
         // Tipo do marco ou registro
@@ -67,7 +67,7 @@ export default function ColaboradorObra() {
         // Data formatada de ocorrência
         dataHora: item.data,
         // Nome do responsável registrado
-        autor: colaboradorLogado.nome,
+        autor: item.autor,
         // Lista de fotos vazia para registros históricos anteriores
         fotos: [],
       }))
@@ -534,7 +534,7 @@ export default function ColaboradorObra() {
                     {/* Linha superior com tipo e data/hora */}
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                       <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${corBadge}`}>
-                        {reg.tipo}
+                        {ROTULOS_EVENTO[reg.tipo] || reg.tipo}
                       </span>
                       <span className="text-[11px] text-slate-400 font-medium">
                         {reg.dataHora}
