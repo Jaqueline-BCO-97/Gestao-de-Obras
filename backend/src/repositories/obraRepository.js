@@ -14,6 +14,149 @@ function exigirBancoConfigurado() {
   }
 }
 
+// Cria erros de domínio que as rotas convertem em respostas HTTP previsíveis.
+function erroAlocacao(code, message) {
+  const erro = new Error(message);
+  erro.code = code;
+  return erro;
+}
+
+// Executa mudanças de escala em transação serializável para reduzir disputas
+// concorrentes, especialmente duas tentativas simultâneas da mesma alocação.
+function emTransacaoSerializavel(prisma, operacao) {
+  return prisma.$transaction(operacao, { isolationLevel: "Serializable" });
+}
+
+async function listarAlocacoesDaObra(obraId, empresaId) {
+  exigirBancoConfigurado();
+  const prisma = getPrisma();
+  const obra = await prisma.obra.findFirst({
+    where: { id: obraId, empresaId },
+    select: { id: true },
+  });
+  if (!obra) return null;
+
+  const alocacoes = await prisma.obraEscala.findMany({
+    where: { obraId, obra: { empresaId }, funcionario: { empresaId } },
+    include: {
+      funcionario: {
+        select: {
+          id: true,
+          nome: true,
+          funcao: true,
+          nivel: true,
+          usuarioId: true,
+        },
+      },
+      alteradoPor: { select: { id: true, nome: true } },
+    },
+    orderBy: [{ dataInicio: "desc" }, { id: "desc" }],
+  });
+
+  return {
+    alocacoesAbertas: alocacoes.filter((alocacao) => alocacao.dataFim === null),
+    historico: alocacoes.filter((alocacao) => alocacao.dataFim !== null),
+  };
+}
+
+async function alocarFuncionario({ obraId, empresaId, funcionarioId, administradorId }) {
+  exigirBancoConfigurado();
+  const prisma = getPrisma();
+
+  return emTransacaoSerializavel(prisma, async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, empresaId }, select: { id: true } });
+    if (!obra) throw erroAlocacao("OBRA_NAO_ENCONTRADA", "Obra não encontrada");
+
+    const funcionario = await tx.funcionario.findFirst({
+      where: { id: funcionarioId, empresaId },
+      select: {
+        id: true,
+        nome: true,
+        funcao: true,
+        nivel: true,
+        ativo: true,
+        empresaId: true,
+        usuarioId: true,
+        usuario: { select: { empresaId: true, tipo: true } },
+      },
+    });
+    if (!funcionario) throw erroAlocacao("FUNCIONARIO_NAO_ENCONTRADO", "Funcionário não encontrado nesta empresa");
+    if (funcionario.nivel !== "RESPONSAVEL") {
+      throw erroAlocacao("NIVEL_FUNCIONARIO_INVALIDO", "Somente funcionários de nível Responsável podem ser alocados");
+    }
+    if (!funcionario.ativo) throw erroAlocacao("FUNCIONARIO_INATIVO", "Funcionário inativo não pode ser alocado");
+
+    // usuarioId é opcional no schema. Quando há login vinculado, ele também
+    // precisa pertencer à empresa e ter perfil COLABORADOR para não conceder
+    // acesso indireto a outro perfil ou empresa.
+    if (funcionario.usuarioId && (
+      !funcionario.usuario ||
+      funcionario.usuario.empresaId !== empresaId ||
+      funcionario.usuario.tipo !== "COLABORADOR"
+    )) {
+      throw erroAlocacao("VINCULO_USUARIO_INVALIDO", "O login vinculado ao funcionário não é um colaborador válido desta empresa");
+    }
+
+    const duplicada = await tx.obraEscala.findFirst({
+      where: { obraId, funcionarioId, dataFim: null },
+      select: { id: true },
+    });
+    if (duplicada) throw erroAlocacao("ALOCACAO_DUPLICADA", "Funcionário já possui alocação aberta nesta obra");
+
+    return tx.obraEscala.create({
+      data: {
+        obraId,
+        funcionarioId,
+        dataInicio: new Date(),
+        alteradoPorId: administradorId,
+      },
+      include: {
+        funcionario: { select: { id: true, nome: true, funcao: true, nivel: true } },
+        alteradoPor: { select: { id: true, nome: true } },
+      },
+    });
+  });
+}
+
+async function encerrarAlocacao({ obraId, empresaId, alocacaoId, administradorId, motivo }) {
+  exigirBancoConfigurado();
+  const prisma = getPrisma();
+
+  return emTransacaoSerializavel(prisma, async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, empresaId }, select: { id: true } });
+    if (!obra) throw erroAlocacao("OBRA_NAO_ENCONTRADA", "Obra não encontrada");
+
+    const alocacao = await tx.obraEscala.findFirst({
+      where: { id: alocacaoId, obraId, obra: { empresaId } },
+      select: { id: true, dataFim: true },
+    });
+    if (!alocacao) throw erroAlocacao("ALOCACAO_NAO_ENCONTRADA", "Alocação não encontrada nesta obra");
+    if (alocacao.dataFim) throw erroAlocacao("ALOCACAO_JA_ENCERRADA", "Esta alocação já foi encerrada");
+
+    // O filtro adicional dataFim:null protege contra duas solicitações de
+    // encerramento concorrentes sem apagar o registro histórico.
+    const atualizacao = await tx.obraEscala.updateMany({
+      where: { id: alocacaoId, obraId, dataFim: null },
+      data: {
+        dataFim: new Date(),
+        alteradoPorId: administradorId,
+        ...(motivo ? { motivo } : {}),
+      },
+    });
+    if (atualizacao.count !== 1) {
+      throw erroAlocacao("ALOCACAO_JA_ENCERRADA", "Esta alocação já foi encerrada");
+    }
+
+    return tx.obraEscala.findUnique({
+      where: { id: alocacaoId },
+      include: {
+        funcionario: { select: { id: true, nome: true, funcao: true, nivel: true } },
+        alteradoPor: { select: { id: true, nome: true } },
+      },
+    });
+  });
+}
+
 // Define os relacionamentos necessários para formar a resposta do frontend.
 function incluirDadosDaObra(empresaId) {
   return {
@@ -147,4 +290,11 @@ async function criarObra({ empresaId, nome, descricao, endereco }) {
 }
 
 // Exporta as funções usadas pelas rotas do servidor.
-module.exports = { listarObras, buscarObraPorId, criarObra };
+module.exports = {
+  listarObras,
+  buscarObraPorId,
+  criarObra,
+  listarAlocacoesDaObra,
+  alocarFuncionario,
+  encerrarAlocacao,
+};

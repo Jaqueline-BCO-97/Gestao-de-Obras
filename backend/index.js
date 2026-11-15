@@ -21,6 +21,9 @@ const {
   listarObras,
   buscarObraPorId,
   criarObra,
+  listarAlocacoesDaObra,
+  alocarFuncionario,
+  encerrarAlocacao,
 } = require("./src/repositories/obraRepository");
 const authMiddleware = require("./src/middlewares/authMiddleware");
 const exigirPapel = require("./src/middlewares/exigirPapel");
@@ -230,6 +233,93 @@ app.get("/obras/:id", authMiddleware, exigirEmpresaDoToken, async (req, res) => 
     return res.status(500).json({ erro: "Erro ao consultar obra" });
   }
 });
+
+// Consulta separadamente as escalas abertas e encerradas, sempre na empresa
+// do administrador autenticado para manter o histórico fora do alcance alheio.
+app.get("/obras/:id/colaboradores", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const alocacoes = await listarAlocacoesDaObra(req.params.id, req.usuario.empresaId);
+    if (!alocacoes) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.json(alocacoes);
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    console.error("Erro ao consultar alocações da obra:", erro.message);
+    return res.status(500).json({ erro: "Erro ao consultar alocações da obra" });
+  }
+});
+
+// Apenas administradores podem abrir uma escala; obra e funcionário são
+// validados no repositório contra a empresa obtida da sessão, nunca do body.
+app.post("/obras/:id/colaboradores", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const { funcionarioId } = req.body || {};
+    if (typeof funcionarioId !== "string" || !funcionarioId.trim()) {
+      return res.status(400).json({ erro: "funcionarioId é obrigatório" });
+    }
+
+    const alocacao = await alocarFuncionario({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      funcionarioId: funcionarioId.trim(),
+      administradorId: req.usuario.id,
+    });
+    return res.status(201).json({ alocacao });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    const respostas = {
+      OBRA_NAO_ENCONTRADA: [404, "Obra não encontrada"],
+      FUNCIONARIO_NAO_ENCONTRADO: [404, "Funcionário não encontrado nesta empresa"],
+      NIVEL_FUNCIONARIO_INVALIDO: [400, "Somente funcionários de nível Responsável podem ser alocados"],
+      FUNCIONARIO_INATIVO: [409, "Funcionário inativo não pode ser alocado"],
+      VINCULO_USUARIO_INVALIDO: [409, "O login vinculado ao funcionário não é um colaborador válido desta empresa"],
+      ALOCACAO_DUPLICADA: [409, "Funcionário já possui alocação aberta nesta obra"],
+    };
+    if (respostas[erro.code]) {
+      const [status, mensagem] = respostas[erro.code];
+      return res.status(status).json({ erro: mensagem });
+    }
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A alocação conflitou com outra alteração. Tente novamente" });
+    console.error("Erro ao alocar funcionário na obra:", erro.message);
+    return res.status(500).json({ erro: "Erro ao alocar funcionário na obra" });
+  }
+});
+
+// PATCH encerra a escala sem excluir o registro, preservando a trilha histórica.
+app.patch("/obras/:id/colaboradores/:alocacaoId", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const { motivo } = req.body || {};
+    if (motivo !== undefined && motivo !== null && typeof motivo !== "string") {
+      return res.status(400).json({ erro: "motivo deve ser texto" });
+    }
+    if (typeof motivo === "string" && motivo.trim().length > 500) {
+      return res.status(400).json({ erro: "motivo deve ter no máximo 500 caracteres" });
+    }
+
+    const alocacao = await encerrarAlocacao({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      alocacaoId: req.params.alocacaoId,
+      administradorId: req.usuario.id,
+      motivo: typeof motivo === "string" ? (motivo.trim() || null) : null,
+    });
+    return res.json({ alocacao });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    const respostas = {
+      OBRA_NAO_ENCONTRADA: [404, "Obra não encontrada"],
+      ALOCACAO_NAO_ENCONTRADA: [404, "Alocação não encontrada nesta obra"],
+      ALOCACAO_JA_ENCERRADA: [409, "Esta alocação já foi encerrada"],
+    };
+    if (respostas[erro.code]) {
+      const [status, mensagem] = respostas[erro.code];
+      return res.status(status).json({ erro: mensagem });
+    }
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A alocação conflitou com outra alteração. Tente novamente" });
+    console.error("Erro ao encerrar alocação:", erro.message);
+    return res.status(500).json({ erro: "Erro ao encerrar alocação" });
+  }
+});
+
 
 // Alteração da própria senha do usuário autenticado
 app.patch("/usuarios/me/senha", authMiddleware, async (req, res) => {
