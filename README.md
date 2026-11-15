@@ -31,6 +31,7 @@ Para conferir se a conexão com o banco está funcionando:
 cd backend
 npm run test-connection
 ```
+Contrato das rotas atualmente implementadas: [`docs/api-contract.md`](docs/api-contract.md).
 
 **Configuração de Ambiente (.env)**:
 O backend precisa da string de conexão do banco (Supabase) e do segredo do JWT. O arquivo `backend/.env.example` traz três variáveis:
@@ -49,18 +50,19 @@ O backend precisa da string de conexão do banco (Supabase) e do segredo do JWT.
 cd backend
 npx prisma migrate dev
 ```
-Migrations existentes: `init_usuarios` (Empresa e Usuário) e `add_obras` (Obra).
+Migrations existentes: `init_usuarios`, `add_obras` e `modelo_v2_1`.
 
 ### Acessos de demonstração
 
-As duas contas abaixo pertencem à empresa **Empresa Demo** e usam a senha `Demo@12345`:
+As contas abaixo pertencem à empresa **Empresa Demo** e usam a senha `Demo@12345`:
 
 | Perfil | E-mail | Senha |
 |---|---|---|
 | ADMIN | `admin@obramaster.demo` | `Demo@12345` |
 | CLIENTE | `cliente@obramaster.demo` | `Demo@12345` |
+| COLABORADOR | `colaborador@obramaster.demo` | `Demo@12345` |
 
-A tela de Login tem atalhos para entrar direto com essas duas contas. Não existe conta de demonstração de COLABORADOR: para criar uma, entre como ADMIN e use `POST /colaboradores`.
+A tela de Login tem atalhos para ADMIN, CLIENTE e COLABORADOR. O seed cria esses três usuários de demonstração e seus dados de exemplo.
 
 > **Aviso:** crie essas contas somente em banco de desenvolvimento ou demonstração. As credenciais são públicas e não devem ser usadas em produção. O seed se recusa a rodar quando `NODE_ENV=production`.
 
@@ -83,6 +85,7 @@ TailwindCSS já está instalado e configurado no frontend.
 cd backend
 npm test
 ```
+O teste de troca de senha cria e remove usuário no banco apontado por `DATABASE_URL`. Execute-o somente com um banco isolado de testes; não aponte `DATABASE_URL` para desenvolvimento ou produção.
 O frontend ainda não tem testes configurados. Detalhes na seção [Testes](#-testes).
 
 ---

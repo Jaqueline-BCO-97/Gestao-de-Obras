@@ -91,6 +91,7 @@ async function buscarPerfilUsuarioPorId(id) {
     where: { id },
     select: {
       id: true,
+      empresaId: true,
       nome: true,
       email: true,
       tipo: true,

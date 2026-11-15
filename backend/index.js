@@ -125,7 +125,7 @@ app.get("/auth/me", authMiddleware, async (req, res) => {
 });
 
 // Lista usuários do banco (model Usuario do Prisma) — rota privada protegida
-app.get("/usuarios", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
+app.get("/usuarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
   try {
     const usuarios = await listarUsuarios(req.usuario.empresaId);
     res.json(usuarios);
@@ -202,7 +202,8 @@ app.post("/obras", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), a
 
 app.get("/obras", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
   try {
-    const obras = await listarObras(req.usuario.empresaId);
+    // Consulta as obras da empresa já aplicando usuário e perfil do token.
+    const obras = await listarObras(req.usuario.empresaId, req.usuario.id, req.usuario.tipo);
     return res.json(obras);
   } catch (erro) {
     if (erro.code === "DATABASE_NOT_CONFIGURED") {
@@ -215,9 +216,12 @@ app.get("/obras", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
 
 app.get("/obras/:id", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
   try {
-    const obra = await buscarObraPorId(req.params.id, req.usuario.empresaId);
+    // Busca a obra dentro da empresa e do escopo permitido ao perfil.
+    const obra = await buscarObraPorId(req.params.id, req.usuario.empresaId, req.usuario.id, req.usuario.tipo);
+    // Usa a mesma mensagem para obra ausente e obra fora do escopo.
     if (!obra) return res.status(404).json({ erro: "Obra não encontrada" });
-    return res.json({ obra });
+    // Devolve diretamente a obra no formato esperado pelo frontend.
+    return res.json(obra);
   } catch (erro) {
     if (erro.code === "DATABASE_NOT_CONFIGURED") {
       return res.status(503).json({ erro: erro.message });

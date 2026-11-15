@@ -1,11 +1,12 @@
 const jwt = require("jsonwebtoken");
+const { buscarPerfilUsuarioPorId } = require("../repositories/usuarioRepository");
 
 /**
  * Middleware de autenticação JWT.
  * Valida o cabeçalho "Authorization: Bearer <token>" e injeta
  * os dados decodificados do usuário em req.usuario.
  */
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
@@ -30,10 +31,36 @@ function authMiddleware(req, res, next) {
   }
 
   try {
-    const decoded = jwt.verify(token, secret);
-    req.usuario = decoded;
+    const decoded = jwt.verify(token, secret, { algorithms: ["HS256"] });
+    if (
+      typeof decoded.id !== "string" ||
+      typeof decoded.email !== "string" ||
+      typeof decoded.tipo !== "string" ||
+      typeof decoded.empresaId !== "string"
+    ) {
+      return res.status(401).json({ erro: "Token inválido" });
+    }
+
+    const usuarioAtual = await buscarPerfilUsuarioPorId(decoded.id);
+    if (
+      !usuarioAtual ||
+      usuarioAtual.email !== decoded.email ||
+      usuarioAtual.tipo !== decoded.tipo ||
+      usuarioAtual.empresaId !== decoded.empresaId
+    ) {
+      return res.status(401).json({ erro: "Sessão inválida ou expirada" });
+    }
+
+    req.usuario = usuarioAtual;
     return next();
   } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") {
+      return res.status(503).json({ erro: erro.message });
+    }
+    if (erro.name === "PrismaClientKnownRequestError" || erro.name === "PrismaClientInitializationError") {
+      console.error("Erro ao validar usuário autenticado:", erro.message);
+      return res.status(503).json({ erro: "Não foi possível validar a sessão" });
+    }
     if (erro.name === "TokenExpiredError") {
       return res.status(401).json({ erro: "Token expirado" });
     }
