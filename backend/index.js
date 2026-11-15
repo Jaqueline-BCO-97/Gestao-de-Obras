@@ -24,6 +24,7 @@ const {
   listarAlocacoesDaObra,
   alocarFuncionario,
   encerrarAlocacao,
+  registrarAndamento,
 } = require("./src/repositories/obraRepository");
 const authMiddleware = require("./src/middlewares/authMiddleware");
 const exigirPapel = require("./src/middlewares/exigirPapel");
@@ -320,6 +321,51 @@ app.patch("/obras/:id/colaboradores/:alocacaoId", authMiddleware, exigirEmpresaD
   }
 });
 
+// Somente colaborador com escala aberta pode registrar progresso na obra.
+// A foto retorna 501 até o projeto configurar um armazenamento persistente.
+app.post("/obras/:id/andamento", authMiddleware, exigirEmpresaDoToken, exigirPapel("COLABORADOR"), async (req, res) => {
+  try {
+    const corpo = req.body || {};
+    if (req.is("multipart/form-data") || corpo.foto != null || corpo.fotoUrl != null) {
+      return res.status(501).json({
+        erro: "Upload de fotos indisponível: o backend ainda não possui armazenamento de arquivos configurado",
+      });
+    }
+
+    const descricao = corpo.descricao;
+    const tiposPermitidos = ["ANOTACAO", "ATUALIZACAO", "OCORRENCIA"];
+    const tipo = corpo.tipo === undefined ? "ATUALIZACAO" : corpo.tipo;
+    if (typeof descricao !== "string" || !descricao.trim()) {
+      return res.status(400).json({ erro: "Descrição do andamento é obrigatória" });
+    }
+    if (descricao.trim().length > 2000) {
+      return res.status(400).json({ erro: "Descrição deve ter no máximo 2000 caracteres" });
+    }
+    if (typeof tipo !== "string" || !tiposPermitidos.includes(tipo)) {
+      return res.status(400).json({ erro: `tipo deve ser um destes valores: ${tiposPermitidos.join(", ")}` });
+    }
+
+    const evento = await registrarAndamento({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      usuarioId: req.usuario.id,
+      tipo,
+      descricao: descricao.trim(),
+    });
+    if (!evento) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.status(201).json({ evento });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "COLABORADOR_SEM_VINCULO" || erro.code === "COLABORADOR_SEM_ALOCACAO") {
+      return res.status(403).json({ erro: erro.message });
+    }
+    if (erro.code === "P2034") {
+      return res.status(409).json({ erro: "A alocação foi alterada durante o registro. Atualize a obra e tente novamente" });
+    }
+    console.error("Erro ao registrar andamento da obra:", erro.message);
+    return res.status(500).json({ erro: "Erro ao registrar andamento da obra" });
+  }
+});
 
 // Alteração da própria senha do usuário autenticado
 app.patch("/usuarios/me/senha", authMiddleware, async (req, res) => {

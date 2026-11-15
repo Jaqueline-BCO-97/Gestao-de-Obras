@@ -21,6 +21,13 @@ function erroAlocacao(code, message) {
   return erro;
 }
 
+// Padroniza falhas de autorização/validação do registro de andamento.
+function erroAndamento(code, message) {
+  const erro = new Error(message);
+  erro.code = code;
+  return erro;
+}
+
 // Executa mudanças de escala em transação serializável para reduzir disputas
 // concorrentes, especialmente duas tentativas simultâneas da mesma alocação.
 function emTransacaoSerializavel(prisma, operacao) {
@@ -155,6 +162,63 @@ async function encerrarAlocacao({ obraId, empresaId, alocacaoId, administradorId
       },
     });
   });
+}
+
+async function registrarAndamento({ obraId, empresaId, usuarioId, tipo, descricao }) {
+  exigirBancoConfigurado();
+  const prisma = getPrisma();
+
+  // Autorizar e gravar dentro da mesma transação evita aceitar uma obra de
+  // outra empresa ou uma escala que já tenha sido encerrada durante a chamada.
+  return prisma.$transaction(async (tx) => {
+    const obra = await tx.obra.findFirst({
+      where: { id: obraId, empresaId },
+      select: { id: true },
+    });
+    if (!obra) return null;
+
+    const funcionario = await tx.funcionario.findFirst({
+      where: { empresaId, usuarioId },
+      select: {
+        id: true,
+        empresaId: true,
+        usuarioId: true,
+        usuario: { select: { empresaId: true, tipo: true } },
+      },
+    });
+    if (
+      !funcionario ||
+      funcionario.empresaId !== empresaId ||
+      funcionario.usuarioId !== usuarioId ||
+      funcionario.usuario?.empresaId !== empresaId ||
+      funcionario.usuario?.tipo !== "COLABORADOR"
+    ) {
+      throw erroAndamento("COLABORADOR_SEM_VINCULO", "Usuário não possui cadastro de colaborador válido nesta empresa");
+    }
+
+    const alocacaoAtiva = await tx.obraEscala.findFirst({
+      where: { obraId, funcionarioId: funcionario.id, dataFim: null },
+      select: { id: true },
+    });
+    if (!alocacaoAtiva) {
+      throw erroAndamento("COLABORADOR_SEM_ALOCACAO", "Colaborador não está alocado atualmente nesta obra");
+    }
+
+    return tx.obraEvento.create({
+      data: {
+        obraId,
+        empresaId,
+        usuarioId,
+        tipo,
+        descricao,
+        // O progresso registrado pelo colaborador faz parte da timeline do cliente.
+        visivelParaCliente: true,
+        // O upload permanece desabilitado até existir armazenamento confiável.
+        fotoUrl: null,
+      },
+      include: { usuario: { select: { id: true, nome: true } } },
+    });
+  }, { isolationLevel: "Serializable" });
 }
 
 // Define os relacionamentos necessários para formar a resposta do frontend.
@@ -297,4 +361,5 @@ module.exports = {
   listarAlocacoesDaObra,
   alocarFuncionario,
   encerrarAlocacao,
+  registrarAndamento,
 };

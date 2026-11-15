@@ -16,6 +16,7 @@ Os papéis válidos são `ADMIN`, `CLIENTE` e `COLABORADOR`.
 | `POST /obras` | ADMIN | Cria obra na empresa do token. Recebe `nome` e, opcionalmente, `descricao` e `endereco`. |
 | `GET /obras` | Autenticado | Lista obras dentro do escopo do perfil. |
 | `GET /obras/:id` | Autenticado | Consulta obra dentro do escopo; obra inexistente ou fora dele retorna 404. |
+| `POST /obras/:id/andamento` | COLABORADOR alocado | Registra anotação/update/ocorrência na timeline. Upload de foto retorna 501 enquanto não houver armazenamento configurado. |
 | `PATCH /usuarios/me/senha` | Autenticado | Troca a própria senha com `senhaAtual` e `novaSenha`; aceita também nomes snake_case. |
 
 Login retorna 400 para campos ausentes, 401 para credenciais inválidas e 503 quando o banco não está configurado. Cada requisição autenticada valida o JWT e confere o usuário, e-mail, papel e empresa atuais no banco. Tokens deixam de valer após remoção do usuário ou alteração de e-mail, papel ou empresa.
@@ -33,4 +34,19 @@ O objeto de obra usa os campos `id`, `titulo`, `cliente`, `colaboradores`, `ende
 
 ## Ainda não implementado
 
-Cadastro/convite de clientes, alteração de status, pagamentos, andamento e upload de fotos, agendamentos e rotas de tabela de preços pertencem ao escopo planejado do produto, mas não existem como endpoints no backend atual.
+Cadastro/convite de clientes, alteração de status, pagamentos, upload de fotos, agendamentos e rotas de tabela de preços pertencem ao escopo planejado do produto, mas não existem como endpoints no backend atual. O endpoint de andamento registra eventos textuais; fotos dependem de armazenamento persistente ainda não configurado.
+
+### Registro de andamento
+
+`POST /obras/:id/andamento` exige `Authorization: Bearer <token>` de um usuário `COLABORADOR` que tenha uma escala aberta na obra. Exemplo de entrada:
+
+```json
+{
+  "tipo": "ANOTACAO",
+  "descricao": "Alvenaria do primeiro pavimento concluída."
+}
+```
+
+`tipo` é opcional e assume `ATUALIZACAO`; os valores aceitos são `ANOTACAO`, `ATUALIZACAO` e `OCORRENCIA`. `descricao` é obrigatória e limitada a 2000 caracteres. Sucesso retorna HTTP 201 com `{ "evento": { ... } }`; o evento é persistido com autor, empresa, timestamp e `visivelParaCliente: true`. Usuário sem alocação aberta recebe 403, obra inexistente ou de outra empresa recebe 404 e payload inválido recebe 400.
+
+O backend não possui SDK, credenciais ou bucket de armazenamento. Enviar `foto`, `fotoUrl` ou `multipart/form-data` retorna HTTP 501 sem persistir evento parcial. Para completar foto, configurar armazenamento persistente (por exemplo, Supabase Storage) e definir bucket privado/público, política de acesso e estratégia de URL antes de implementar o upload.

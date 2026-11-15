@@ -327,13 +327,13 @@ POST  /colaboradores             (cadastra colaborador — ADMIN)
 POST  /obras                     (cria obra na empresa do token — ADMIN)
 GET   /obras                     (lista obras da empresa — protegida)
 GET   /obras/:id                 (detalhe da obra, filtrado por empresa — protegida)
+POST  /obras/:id/andamento       (anotação/update/ocorrência — Colaborador alocado; upload de foto pendente)
 ```
 
 ## 🔜 Planejados
 ```
 POST  /auth/register             (cadastro de empresa + admin)
 PATCH /obras/:id/status
-POST  /obras/:id/andamento       (foto/anotação — Colaborador)
 POST  /obras/:id/pagamento       (Admin)
 POST  /obras/:id/colaboradores   (alocação — Admin)
 GET   /precos
@@ -400,6 +400,8 @@ Cobre atualmente o fluxo de troca de senha (`/usuarios/me/senha`). Ainda faltam 
 - [ ] Acompanhamento de obra pelo Cliente
 - [ ] Histórico/log de auditoria
 - [ ] Testes de isolamento entre empresas, testes de frontend e CI
+
+> O endpoint de andamento textual foi implementado para colaboradores alocados. O upload de fotos permanece pendente porque ainda não há armazenamento de arquivos configurado no backend.
 
 ## 🚀 Fase 2: Melhorias (pós-entrega)
 - [ ] Chat direto entre dono e cliente
