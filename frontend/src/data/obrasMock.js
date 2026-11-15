@@ -24,13 +24,13 @@ export const obrasMock = [
     // Identificador único da obra no sistema
     id: 1,
     // Título ou nome fantasia descritivo da obra
-    titulo: 'Construção Residencial Alphaville',
+    titulo: 'Construção Residencial Bela Vista',
     // Nome do cliente proprietário da obra
     cliente: 'Beatriz Silveira',
     // Lista de identificadores dos colaboradores alocados nesta obra
     colaboradores: [1, 2],
     // Endereço completo onde a obra será realizada
-    endereco: 'Alameda dos Ipês, 120 - Residencial Alphaville, Barueri - SP',
+    endereco: 'Rua das Palmeiras, 120 - Gonzaga, Santos - SP',
     // Situação atual da obra no ciclo de vida da construção
     status: 'Agendada',
     // Valor total do contrato da obra em reais (formato numérico)
@@ -161,7 +161,7 @@ export const obrasMock = [
     // Lista de identificadores dos colaboradores alocados nesta obra
     colaboradores: [1, 3],
     // Endereço do local da obra
-    endereco: 'Rua Oscar Freire, 850 - Apto 71, Cerqueira César, São Paulo - SP',
+    endereco: 'Avenida Brasil, 850 - Itararé, São Vicente - SP',
     // Status indicando que os serviços estão sendo executados no momento
     status: 'Em andamento',
     // Valor total do contrato
@@ -308,7 +308,7 @@ export const obrasMock = [
     // Lista de identificadores dos colaboradores alocados nesta obra
     colaboradores: [2, 4],
     // Endereço da obra
-    endereco: 'Av. Atlântica, 2140 - Copacabana, Rio de Janeiro - RJ',
+    endereco: 'Rua Bahia, 2140 - Boqueirão, Praia Grande - SP',
     // Status indicando que a obra física terminou e aguarda vistoria
     status: 'Aguardando conferência',
     // Valor total do contrato
@@ -433,13 +433,13 @@ export const obrasMock = [
     // Identificador único da obra
     id: 4,
     // Título da obra
-    titulo: 'Espaço Gourmet e Área de Lazer Campinas',
+    titulo: 'Espaço Gourmet e Área de Lazer Edifício Acácias',
     // Nome do cliente proprietário da obra
     cliente: 'Fernanda Cristina Rocha',
     // Lista de identificadores dos colaboradores alocados nesta obra
     colaboradores: [3, 4],
     // Endereço da obra
-    endereco: 'Rua das Acácias, 45 - Parque Prado, Campinas - SP',
+    endereco: 'Rua das Acácias, 45 - Ponta da Praia, Santos - SP',
     // Status de obra 100% finalizada e entregue
     status: 'Concluída',
     // Valor total do contrato
@@ -560,6 +560,41 @@ export const obrasMock = [
     ],
   },
 ]
+
+// Confirma a conclusão somente quando a obra aguarda conferência e ainda não foi confirmada.
+export function confirmarConclusao(idObra) {
+  // Localiza a obra pelo identificador recebido, aceitando números ou textos.
+  const obra = obrasMock.find((item) => String(item.id) === String(idObra))
+  // Encerra a função sem alterar dados se a obra não existir, tiver outro status ou já estiver confirmada.
+  if (!obra || obra.status !== 'Aguardando conferência' || obra.conclusaoConfirmada === true) return false
+  // Registra que o cliente confirmou a conclusão da obra.
+  obra.conclusaoConfirmada = true
+  // Captura a data e a hora atuais no fuso horário local do navegador.
+  const agora = new Date()
+  // Formata a data atual no padrão dia/mês/ano usado pelos demais eventos.
+  const data = agora.toLocaleDateString('pt-BR')
+  // Formata a hora atual no padrão de 24 horas.
+  const hora = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  // Adiciona o registro de confirmação ao histórico da obra.
+  obra.timeline.push({
+    // Cria um identificador único para o evento usando o horário atual.
+    id: `obra-${obra.id}-confirmacao-${agora.getTime()}`,
+    // Guarda a data em que o cliente confirmou a conclusão.
+    data,
+    // Guarda a hora em que o cliente confirmou a conclusão.
+    hora,
+    // Registra o nome do cliente como autor do evento.
+    autor: obra.cliente,
+    // Permite que o cliente veja sua própria confirmação.
+    visivelParaCliente: true,
+    // Classifica a confirmação como uma mudança de status.
+    tipo: 'status',
+    // Descreve a ação realizada pelo cliente.
+    descricao: 'Cliente confirmou a conclusão da obra',
+  })
+  // Informa que a confirmação foi registrada com sucesso.
+  return true
+}
 
 // Função auxiliar que formata um valor numérico para o padrão de moeda brasileiro (R$ 0,00)
 export function formatarMoeda(valor) {

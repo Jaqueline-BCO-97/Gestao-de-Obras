@@ -12,6 +12,8 @@ import Cliente from './pages/Cliente.jsx'
 
 // Importa a página temporária de detalhes da obra com parâmetro :id
 import ClienteObra from './pages/ClienteObra.jsx'
+// Importa a página temporária de pagamento final do cliente.
+import ClientePagamento from './pages/ClientePagamento.jsx'
 
 // Importa a página temporária do painel do administrador
 import Admin from './pages/Admin.jsx'
@@ -58,6 +60,16 @@ export default function App() {
           element={
             <ProtectedRoute perfisPermitidos={['CLIENTE']}>
               <ClienteObra />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Rota protegida do pagamento da obra, acessível somente ao perfil CLIENTE. */}
+        <Route
+          path="/cliente/obra/:id/pagamento"
+          element={
+            <ProtectedRoute perfisPermitidos={['CLIENTE']}>
+              <ClientePagamento />
             </ProtectedRoute>
           }
         />
