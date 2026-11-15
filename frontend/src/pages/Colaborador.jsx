@@ -11,7 +11,7 @@ import Card from '../components/Card.jsx'
 import Button from '../components/Button.jsx'
 
 // Importa os dados das obras e a função auxiliar de obtenção de cores de status
-import { obterCoresStatus } from '../data/obrasMock.js'
+import { obterCoresStatus, filtrarEventosPorPerfil, ROTULOS_EVENTO } from '../data/obrasMock.js'
 
 // Importa a lista mockada de colaboradores para buscar os dados do colaborador logado
 import { colaboradoresMock, obterObrasDoColaborador } from '../data/colaboradoresMock.js'
@@ -354,7 +354,7 @@ export default function Colaborador() {
                   </div>
 
                   {/* Resumo das etapas físicas da obra (timeline sem valores) */}
-                  {obra.timeline && obra.timeline.length > 0 && (
+                  {filtrarEventosPorPerfil(obra.timeline || [], 'COLABORADOR').length > 0 && (
                     <div className="mt-4 bg-slate-50 border border-slate-100 rounded-lg p-3 text-xs">
                       {/* Título do bloco de etapas */}
                       <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide block mb-2">
@@ -363,13 +363,13 @@ export default function Colaborador() {
                       {/* Linhas da timeline com as últimas etapas */}
                       <div className="space-y-1.5">
                         {/* Exibe até as 2 últimas etapas registradas */}
-                        {obra.timeline.slice(-2).map((item, index) => (
+                        {filtrarEventosPorPerfil(obra.timeline || [], 'COLABORADOR').slice(-2).map((item, index) => (
                           <div key={index} className="flex items-start gap-2 text-slate-600">
                             {/* Marcador circular pequeno */}
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0"></span>
                             {/* Data e descrição da etapa */}
                             <p className="leading-relaxed">
-                              <strong className="text-slate-700">{item.data} ({item.tipo}):</strong> {item.descricao}
+                              <strong className="text-slate-700">{item.data} ({ROTULOS_EVENTO[item.tipo] || item.tipo}):</strong> {item.descricao}
                             </p>
                           </div>
                         ))}
