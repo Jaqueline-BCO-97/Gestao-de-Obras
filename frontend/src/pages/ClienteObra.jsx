@@ -7,6 +7,9 @@ import Card from '../components/Card.jsx'
 // Importa o componente reutilizável Button do sistema de design
 import Button from '../components/Button.jsx'
 
+// Importa o componente compartilhado que apresenta os eventos da obra
+import HistoricoObra from '../components/HistoricoObra.jsx'
+
 // Importa os dados das obras mockadas e as funções auxiliares de formatação e cores
 import { obrasMock, formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
@@ -321,58 +324,8 @@ export default function ClienteObra() {
           </div>
         </section>
 
-        {/* Bloco 4: Linha do Tempo Vertical (Timeline de Eventos da Obra) */}
-        <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-sm" aria-label="Evolução da obra">
-          {/* Cabeçalho da linha do tempo */}
-          <div className="mb-6">
-            <h2 className="text-lg font-bold text-navy">
-              Evolução da Obra (Timeline)
-            </h2>
-            <p className="text-xs text-slate-500">
-              Histórico de eventos, serviços executados e vistorias registradas.
-            </p>
-          </div>
-
-          {/* Estrutura da linha do tempo vertical com linha conectora cinza */}
-          <div className="relative pl-6 sm:pl-8 border-l-2 border-slate-200 ml-3 sm:ml-4 space-y-6">
-            {/* Mapeia a lista de eventos cronológicos da obra */}
-            {obra.timeline.map((evento, indice) => (
-              // Contêiner relativo de cada evento individual da timeline
-              <div key={indice} className="relative group">
-                {/* Marcador circular sobreposto à linha vertical */}
-                <div
-                  className="absolute -left-[31px] sm:-left-[39px] top-1.5 w-4 h-4 rounded-full border-2 border-white bg-primary shadow-sm group-hover:scale-125 transition-transform"
-                  aria-hidden="true"
-                ></div>
-
-                {/* Caixa de detalhes do evento */}
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 hover:bg-white hover:shadow-sm transition">
-                  {/* Linha com a data e o tipo do evento */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                    {/* Badge do tipo do evento */}
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800">
-                      {evento.tipo}
-                    </span>
-
-                    {/* Data em que o evento ocorreu */}
-                    <span className="text-xs font-medium text-slate-500 flex items-center gap-1">
-                      {/* Ícone pequeno de relógio */}
-                      <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      {evento.data}
-                    </span>
-                  </div>
-
-                  {/* Descrição em texto detalhando a evolução registrada neste marco */}
-                  <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">
-                    {evento.descricao}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* Bloco 4: Histórico de eventos visíveis para o cliente */}
+        <HistoricoObra eventos={obra.timeline} perfil="CLIENTE" />
 
         {/* Bloco 5: Botão de ação inferior para voltar ao dashboard */}
         <div className="pt-2 pb-6 flex justify-center sm:justify-start">

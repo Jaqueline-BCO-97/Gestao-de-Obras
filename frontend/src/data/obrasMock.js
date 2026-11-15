@@ -1,6 +1,22 @@
 // Arquivo de dados fictícios (mock) para simular as obras do sistema
 // Este arquivo é utilizado durante a fase de desenvolvimento antes da integração com o banco de dados
 
+// Converte os códigos de evento em nomes fáceis de entender nas telas.
+export const ROTULOS_EVENTO = {
+  // Dá um nome legível a cada categoria usada na linha do tempo.
+  contratacao: 'Contratação', orcamento_aprovado: 'Orçamento aprovado', agendamento: 'Agendamento', status: 'Status', pagamento: 'Pagamento', anotacao: 'Anotação', atualizacao: 'Atualização', ocorrencia: 'Ocorrência', foto: 'Foto', equipe: 'Mudança de equipe',
+}
+
+// Aplica uma única regra para decidir quais eventos cada perfil pode consultar.
+export function filtrarEventosPorPerfil(eventos = [], perfil = 'ADMIN') {
+  // Clientes veem somente eventos explicitamente marcados como visíveis.
+  if (perfil === 'CLIENTE') return eventos.filter((evento) => evento.visivelParaCliente === true)
+  // Colaboradores não veem pagamentos, aprovações de orçamento ou contratações.
+  if (perfil === 'COLABORADOR') return eventos.filter((evento) => !['pagamento', 'orcamento_aprovado', 'contratacao'].includes(evento.tipo))
+  // Administradores e demais perfis recebem todos os eventos.
+  return eventos
+}
+
 // Lista de obras mockadas contendo exatamente 4 obras, cada uma com um status diferente
 export const obrasMock = [
   // Obra 1: Representa uma obra com status "Agendada"
@@ -53,28 +69,84 @@ export const obrasMock = [
     // Histórico de eventos e marcos cronológicos da obra
     timeline: [
       {
+        // Identificador único do evento
+        id: 'obra-1-evento-1',
         // Data em que o evento ocorreu
         data: '05/03/2026',
-        // Categoria ou tipo do marco registrado
-        tipo: 'Contratação',
-        // Explicação detalhada do que aconteceu neste evento
+        // Hora do registro do evento
+        hora: '09:00',
+        // Pessoa responsável pelo registro
+        autor: 'Ana Paula — Administradora',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'contratacao',
+        // Descrição do que aconteceu
         descricao: 'Contrato de prestação de serviços assinado e projeto arquitetônico finalizado.',
       },
       {
+        // Identificador único do evento
+        id: 'obra-1-evento-2',
         // Data em que o evento ocorreu
         data: '12/03/2026',
-        // Categoria ou tipo do marco registrado
-        tipo: 'Aprovação',
-        // Explicação detalhada do que aconteceu neste evento
+        // Hora do registro do evento
+        hora: '14:30',
+        // Pessoa responsável pelo registro
+        autor: 'Ana Paula — Administradora',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'orcamento_aprovado',
+        // Descrição do que aconteceu
         descricao: 'Alvará de construção emitido e aprovado pela Prefeitura Municipal.',
       },
       {
+        // Identificador único do evento
+        id: 'obra-1-evento-3',
         // Data em que o evento ocorreu
         data: '01/04/2026',
-        // Categoria ou tipo do marco registrado
-        tipo: 'Agendamento',
-        // Explicação detalhada do que aconteceu neste evento
+        // Hora do registro do evento
+        hora: '11:15',
+        // Pessoa responsável pelo registro
+        autor: 'Carlos Mendes — Coordenador',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'agendamento',
+        // Descrição do que aconteceu
         descricao: 'Início da mobilização da equipe e maquinários agendado para meados de abril.',
+      },
+      {
+        // Identificador único do evento
+        id: 'obra-1-evento-4',
+        // Data em que o evento ocorreu
+        data: '03/04/2026',
+        // Hora do registro do evento
+        hora: '16:00',
+        // Pessoa responsável pelo registro
+        autor: 'Carlos Mendes — Coordenador',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: false,
+        // Categoria padronizada do evento
+        tipo: 'equipe',
+        // Descrição do que aconteceu
+        descricao: 'Equipe de fundação definida e escala interna confirmada para a mobilização.',
+      },
+      {
+        // Identificador único do evento
+        id: 'obra-1-evento-5',
+        // Data em que o evento ocorreu
+        data: '08/04/2026',
+        // Hora do registro do evento
+        hora: '08:30',
+        // Pessoa responsável pelo registro
+        autor: 'Carlos Mendes — Coordenador',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'status',
+        // Descrição do que aconteceu
+        descricao: 'Obra confirmada como agendada, com mobilização prevista para meados de abril.',
       },
     ],
   },
@@ -128,28 +200,100 @@ export const obrasMock = [
     // Linha do tempo de execução da reforma
     timeline: [
       {
-        // Data do evento
+        // Identificador único do evento
+        id: 'obra-2-evento-1',
+        // Data em que o evento ocorreu
         data: '08/01/2026',
-        // Tipo do marco
-        tipo: 'Início',
-        // Detalhes da etapa
+        // Hora do registro do evento
+        hora: '08:00',
+        // Pessoa responsável pelo registro
+        autor: 'Rafael Costa — Mestre de obras',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'contratacao',
+        // Descrição do que aconteceu
         descricao: 'Demolição das paredes antigas e remoção de entulhos concluída.',
       },
       {
-        // Data do evento
+        // Identificador único do evento
+        id: 'obra-2-evento-2',
+        // Data em que o evento ocorreu
+        data: '10/01/2026',
+        // Hora do registro do evento
+        hora: '10:20',
+        // Pessoa responsável pelo registro
+        autor: 'Ana Paula — Administradora',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'pagamento',
+        // Descrição do que aconteceu
+        descricao: 'Pagamento da primeira parcela confirmado no sistema.',
+      },
+      {
+        // Identificador único do evento
+        id: 'obra-2-evento-3',
+        // Data em que o evento ocorreu
         data: '25/01/2026',
-        // Tipo do marco
-        tipo: 'Instalações',
-        // Detalhes da etapa
+        // Hora do registro do evento
+        hora: '15:45',
+        // Pessoa responsável pelo registro
+        autor: 'Rafael Costa — Mestre de obras',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'status',
+        // Descrição do que aconteceu
         descricao: 'Nova rede hidráulica em PPR e fiação elétrica de alta potência instaladas.',
       },
       {
-        // Data do evento
+        // Identificador único do evento
+        id: 'obra-2-evento-4',
+        // Data em que o evento ocorreu
         data: '18/02/2026',
-        // Tipo do marco
-        tipo: 'Alvenaria',
-        // Detalhes da etapa
+        // Hora do registro do evento
+        hora: '13:10',
+        // Pessoa responsável pelo registro
+        autor: 'Rafael Costa — Mestre de obras',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'atualizacao',
+        // Descrição do que aconteceu
         descricao: 'Construção de divisórias em drywall e nivelamento de contrapiso em execução.',
+      },
+      {
+        // Identificador único do evento
+        id: 'obra-2-evento-5',
+        // Data em que o evento ocorreu
+        data: '20/02/2026',
+        // Hora do registro do evento
+        hora: '17:20',
+        // Pessoa responsável pelo registro
+        autor: 'Rafael Costa — Mestre de obras',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: false,
+        // Categoria padronizada do evento
+        tipo: 'ocorrencia',
+        // Descrição do que aconteceu
+        descricao: 'Acesso ao elevador de serviço precisa ser confirmado com a portaria antes da próxima entrega.',
+      },
+      {
+        // Identificador único do evento
+        id: 'obra-2-evento-6',
+        // Data em que o evento ocorreu
+        data: '22/02/2026',
+        // Hora do registro do evento
+        hora: '09:40',
+        // Pessoa responsável pelo registro
+        autor: 'Rafael Costa — Mestre de obras',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'status',
+        // Descrição do que aconteceu
+        descricao: 'Reforma em andamento, com instalações concluídas e acabamentos em execução.',
       },
     ],
   },
@@ -203,36 +347,84 @@ export const obrasMock = [
     // Linha do tempo dos trabalhos na fachada
     timeline: [
       {
-        // Data do evento
+        // Identificador único do evento
+        id: 'obra-3-evento-1',
+        // Data em que o evento ocorreu
         data: '10/11/2025',
-        // Tipo do marco
-        tipo: 'Início',
-        // Detalhes da etapa
+        // Hora do registro do evento
+        hora: '07:30',
+        // Pessoa responsável pelo registro
+        autor: 'Marina Lopes — Engenheira',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'contratacao',
+        // Descrição do que aconteceu
         descricao: 'Instalação de andaimes suspensos e lavagem química de toda a superfície.',
       },
       {
-        // Data do evento
+        // Identificador único do evento
+        id: 'obra-3-evento-2',
+        // Data em que o evento ocorreu
         data: '15/12/2025',
-        // Tipo do marco
-        tipo: 'Recuperação',
-        // Detalhes da etapa
+        // Hora do registro do evento
+        hora: '12:00',
+        // Pessoa responsável pelo registro
+        autor: 'Marina Lopes — Engenheira',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'atualizacao',
+        // Descrição do que aconteceu
         descricao: 'Substituição de pastilhas danificadas e impermeabilização da laje superior.',
       },
       {
-        // Data do evento
+        // Identificador único do evento
+        id: 'obra-3-evento-3',
+        // Data em que o evento ocorreu
         data: '02/02/2026',
-        // Tipo do marco
-        tipo: 'Pintura',
-        // Detalhes da etapa
+        // Hora do registro do evento
+        hora: '16:25',
+        // Pessoa responsável pelo registro
+        autor: 'Marina Lopes — Engenheira',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'foto',
+        // Descrição do que aconteceu
         descricao: 'Aplicação de textura acrílica hidro-repelente e fita LED decorativa.',
       },
       {
-        // Data do evento
+        // Identificador único do evento
+        id: 'obra-3-evento-4',
+        // Data em que o evento ocorreu
         data: '28/02/2026',
-        // Tipo do marco
-        tipo: 'Vistoria',
-        // Detalhes da etapa
-        descricao: 'Serviços físicos concluídos; aguardando vistoria final e conferência do síndico.',
+        // Hora do registro do evento
+        hora: '10:00',
+        // Pessoa responsável pelo registro
+        autor: 'Marina Lopes — Engenheira',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'agendamento',
+        // Descrição do que aconteceu
+        descricao: 'Serviços físicos concluídos; vistoria final agendada com o síndico.',
+      },
+      {
+        // Identificador único do evento
+        id: 'obra-3-evento-5',
+        // Data em que o evento ocorreu
+        data: '01/03/2026',
+        // Hora do registro do evento
+        hora: '10:30',
+        // Pessoa responsável pelo registro
+        autor: 'Marina Lopes — Engenheira',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'status',
+        // Descrição do que aconteceu
+        descricao: 'Serviços físicos concluídos; obra aguardando conferência final do síndico.',
       },
     ],
   },
@@ -286,35 +478,83 @@ export const obrasMock = [
     // Linha do tempo completa do início até a entrega
     timeline: [
       {
-        // Data do evento
+        // Identificador único do evento
+        id: 'obra-4-evento-1',
+        // Data em que o evento ocorreu
         data: '20/09/2025',
-        // Tipo do marco
-        tipo: 'Fundação',
-        // Detalhes da etapa
+        // Hora do registro do evento
+        hora: '08:15',
+        // Pessoa responsável pelo registro
+        autor: 'Paulo Nunes — Mestre de obras',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'contratacao',
+        // Descrição do que aconteceu
         descricao: 'Escavação e concretagem das bases estruturais para o pergolado.',
       },
       {
-        // Data do evento
+        // Identificador único do evento
+        id: 'obra-4-evento-2',
+        // Data em que o evento ocorreu
         data: '15/10/2025',
-        // Tipo do marco
-        tipo: 'Carpintaria',
-        // Detalhes da etapa
+        // Hora do registro do evento
+        hora: '09:20',
+        // Pessoa responsável pelo registro
+        autor: 'Paulo Nunes — Mestre de obras',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: false,
+        // Categoria padronizada do evento
+        tipo: 'equipe',
+        // Descrição do que aconteceu
+        descricao: 'Equipe de carpintaria interna alocada para montagem do pergolado.',
+      },
+      {
+        // Identificador único do evento
+        id: 'obra-4-evento-3',
+        // Data em que o evento ocorreu
+        data: '15/10/2025',
+        // Hora do registro do evento
+        hora: '11:00',
+        // Pessoa responsável pelo registro
+        autor: 'Paulo Nunes — Mestre de obras',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'atualizacao',
+        // Descrição do que aconteceu
         descricao: 'Montagem do pergolado em madeira nobre e instalação de vidro temperado.',
       },
       {
-        // Data do evento
+        // Identificador único do evento
+        id: 'obra-4-evento-4',
+        // Data em que o evento ocorreu
         data: '12/11/2025',
-        // Tipo do marco
-        tipo: 'Alvenaria',
-        // Detalhes da etapa
+        // Hora do registro do evento
+        hora: '14:10',
+        // Pessoa responsável pelo registro
+        autor: 'Paulo Nunes — Mestre de obras',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'atualizacao',
+        // Descrição do que aconteceu
         descricao: 'Construção da churrasqueira pré-moldada e revestimento em pedra natural.',
       },
       {
-        // Data do evento
+        // Identificador único do evento
+        id: 'obra-4-evento-5',
+        // Data em que o evento ocorreu
         data: '10/12/2025',
-        // Tipo do marco
-        tipo: 'Entrega',
-        // Detalhes da etapa
+        // Hora do registro do evento
+        hora: '16:45',
+        // Pessoa responsável pelo registro
+        autor: 'Ana Paula — Administradora',
+        // Define se o cliente pode consultar este evento
+        visivelParaCliente: true,
+        // Categoria padronizada do evento
+        tipo: 'status',
+        // Descrição do que aconteceu
         descricao: 'Vistoria aprovada sem pendências, limpeza pós-obra e entrega das chaves ao cliente.',
       },
     ],
