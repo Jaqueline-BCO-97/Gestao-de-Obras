@@ -1,5 +1,7 @@
 // Importa os hooks useParams, useNavigate e Link do react-router-dom para lidar com parâmetros de rota e navegação
 import { useParams, useNavigate, Link } from 'react-router-dom'
+// Importa o estado local do React para atualizar a tela após a confirmação.
+import { useState } from 'react'
 
 // Importa o componente reutilizável Card do sistema de design
 import Card from '../components/Card.jsx'
@@ -9,9 +11,11 @@ import Button from '../components/Button.jsx'
 
 // Importa o componente compartilhado que apresenta os eventos da obra
 import HistoricoObra from '../components/HistoricoObra.jsx'
+// Importa o modal reutilizável para pedir confirmação ao cliente.
+import Modal from '../components/Modal.jsx'
 
 // Importa os dados das obras mockadas e as funções auxiliares de formatação e cores
-import { obrasMock, formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
+import { obrasMock, formatarMoeda, obterCoresStatus, confirmarConclusao } from '../data/obrasMock.js'
 
 // Componente da página de Detalhes da Obra do Cliente (/cliente/obra/:id)
 export default function ClienteObra() {
@@ -20,6 +24,10 @@ export default function ClienteObra() {
 
   // Inicializa o hook de navegação para permitir retornar ao painel via código
   const navigate = useNavigate()
+  // Controla se a janela de confirmação está aberta.
+  const [modalAberto, setModalAberto] = useState(false)
+  // Guarda uma atualização de tela após registrar a confirmação no mock.
+  const [confirmacaoRegistrada, setConfirmacaoRegistrada] = useState(false)
 
   // Busca na lista mockada a obra que possui o id correspondente ao parâmetro da URL
   // Converte ambos para string para garantir comparação segura caso o id venha como número ou texto
@@ -61,6 +69,8 @@ export default function ClienteObra() {
 
   // Obtém o conjunto de cores personalizadas conforme o status da obra encontrada
   const cores = obterCoresStatus(obra.status)
+  // Verifica se o cliente já confirmou a conclusão desta obra.
+  const conclusaoConfirmada = obra.conclusaoConfirmada === true || confirmacaoRegistrada
 
   // Paleta de gradientes em Tailwind usada como placeholder para os blocos de fotos (sem imagens externas)
   const gradientesFotos = [
@@ -326,6 +336,38 @@ export default function ClienteObra() {
 
         {/* Bloco 4: Histórico de eventos visíveis para o cliente */}
         <HistoricoObra eventos={obra.timeline} perfil="CLIENTE" />
+
+        {/* Mostra ações de conferência apenas enquanto a obra aguarda conferência. */}
+        {obra.status === 'Aguardando conferência' && (
+          // Organiza o botão correspondente ao estado atual da confirmação.
+          <div className="flex justify-center sm:justify-start">
+            {/* Após confirmar, leva o cliente para a página temporária de pagamento final. */}
+            {conclusaoConfirmada ? (
+              // Renderiza a ação de pagamento final depois da confirmação.
+              <Button variant="primary" onClick={() => navigate(`/cliente/obra/${obra.id}/pagamento`)}>
+                Ir para o pagamento final
+              </Button>
+            ) : (
+              // Abre a janela para o cliente confirmar que a obra foi finalizada.
+              <Button variant="primary" onClick={() => setModalAberto(true)}>
+                Confirmar conclusão
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Exibe a janela de confirmação enquanto o cliente decide. */}
+        <Modal title="Confirmação da conclusão" open={modalAberto} onClose={() => setModalAberto(false)}>
+          {/* Apresenta a pergunta solicitada ao cliente. */}
+          <p className="mb-5 text-sm text-slate-600">Você confirma que a obra foi finalizada?</p>
+          {/* Mantém as duas opções organizadas no rodapé do modal. */}
+          <div className="flex justify-end gap-3">
+            {/* Fecha o modal sem registrar a confirmação. */}
+            <Button variant="outline" onClick={() => setModalAberto(false)}>Cancelar</Button>
+            {/* Registra a confirmação e atualiza a tela para exibir o pagamento final. */}
+            <Button onClick={() => { confirmarConclusao(obra.id); setConfirmacaoRegistrada(true); setModalAberto(false) }}>Confirmar</Button>
+          </div>
+        </Modal>
 
         {/* Bloco 5: Botão de ação inferior para voltar ao dashboard */}
         <div className="pt-2 pb-6 flex justify-center sm:justify-start">
