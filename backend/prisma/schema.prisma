@@ -1,49 +1,352 @@
-// Define que vamos gerar o "cliente" do Prisma (código que usamos no index.js pra falar com o banco)
+// Gera o cliente Prisma usado pelo backend.
 generator client {
+  // Usa o cliente oficial para JavaScript.
   provider = "prisma-client-js"
 }
 
-// Define qual banco estamos usando e de onde vem a string de conexão.
-// O banco é o PostgreSQL do Supabase — a string vai na variável DATABASE_URL (ver backend/.env.example)
+// Configura a conexão PostgreSQL sem executar alterações no banco.
 datasource db {
+  // Define PostgreSQL como banco de dados.
   provider = "postgresql"
+  // Lê a conexão da variável DATABASE_URL.
   url      = env("DATABASE_URL")
 }
 
-// Empresa que usa o sistema (multiempresa — cada empresa é isolada das outras)
+// Representa uma empresa que mantém usuários, obras e serviços.
 model Empresa {
-  id        String    @id @default(uuid())
-  nome      String
-  criadoEm  DateTime  @default(now())
-  usuarios  Usuario[]
-  obras     Obra[]
+  // Identificador UUID criado automaticamente.
+  id           String        @id @default(uuid())
+  // Nome apresentado para a empresa.
+  nome         String
+  // Data de criação automática do registro.
+  criadoEm     DateTime      @default(now())
+  // Usuários que pertencem à empresa.
+  usuarios     Usuario[]
+  // Obras da empresa.
+  obras        Obra[]
+  // Funcionários cadastrados na empresa.
+  funcionarios Funcionario[]
+  // Eventos associados à empresa.
+  eventos      ObraEvento[]
+  // Contratos associados à empresa.
+  contratos    Contrato[]
+  // Preços de serviços cadastrados pela empresa.
+  tabelasPreco TabelaPreco[]
 }
 
-// Usuário do sistema — pode ser CLIENTE, COLABORADOR ou ADMIN
+// Representa uma pessoa que acessa o sistema.
 model Usuario {
-  id         String      @id @default(uuid())
-  empresaId  String
-  empresa    Empresa     @relation(fields: [empresaId], references: [id])
-  nome       String
-  email      String      @unique
-  senhaHash  String
-  tipo       TipoUsuario
-  criadoEm   DateTime    @default(now())
+  // Identificador UUID criado automaticamente.
+  id               String           @id @default(uuid())
+  // Empresa à qual o usuário pertence.
+  empresaId        String
+  // Relação obrigatória com a empresa.
+  empresa          Empresa          @relation(fields: [empresaId], references: [id])
+  // Nome completo do usuário.
+  nome             String
+  // Endereço de e-mail exclusivo para login.
+  email            String           @unique
+  // Hash da senha armazenado com segurança.
+  senhaHash        String
+  // Perfil de acesso do usuário.
+  tipo             TipoUsuario
+  // Telefone de contato opcional.
+  telefone         String?
+  // Data de criação automática do registro.
+  criadoEm         DateTime         @default(now())
+  // Obras em que este usuário é cliente.
+  obrasComoCliente Obra[]           @relation("ObraCliente")
+  // Eventos criados por este usuário.
+  eventos          ObraEvento[]
+  // Escalas alteradas por este usuário.
+  escalasAlteradas ObraEscala[]     @relation("EscalaAlteradaPor")
+  // Cadastro de funcionário ligado opcionalmente a este login.
+  funcionario      Funcionario?
+  // Aceites de contrato feitos por este usuário.
+  contratosAceitos ContratoAceite[]
 }
 
-// Obra pertencente a uma única empresa; consultas da API sempre aplicam empresaId.
+// Representa uma obra pertencente a uma empresa.
 model Obra {
-  id        String   @id @default(uuid())
-  empresaId String
-  empresa   Empresa  @relation(fields: [empresaId], references: [id])
-  nome      String
-  descricao String?
-  endereco  String?
-  criadoEm  DateTime @default(now())
+  // Identificador UUID criado automaticamente.
+  id                    String       @id @default(uuid())
+  // Empresa proprietária da obra.
+  empresaId             String
+  // Relação obrigatória com a empresa.
+  empresa               Empresa      @relation(fields: [empresaId], references: [id])
+  // Nome ou título da obra.
+  nome                  String
+  // Descrição opcional da obra.
+  descricao             String?
+  // Endereço opcional da obra.
+  endereco              String?
+  // Cliente associado opcionalmente a um usuário.
+  clienteId             String?
+  // Relação do cliente com o nome definido para esta associação.
+  cliente               Usuario?     @relation("ObraCliente", fields: [clienteId], references: [id])
+  // Estado atual da obra.
+  status                StatusObra   @default(AGENDADA)
+  // Valor total da obra, inicialmente zero.
+  valorTotal            Decimal      @default(0) @db.Decimal(12, 2)
+  // Data e hora previstas para começar.
+  agendadaPara          DateTime?
+  // Prazo final planejado.
+  prazoFinal            DateTime?
+  // Momento em que foi solicitada a conferência de conclusão.
+  conclusaoSolicitadaEm DateTime?
+  // Momento em que a conclusão foi confirmada.
+  conclusaoConfirmadaEm DateTime?
+  // Data de criação automática do registro.
+  criadoEm              DateTime     @default(now())
+  // Histórico de escalas da obra.
+  escalas               ObraEscala[]
+  // Eventos da linha do tempo.
+  eventos               ObraEvento[]
+  // Parcelas de pagamento da obra.
+  parcelas              Parcela[]
+  // Contrato opcional da obra.
+  contrato              Contrato?
 }
 
+// Representa um profissional associado a uma empresa.
+model Funcionario {
+  // Identificador UUID criado automaticamente.
+  id        String           @id @default(uuid())
+  // Empresa que emprega ou contrata o profissional.
+  empresaId String
+  // Relação obrigatória com a empresa.
+  empresa   Empresa          @relation(fields: [empresaId], references: [id])
+  // Nome completo do profissional.
+  nome      String
+  // Função ou especialidade profissional.
+  funcao    String
+  // Nível de responsabilidade na equipe.
+  nivel     NivelFuncionario
+  // Telefone opcional do profissional.
+  telefone  String?
+  // Indica se o profissional está ativo.
+  ativo     Boolean          @default(true)
+  // Login opcional ligado ao cadastro do profissional.
+  usuarioId String?          @unique
+  // Relação opcional com o usuário de login.
+  usuario   Usuario?         @relation(fields: [usuarioId], references: [id])
+  // Data de criação automática do registro.
+  criadoEm  DateTime         @default(now())
+  // Histórico de escalas deste profissional.
+  escalas   ObraEscala[]
+
+  // Acelera consultas de funcionários por empresa.
+  @@index([empresaId])
+}
+
+// Registra cada período de alocação de um funcionário numa obra.
+model ObraEscala {
+  // Identificador UUID criado automaticamente.
+  id            String      @id @default(uuid())
+  // Obra à qual a escala pertence.
+  obraId        String
+  // Relação obrigatória com a obra.
+  obra          Obra        @relation(fields: [obraId], references: [id])
+  // Funcionário alocado.
+  funcionarioId String
+  // Relação obrigatória com o funcionário.
+  funcionario   Funcionario @relation(fields: [funcionarioId], references: [id])
+  // Início do período de escala, por padrão agora.
+  dataInicio    DateTime    @default(now())
+  // Fim opcional do período de escala.
+  dataFim       DateTime?
+  // Usuário que alterou a escala.
+  alteradoPorId String
+  // Relação obrigatória com o usuário autor da alteração.
+  alteradoPor   Usuario     @relation("EscalaAlteradaPor", fields: [alteradoPorId], references: [id])
+  // Motivo opcional da alteração.
+  motivo        String?
+
+  // Acelera consultas de escalas por obra.
+  @@index([obraId])
+}
+
+// Guarda os acontecimentos exibidos na linha do tempo da obra.
+model ObraEvento {
+  // Identificador UUID criado automaticamente.
+  id                 String     @id @default(uuid())
+  // Obra relacionada ao evento.
+  obraId             String
+  // Relação obrigatória com a obra.
+  obra               Obra       @relation(fields: [obraId], references: [id])
+  // Empresa relacionada ao evento.
+  empresaId          String
+  // Relação obrigatória com a empresa.
+  empresa            Empresa    @relation(fields: [empresaId], references: [id])
+  // Usuário que registrou o evento.
+  usuarioId          String
+  // Relação obrigatória com o autor.
+  usuario            Usuario    @relation(fields: [usuarioId], references: [id])
+  // Categoria padronizada do evento.
+  tipo               TipoEvento
+  // Texto descritivo do acontecimento.
+  descricao          String
+  // Endereço opcional de uma foto associada.
+  fotoUrl            String?
+  // Define se o cliente pode ver o evento.
+  visivelParaCliente Boolean    @default(true)
+  // Data de criação automática do evento.
+  criadoEm           DateTime   @default(now())
+
+  // Acelera listagem cronológica dos eventos de uma obra.
+  @@index([obraId, criadoEm])
+  // Acelera consultas de eventos por empresa.
+  @@index([empresaId])
+}
+
+// Representa uma parcela cobrada em uma obra.
+model Parcela {
+  // Identificador UUID criado automaticamente.
+  id                 String          @id @default(uuid())
+  // Obra à qual a parcela pertence.
+  obraId             String
+  // Relação obrigatória com a obra.
+  obra               Obra            @relation(fields: [obraId], references: [id])
+  // Número sequencial da parcela na obra.
+  numero             Int
+  // Valor monetário da parcela.
+  valor              Decimal         @db.Decimal(12, 2)
+  // Situação atual do pagamento.
+  situacao           SituacaoParcela @default(PENDENTE)
+  // Data opcional em que o pagamento ocorreu.
+  pagaEm             DateTime?
+  // Identificador opcional e exclusivo do sistema de pagamento externo.
+  pagamentoExternoId String?         @unique
+
+  // Impede parcelas com o mesmo número na mesma obra.
+  @@unique([obraId, numero])
+  // Acelera consultas de parcelas por obra.
+  @@index([obraId])
+}
+
+// Guarda os termos de um contrato para uma obra.
+model Contrato {
+  // Identificador UUID criado automaticamente.
+  id        String           @id @default(uuid())
+  // Cada obra pode ter no máximo um contrato.
+  obraId    String           @unique
+  // Relação obrigatória com a obra.
+  obra      Obra             @relation(fields: [obraId], references: [id])
+  // Empresa que emitiu o contrato.
+  empresaId String
+  // Relação obrigatória com a empresa.
+  empresa   Empresa          @relation(fields: [empresaId], references: [id])
+  // Texto integral dos termos contratuais.
+  termos    String
+  // Data de criação automática do contrato.
+  criadoEm  DateTime         @default(now())
+  // Aceites registrados para este contrato.
+  aceites   ContratoAceite[]
+
+  // Acelera consultas de contratos por empresa.
+  @@index([empresaId])
+}
+
+// Registra a aceitação de um contrato por um usuário.
+model ContratoAceite {
+  // Identificador UUID criado automaticamente.
+  id         String   @id @default(uuid())
+  // Contrato que foi aceito.
+  contratoId String
+  // Relação obrigatória com o contrato.
+  contrato   Contrato @relation(fields: [contratoId], references: [id])
+  // Usuário que aceitou os termos.
+  usuarioId  String
+  // Relação obrigatória com o usuário.
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id])
+  // Momento do aceite, preenchido automaticamente.
+  aceitoEm   DateTime @default(now())
+
+  // Cada usuário pode aceitar um contrato uma vez.
+  @@unique([contratoId, usuarioId])
+}
+
+// Define o preço de um serviço da empresa.
+model TabelaPreco {
+  // Identificador UUID criado automaticamente.
+  id        String  @id @default(uuid())
+  // Empresa dona deste preço.
+  empresaId String
+  // Relação obrigatória com a empresa.
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
+  // Nome do serviço tabelado.
+  servico   String
+  // Unidade usada para calcular o serviço.
+  unidade   String
+  // Valor monetário por unidade.
+  valor     Decimal @db.Decimal(12, 2)
+  // Indica se o preço pode ser usado atualmente.
+  ativo     Boolean @default(true)
+
+  // Acelera consultas de preços por empresa.
+  @@index([empresaId])
+}
+
+// Define os tipos de conta do sistema.
 enum TipoUsuario {
+  // Conta de cliente.
   CLIENTE
+  // Conta de colaborador.
   COLABORADOR
+  // Conta de administrador.
   ADMIN
+}
+
+// Define o nível de atuação de cada funcionário.
+enum NivelFuncionario {
+  // Responsável principal pela atividade.
+  RESPONSAVEL
+  // Profissional de apoio à equipe.
+  APOIO
+}
+
+// Define os estados possíveis de uma obra.
+enum StatusObra {
+  // A obra está programada para começar.
+  AGENDADA
+  // A execução está acontecendo.
+  EM_ANDAMENTO
+  // A execução terminou e aguarda vistoria.
+  AGUARDANDO_CONFERENCIA
+  // A obra foi finalizada e aceita.
+  CONCLUIDA
+}
+
+// Define os estados possíveis de uma parcela.
+enum SituacaoParcela {
+  // O pagamento ainda está pendente.
+  PENDENTE
+  // O pagamento foi realizado.
+  PAGA
+}
+
+// Define as categorias disponíveis para eventos.
+enum TipoEvento {
+  // Registro de contratação.
+  CONTRATACAO
+  // Aprovação do orçamento.
+  ORCAMENTO_APROVADO
+  // Registro de agendamento.
+  AGENDAMENTO
+  // Mudança ou informação de status.
+  STATUS
+  // Registro de pagamento.
+  PAGAMENTO
+  // Anotação geral.
+  ANOTACAO
+  // Atualização do andamento.
+  ATUALIZACAO
+  // Ocorrência que requer atenção.
+  OCORRENCIA
+  // Registro de foto.
+  FOTO
+  // Alteração de equipe.
+  EQUIPE
+  // Registro de contrato.
+  CONTRATO
 }
