@@ -268,7 +268,7 @@ sequenceDiagram
 - **RN8** — Pagamento padrão dividido em 2 parcelas: 50% na aprovação do orçamento, 50% na conclusão da obra
 - **RN9** — Isolamento total de dados entre empresas (multiempresa)
 
-> Das regras acima, hoje só a **RN9** está implementada (via `empresaId` do token em todas as consultas de obra). As demais dependem de funcionalidades ainda planejadas (status, pagamento, agenda, histórico, notificações).
+> RN1 é aplicada pelo endpoint de pagamento. RN3 é validada no endpoint de reagendamento por intervalos completos da mesma empresa, e RN7 registra confirmação visível ao cliente na timeline. As demais regras ainda dependem de funcionalidades próprias.
 
 ---
 
@@ -330,6 +330,7 @@ POST  /colaboradores             (cadastra colaborador — ADMIN)
 POST  /obras                     (cria obra na empresa do token — ADMIN)
 GET   /obras                     (lista obras da empresa — protegida)
 GET   /obras/:id                 (detalhe da obra, filtrado por empresa — protegida)
+PATCH /obras/:id/agendamento    (reagenda obra sem conflito — ADMIN; evento na timeline do cliente)
 POST  /obras/:id/andamento       (anotação/update/ocorrência — Colaborador alocado; upload de foto pendente)
 POST  /obras/:id/pagamento       (checkout sandbox — Cliente proprietário; confirmação por webhook)
 POST  /webhooks/mercado-pago     (notificação de Order assinada; consulta estado oficial no provedor)

@@ -26,6 +26,7 @@ const {
   alocarFuncionario,
   encerrarAlocacao,
   registrarAndamento,
+  reagendarObra,
 } = require("./src/repositories/obraRepository");
 const pagamentoService = require("./src/services/pagamentoService");
 const mercadoPagoService = require("./src/services/mercadoPagoService");
@@ -40,6 +41,29 @@ function exigirEmpresaDoToken(req, res, next) {
     return res.status(403).json({ erro: "Usuário sem empresa vinculada" });
   }
   return next();
+}
+
+function converterDataHoraISO(valor) {
+  if (typeof valor !== "string") return null;
+  const partes = valor.match(/^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/);
+  if (!partes) return null;
+
+  const ano = Number(partes[1]);
+  const mes = Number(partes[2]);
+  const dia = Number(partes[3]);
+  if (ano < 1 || mes < 1 || mes > 12) return null;
+  const anoBissexto = ano % 4 === 0 && (ano % 100 !== 0 || ano % 400 === 0);
+  const diasNoMes = [31, anoBissexto ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (dia < 1 || dia > diasNoMes[mes - 1]) return null;
+
+  if (partes[8] !== "Z") {
+    const horaOffset = Number(partes[10]);
+    const minutoOffset = Number(partes[11]);
+    if (horaOffset > 14 || minutoOffset > 59 || (horaOffset === 14 && minutoOffset !== 0)) return null;
+  }
+
+  const instante = new Date(valor);
+  return Number.isFinite(instante.getTime()) ? instante : null;
 }
 
 const PORT = process.env.PORT || 3000;
@@ -284,6 +308,52 @@ app.get("/obras/:id", authMiddleware, exigirEmpresaDoToken, async (req, res) => 
     }
     console.error("Erro ao consultar obra:", erro.message);
     return res.status(500).json({ erro: "Erro ao consultar obra" });
+  }
+});
+
+// Só ADMIN da empresa pode confirmar novo intervalo; obra e autor vêm da sessão,
+// e a mudança junto do evento visível ao cliente é confirmada numa transação.
+app.patch("/obras/:id/agendamento", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const corpo = req.body;
+    if (!corpo || typeof corpo !== "object" || Array.isArray(corpo)) {
+      return res.status(400).json({ erro: "Informe agendadaPara e prazoFinal" });
+    }
+
+    const agendadaPara = converterDataHoraISO(corpo.agendadaPara);
+    const prazoFinal = converterDataHoraISO(corpo.prazoFinal);
+    if (!agendadaPara || !prazoFinal) {
+      return res.status(400).json({ erro: "agendadaPara e prazoFinal devem ser datas ISO 8601 válidas com fuso horário" });
+    }
+    if (prazoFinal <= agendadaPara) {
+      return res.status(400).json({ erro: "prazoFinal deve ser posterior a agendadaPara" });
+    }
+
+    const resultado = await reagendarObra({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      administradorId: req.usuario.id,
+      agendadaPara,
+      prazoFinal,
+    });
+    if (!resultado) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.json({
+      obra: {
+        ...resultado.obra,
+        agendadaPara: resultado.agendadaPara.toISOString(),
+        prazoFinal: resultado.prazoFinal.toISOString(),
+      },
+      evento: resultado.evento,
+      alterada: resultado.alterada,
+    });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "AGENDAMENTO_CONFLITO") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "AGENDAMENTO_CONCORRENTE" || erro.code === "P2034") {
+      return res.status(409).json({ erro: erro.message || "O agendamento foi alterado por outra operação; atualize e tente novamente" });
+    }
+    console.error("Erro ao reagendar obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao reagendar obra" });
   }
 });
 

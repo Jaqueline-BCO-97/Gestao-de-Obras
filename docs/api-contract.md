@@ -16,6 +16,7 @@ Os papéis válidos são `ADMIN`, `CLIENTE` e `COLABORADOR`.
 | `POST /obras` | ADMIN | Cria obra na empresa do token. Recebe `nome` e, opcionalmente, `descricao` e `endereco`. |
 | `GET /obras` | Autenticado | Lista obras dentro do escopo do perfil. |
 | `GET /obras/:id` | Autenticado | Consulta obra dentro do escopo; obra inexistente ou fora dele retorna 404. |
+| `PATCH /obras/:id/agendamento` | ADMIN da empresa | Confirma novo intervalo sem conflito e registra evento de agenda visível ao cliente. |
 | `POST /obras/:id/andamento` | COLABORADOR alocado | Registra anotação/update/ocorrência na timeline. Upload de foto retorna 501 enquanto não houver armazenamento configurado. |
 | `POST /obras/:id/pagamento` | CLIENTE proprietário | Cria uma tentativa pendente e retorna a URL do Checkout Pro sandbox. Requer `Idempotency-Key`; a criação do checkout não quita a parcela. |
 | `POST /webhooks/mercado-pago` | Webhook público com assinatura HMAC | Valida a notificação de Order, consulta a Order na API Mercado Pago e só então persiste o estado confirmado. |
@@ -36,7 +37,26 @@ O objeto de obra usa os campos `id`, `titulo`, `cliente`, `colaboradores`, `ende
 
 ## Ainda não implementado
 
-Cadastro/convite de clientes, alteração de status, pagamentos, upload de fotos, agendamentos e rotas de tabela de preços pertencem ao escopo planejado do produto, mas não existem como endpoints no backend atual. O endpoint de andamento registra eventos textuais; fotos dependem de armazenamento persistente ainda não configurado.
+Cadastro/convite de clientes, alteração de status, upload de fotos e rotas de tabela de preços pertencem ao escopo planejado do produto. O endpoint de andamento registra eventos textuais; fotos dependem de armazenamento persistente ainda não configurado. O fluxo de pagamento está implementado como checkout sandbox pendente de credenciais e validação real no provedor.
+
+### Agendamento/reagendamento — Issue #19
+
+`PATCH /obras/:id/agendamento` exige token de `ADMIN`. A obra é localizada dentro da empresa do usuário autenticado; empresa e administrador não são aceitos pelo payload. Entrada:
+
+```json
+{
+  "agendadaPara": "2026-12-01T09:00:00.000Z",
+  "prazoFinal": "2026-12-01T12:00:00.000Z"
+}
+```
+
+Os dois campos devem ser timestamps ISO 8601 válidos com fuso horário e `prazoFinal` deve ser posterior ao início. O backend procura intervalos completos de outras obras da mesma empresa com a condição `inicioExistente < fimSolicitado && fimExistente > inicioSolicitado`. Limites que apenas se tocam são permitidos; a própria obra e obras `CONCLUIDA` são excluídas da busca. Obra sem algum dos limites não reserva intervalo.
+
+Sucesso retorna HTTP 200 com `{ "obra": { ...obra, "agendadaPara": "...Z", "prazoFinal": "...Z" }, "evento": { ... }, "alterada": true }`. Repetir exatamente o intervalo já confirmado retorna HTTP 200, `alterada: false` e `evento: null`, sem inserir outro evento. Conflito de horário retorna HTTP 409 com mensagem explícita. Payload inválido retorna 400, usuário sem autenticação 401, papel ou ausência de empresa 403 e obra inexistente ou fora da empresa 404.
+
+A confirmação e o evento `AGENDAMENTO` são gravados na mesma transação. O evento identifica obra, empresa e administrador, é visível ao cliente na timeline e descreve os novos limites em UTC. Reagendamentos da mesma empresa usam advisory lock transacional por empresa e isolamento Serializable, com retry limitado de conflitos Prisma `P2034`; isso reduz disputas entre requisições concorrentes sem depender do frontend.
+
+O enum atual `StatusObra` contém `CONCLUIDA`, mas não contém estado `CANCELADA`; portanto, não foi inventado um estado novo. Se o modelo receber um estado de cancelamento em outra entrega, ele deve ser excluído da busca de conflito conforme a regra de negócio.
 
 ### Registro de andamento
 

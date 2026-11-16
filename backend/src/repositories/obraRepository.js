@@ -28,6 +28,12 @@ function erroAndamento(code, message) {
   return erro;
 }
 
+function erroAgendamento(code, message) {
+  const erro = new Error(message);
+  erro.code = code;
+  return erro;
+}
+
 // Executa mudanças de escala em transação serializável para reduzir disputas
 // concorrentes, especialmente duas tentativas simultâneas da mesma alocação.
 function emTransacaoSerializavel(prisma, operacao) {
@@ -223,6 +229,108 @@ async function registrarAndamento({ obraId, empresaId, usuarioId, tipo, descrica
   }, { isolationLevel: "Serializable" });
 }
 
+function mesmoInstante(a, b) {
+  return a instanceof Date && b instanceof Date && a.getTime() === b.getTime();
+}
+
+function formatarDataHoraAgendamento(data) {
+  return `${new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "UTC",
+  }).format(data)} UTC`;
+}
+
+async function reagendarObra({ obraId, empresaId, administradorId, agendadaPara, prazoFinal }) {
+  exigirBancoConfigurado();
+  const prisma = getPrisma();
+
+  // O lock transacional por empresa faz a checagem de conflitos e a gravação
+  // formarem uma seção crítica entre diferentes requisições do mesmo tenant.
+  // O isolamento serializável fornece proteção adicional contra escritas externas.
+  for (let tentativa = 1; tentativa <= 3; tentativa += 1) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        // O hash é apenas a chave do advisory lock; colisões só serializam
+        // empresas distintas e não misturam dados nem permissões.
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${empresaId}, 0))`;
+
+        const obraAtual = await tx.obra.findFirst({
+          where: { id: obraId, empresaId },
+          select: { id: true, agendadaPara: true, prazoFinal: true },
+        });
+        if (!obraAtual) return null;
+
+        const conflito = await tx.obra.findFirst({
+          where: {
+            empresaId,
+            id: { not: obraId },
+            // Obras sem os dois limites não reservam um intervalo comparável.
+            agendadaPara: { not: null, lt: prazoFinal },
+            prazoFinal: { not: null, gt: agendadaPara },
+            // StatusObra não possui estado CANCELADA; CONCLUIDA é o único
+            // estado terminal existente e não bloqueia novos agendamentos.
+            status: { not: "CONCLUIDA" },
+          },
+          select: { id: true, nome: true },
+        });
+        if (conflito) {
+          throw erroAgendamento("AGENDAMENTO_CONFLITO", "Conflito de agendamento: o intervalo se sobrepõe ao de outra obra desta empresa");
+        }
+
+        // Uma repetição idêntica ainda passa pela checagem de conflito, mas não
+        // constitui nova confirmação e não duplica o evento da timeline.
+        if (mesmoInstante(obraAtual.agendadaPara, agendadaPara) && mesmoInstante(obraAtual.prazoFinal, prazoFinal)) {
+          const semAlteracao = await tx.obra.findFirst({
+            where: { id: obraId, empresaId },
+            include: incluirDadosDaObra(empresaId),
+          });
+          return {
+            obra: formatarObra(semAlteracao, "ADMIN"),
+            agendadaPara: obraAtual.agendadaPara,
+            prazoFinal: obraAtual.prazoFinal,
+            evento: null,
+            alterada: false,
+          };
+        }
+
+        await tx.obra.update({
+          where: { id: obraId },
+          data: { agendadaPara, prazoFinal },
+        });
+
+        const evento = await tx.obraEvento.create({
+          data: {
+            obraId,
+            empresaId,
+            usuarioId: administradorId,
+            tipo: "AGENDAMENTO",
+            descricao: `Obra reagendada para ${formatarDataHoraAgendamento(agendadaPara)} até ${formatarDataHoraAgendamento(prazoFinal)}.`,
+            visivelParaCliente: true,
+          },
+        });
+
+        const atualizada = await tx.obra.findFirst({
+          where: { id: obraId, empresaId },
+          include: incluirDadosDaObra(empresaId),
+        });
+        return { obra: formatarObra(atualizada, "ADMIN"), agendadaPara, prazoFinal, evento, alterada: true };
+      }, { isolationLevel: "Serializable" });
+    } catch (erro) {
+      if (erro.code !== "P2034") throw erro;
+      if (tentativa === 3) {
+        throw erroAgendamento("AGENDAMENTO_CONCORRENTE", "O agendamento foi alterado por outra operação; atualize e tente novamente");
+      }
+      // A nova transação adquire outro snapshot depois de liberar o lock; assim
+      // uma disputa simultânea vira conflito de domínio quando os horários se cruzam.
+    }
+  }
+}
+
 // Define os relacionamentos necessários para formar a resposta do frontend.
 function incluirDadosDaObra(empresaId) {
   return {
@@ -364,4 +472,5 @@ module.exports = {
   alocarFuncionario,
   encerrarAlocacao,
   registrarAndamento,
+  reagendarObra,
 };
