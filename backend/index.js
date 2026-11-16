@@ -27,6 +27,8 @@ const {
   encerrarAlocacao,
   registrarAndamento,
 } = require("./src/repositories/obraRepository");
+const pagamentoService = require("./src/services/pagamentoService");
+const mercadoPagoService = require("./src/services/mercadoPagoService");
 const authMiddleware = require("./src/middlewares/authMiddleware");
 const exigirPapel = require("./src/middlewares/exigirPapel");
 
@@ -53,6 +55,39 @@ app.get("/health", (req, res) => {
     status: "ok",
     db: isDbConfigured() ? "configured" : "not_configured",
   });
+});
+
+// O webhook é público por definição, mas só processa eventos com assinatura
+// HMAC válida e estado consultado diretamente na API do Mercado Pago.
+app.post("/webhooks/mercado-pago", async (req, res) => {
+  const segredo = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
+  if (!segredo) return res.status(503).json({ erro: "Webhook do Mercado Pago não configurado" });
+
+  const tipo = req.query.type || req.query.topic || req.body?.type;
+  if (tipo && tipo !== "order") return res.status(200).json({ recebido: true, ignorado: true });
+
+  const dataId = req.query["data.id"];
+  const requestId = req.headers["x-request-id"];
+  const assinatura = req.headers["x-signature"];
+  if (!mercadoPagoService.validarAssinaturaWebhook({ assinatura, requestId, dataId, segredo })) {
+    return res.status(401).json({ erro: "Assinatura do webhook inválida" });
+  }
+
+  try {
+    await pagamentoService.confirmarNotificacaoMercadoPago(dataId);
+    return res.status(200).json({ recebido: true });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: "Banco temporariamente indisponível" });
+    if (erro.code?.startsWith("MERCADO_PAGO")) return res.status(503).json({ erro: "Não foi possível confirmar o evento no provedor" });
+    if (erro.code === "P2002" || erro.code === "TRANSACAO_DUPLICADA") {
+      return res.status(409).json({ erro: "A transação externa já está associada a outro pagamento" });
+    }
+    if (["REFERENCIA_EXTERNA_INVALIDA", "PEDIDO_EXTERNO_DIVERGENTE", "MOEDA_INVALIDA", "VALOR_EXTERNO_DIVERGENTE", "RESPOSTA_PROVEDOR_INVALIDA"].includes(erro.code)) {
+      return res.status(409).json({ erro: "Os dados confirmados pelo provedor não correspondem à tentativa local" });
+    }
+    console.error("Erro ao processar webhook do Mercado Pago:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível processar a confirmação do pagamento" });
+  }
 });
 
 // Rota de autenticação — login com e-mail e senha
@@ -249,6 +284,70 @@ app.get("/obras/:id", authMiddleware, exigirEmpresaDoToken, async (req, res) => 
     }
     console.error("Erro ao consultar obra:", erro.message);
     return res.status(500).json({ erro: "Erro ao consultar obra" });
+  }
+});
+
+// O cliente inicia somente pagamentos das próprias obras. Valor e saldo são
+// revalidados no repositório contra as parcelas persistidas.
+app.post("/obras/:id/pagamento", authMiddleware, exigirEmpresaDoToken, exigirPapel("CLIENTE"), async (req, res) => {
+  try {
+    const { parcelaId, valor } = req.body || {};
+    const chaveIdempotencia = req.headers["idempotency-key"];
+    if (typeof parcelaId !== "string" || !parcelaId.trim()) {
+      return res.status(400).json({ erro: "parcelaId é obrigatório" });
+    }
+    if (typeof chaveIdempotencia !== "string" || !/^[\x21-\x7E]{8,128}$/.test(chaveIdempotencia)) {
+      return res.status(400).json({ erro: "O cabeçalho Idempotency-Key é obrigatório e deve ter de 8 a 128 caracteres" });
+    }
+    const valorTexto = typeof valor === "number" && Number.isFinite(valor) ? String(valor) : valor;
+    if (typeof valorTexto !== "string" && typeof valorTexto !== "number") {
+      return res.status(400).json({ erro: "valor deve ser um número positivo com até duas casas decimais" });
+    }
+    const normalizado = String(valorTexto);
+    if (!/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(normalizado)) {
+      return res.status(400).json({ erro: "valor deve ser um número positivo com até duas casas decimais" });
+    }
+    const [parteInteira, parteDecimal = ""] = normalizado.split(".");
+    const valorCentavos = Number(parteInteira) * 100 + Number(parteDecimal.padEnd(2, "0"));
+    if (!Number.isSafeInteger(valorCentavos) || valorCentavos <= 0) {
+      return res.status(400).json({ erro: "valor deve ser maior que zero" });
+    }
+
+    const resultado = await pagamentoService.iniciarPagamento({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      usuarioId: req.usuario.id,
+      parcelaId: parcelaId.trim(),
+      valorCentavos,
+      chaveIdempotencia,
+    });
+    return res.status(resultado.repetida ? 200 : 201).json({
+      pagamento: resultado.pagamento,
+      checkoutUrl: resultado.checkoutUrl,
+    });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED" || erro.code === "MERCADO_PAGO_NAO_CONFIGURADO") {
+      return res.status(503).json({ erro: erro.message });
+    }
+    const respostas = {
+      OBRA_NAO_ENCONTRADA: [404, "Obra não encontrada para este cliente"],
+      PARCELAS_NAO_ENCONTRADAS: [409, "A obra não possui parcelas cadastradas"],
+      PARCELA_NAO_ENCONTRADA: [404, "Parcela não encontrada nesta obra"],
+      SALDO_INSUFICIENTE: [409, "O valor excede o saldo pendente da obra ou da parcela"],
+      CHAVE_IDEMPOTENCIA_REUTILIZADA: [409, "A chave de idempotência já foi usada com outros dados"],
+    };
+    if (respostas[erro.code]) {
+      const [status, mensagem] = respostas[erro.code];
+      return res.status(status).json({ erro: mensagem });
+    }
+    if (erro.code === "P2034") return res.status(409).json({ erro: "Saldo alterado por outro pagamento; atualize e tente novamente" });
+    if (erro.code === "P2002") return res.status(409).json({ erro: "Identificador de pagamento duplicado" });
+    if (erro.code?.startsWith("MERCADO_PAGO")) {
+      console.error("Falha ao criar checkout sandbox:", erro.code, erro.statusProvedor || "");
+      return res.status(502).json({ erro: "Não foi possível iniciar o checkout do Mercado Pago" });
+    }
+    console.error("Erro ao iniciar pagamento:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao iniciar pagamento" });
   }
 });
 

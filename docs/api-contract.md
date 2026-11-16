@@ -17,6 +17,8 @@ Os papéis válidos são `ADMIN`, `CLIENTE` e `COLABORADOR`.
 | `GET /obras` | Autenticado | Lista obras dentro do escopo do perfil. |
 | `GET /obras/:id` | Autenticado | Consulta obra dentro do escopo; obra inexistente ou fora dele retorna 404. |
 | `POST /obras/:id/andamento` | COLABORADOR alocado | Registra anotação/update/ocorrência na timeline. Upload de foto retorna 501 enquanto não houver armazenamento configurado. |
+| `POST /obras/:id/pagamento` | CLIENTE proprietário | Cria uma tentativa pendente e retorna a URL do Checkout Pro sandbox. Requer `Idempotency-Key`; a criação do checkout não quita a parcela. |
+| `POST /webhooks/mercado-pago` | Webhook público com assinatura HMAC | Valida a notificação de Order, consulta a Order na API Mercado Pago e só então persiste o estado confirmado. |
 | `PATCH /usuarios/me/senha` | Autenticado | Troca a própria senha com `senhaAtual` e `novaSenha`; aceita também nomes snake_case. |
 
 Login retorna 400 para campos ausentes, 401 para credenciais inválidas e 503 quando o banco não está configurado. Cada requisição autenticada valida o JWT e confere o usuário, e-mail, papel e empresa atuais no banco. Tokens deixam de valer após remoção do usuário ou alteração de e-mail, papel ou empresa.
@@ -50,3 +52,30 @@ Cadastro/convite de clientes, alteração de status, pagamentos, upload de fotos
 `tipo` é opcional e assume `ATUALIZACAO`; os valores aceitos são `ANOTACAO`, `ATUALIZACAO` e `OCORRENCIA`. `descricao` é obrigatória e limitada a 2000 caracteres. Sucesso retorna HTTP 201 com `{ "evento": { ... } }`; o evento é persistido com autor, empresa, timestamp e `visivelParaCliente: true`. Usuário sem alocação aberta recebe 403, obra inexistente ou de outra empresa recebe 404 e payload inválido recebe 400.
 
 O backend não possui SDK, credenciais ou bucket de armazenamento. Enviar `foto`, `fotoUrl` ou `multipart/form-data` retorna HTTP 501 sem persistir evento parcial. Para completar foto, configurar armazenamento persistente (por exemplo, Supabase Storage) e definir bucket privado/público, política de acesso e estratégia de URL antes de implementar o upload.
+
+### Pagamento de parcela — Issue #18
+
+`POST /obras/:id/pagamento` exige token de `CLIENTE` e que a obra pertença ao usuário autenticado e à empresa do token. Exemplo:
+
+```http
+Authorization: Bearer <token>
+Idempotency-Key: 8f37f406-dc1c-4b46-9dc1-1ea6286b72c9
+Content-Type: application/json
+```
+
+```json
+{
+  "parcelaId": "uuid-da-parcela",
+  "valor": 250.00
+}
+```
+
+O backend valida valor positivo com até duas casas decimais, obra, parcela e saldo persistido. Tentativas pendentes reservam saldo; aprovações e pagamentos parciais são somados em centavos, e a parcela só muda para `PAGA` quando o total confirmado cobre seu valor. A chave idempotente não pode ser reutilizada com dados diferentes. Cada order do provedor recebe o ID local como `external_reference` e `X-Idempotency-Key`; IDs externos têm índices únicos no banco.
+
+Uma nova solicitação retorna HTTP 201 com `{ "pagamento": { "id", "status": "PENDENTE", ... }, "checkoutUrl": "https://www.mercadopago.com.br/..." }`. A mesma solicitação repetida retorna HTTP 200 com a tentativa e o checkout já criados. Erros esperados: 400 (payload ou chave inválidos), 401 (sem autenticação), 403 (papel não permitido), 404 (obra/parcela fora do escopo do cliente), 409 (saldo insuficiente, concorrência ou idempotência conflitante), 502 (falha do provedor) e 503 (banco ou configuração sandbox ausente).
+
+O retorno do navegador não confirma pagamento. A URL configurada deve receber notificações de Orders (`type=order`). O endpoint `POST /webhooks/mercado-pago` valida `x-signature` e `x-request-id`, usa `data.id` para consultar `GET /v1/orders/{id}` com o Access Token de teste e processa apenas os dados dessa resposta autenticada no provedor. Uma Order `processed` só aprova se tiver uma transação processada identificada e os valores pagos corresponderem ao valor local. Estados pendentes, recusados ou cancelados nunca quitam parcela. A Order, a referência local, a moeda BRL, o valor e o identificador único da transação são verificados antes da gravação.
+
+Configuração manual necessária (não gravar credenciais no repositório): definir `MERCADO_PAGO_ACCESS_TOKEN_TEST` com Access Token de teste e `MERCADO_PAGO_WEBHOOK_SECRET` com a assinatura secreta de Webhooks. No painel de integrações, cadastrar URL HTTPS pública do webhook no modo de teste e habilitar notificações de Orders. A URL local não alcançável pela internet não recebe callbacks. O checkout usa Orders API do Checkout Pro, que retorna `checkout_url` e aceita `X-Idempotency-Key` para repetição segura ([criação de order](https://www.mercadopago.com.br/developers/pt/docs/checkout-pro-orders/create-order?scope=prod)); as notificações de Orders e a forma de consulta estão descritas pelo provedor ([notificações Checkout Pro Orders](https://www.mercadopago.com.br/developers/pt/docs/checkout-pro-orders/notifications?scope=prod)).
+
+A aprovação real no sandbox ainda não foi validada: não há credenciais de teste nem URL pública de webhook configuradas neste ambiente. Testes mockados não substituem a compra aprovada real. A migration aditiva que cria o histórico de tentativas ainda precisa ser aplicada em ambiente autorizado antes do endpoint funcionar com PostgreSQL.

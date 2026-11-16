@@ -221,11 +221,18 @@ describe("Bloqueio centralizado de funcionários desativados", () => {
     assert.equal(sessaoSemBanco.statusCode, 503);
   });
 
-  it("todas as rotas privadas usam authMiddleware antes dos handlers", () => {
+  it("rotas de usuário usam authMiddleware e webhook tem proteção própria", () => {
     const publicas = new Set(["/", "/health", "/auth/login"]);
-    const privadas = app.router.stack.filter((item) => item.route && !publicas.has(item.route.path));
+    const webhookProtegidoPorAssinatura = "/webhooks/mercado-pago";
+    const privadas = app.router.stack.filter((item) => item.route && !publicas.has(item.route.path) && item.route.path !== webhookProtegidoPorAssinatura);
     assert.ok(privadas.length > 0);
     assert.ok(privadas.every((item) => item.route.stack[0].handle === authMiddleware));
+
+    // O provedor não possui sessão JWT; o webhook tem sua própria validação
+    // criptográfica e consulta o pagamento diretamente na API oficial.
+    const webhook = app.router.stack.find((item) => item.route?.path === webhookProtegidoPorAssinatura);
+    assert.ok(webhook);
+    assert.notEqual(webhook.route.stack[0].handle, authMiddleware);
   });
 });
 

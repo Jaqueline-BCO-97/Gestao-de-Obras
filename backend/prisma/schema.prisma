@@ -64,6 +64,8 @@ model Usuario {
   funcionario      Funcionario?
   // Aceites de contrato feitos por este usuário.
   contratosAceitos ContratoAceite[]
+  // Pagamentos iniciados por este usuário.
+  pagamentos       Pagamento[]
 }
 
 // Representa uma obra pertencente a uma empresa.
@@ -104,6 +106,8 @@ model Obra {
   eventos               ObraEvento[]
   // Parcelas de pagamento da obra.
   parcelas              Parcela[]
+  // Tentativas de pagamento associadas às parcelas desta obra.
+  pagamentos            Pagamento[]
   // Contrato opcional da obra.
   contrato              Contrato?
 }
@@ -217,11 +221,47 @@ model Parcela {
   pagaEm             DateTime?
   // Identificador opcional e exclusivo do sistema de pagamento externo.
   pagamentoExternoId String?         @unique
+  // Tentativas associadas à parcela.
+  pagamentos         Pagamento[]
 
   // Impede parcelas com o mesmo número na mesma obra.
   @@unique([obraId, numero])
+  // Permite que Pagamento valide no banco que parcelaId e obraId correspondem.
+  @@unique([id, obraId])
   // Acelera consultas de parcelas por obra.
   @@index([obraId])
+}
+
+// Mantém cada tentativa financeira até a confirmação oficial do provedor.
+model Pagamento {
+  // Identificador local enviado como referência externa ao Mercado Pago.
+  id                 String          @id @default(uuid())
+  // Obra e parcela às quais esta tentativa pertence.
+  obraId             String
+  obra               Obra            @relation(fields: [obraId], references: [id], onDelete: Restrict)
+  parcelaId          String
+  // A relação composta impede associar esta tentativa a parcela de outra obra.
+  parcela            Parcela         @relation(fields: [parcelaId, obraId], references: [id, obraId], onDelete: Restrict)
+  // Cliente autenticado que iniciou o checkout.
+  usuarioId          String
+  usuario            Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  // Valor reservado para esta tentativa, em reais.
+  valor              Decimal         @db.Decimal(12, 2)
+  // O estado só muda para aprovado após confirmação consultada no provedor.
+  status             StatusPagamento @default(PENDENTE)
+  // Chave enviada pelo cliente para repetição segura da mesma solicitação.
+  chaveIdempotencia  String          @unique
+  // Identificadores externos, protegidos contra associação duplicada.
+  pedidoExternoId    String?         @unique
+  transacaoExternaId String?         @unique
+  // Link HTTPS retornado para o Checkout Pro.
+  checkoutUrl        String?
+  detalheStatus      String?
+  criadoEm           DateTime        @default(now())
+  atualizadoEm       DateTime        @updatedAt
+
+  @@index([obraId, status])
+  @@index([parcelaId, status])
 }
 
 // Guarda os termos de um contrato para uma obra.
@@ -323,6 +363,15 @@ enum SituacaoParcela {
   PENDENTE
   // O pagamento foi realizado.
   PAGA
+}
+
+// Estados financeiros internos, distintos dos estados do provedor.
+enum StatusPagamento {
+  PENDENTE
+  APROVADO
+  RECUSADO
+  CANCELADO
+  ERRO
 }
 
 // Define as categorias disponíveis para eventos.

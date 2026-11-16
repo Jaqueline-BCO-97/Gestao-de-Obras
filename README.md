@@ -6,7 +6,7 @@
 
 ### Transforme cadernos, planilhas e grupos de WhatsApp em um histórico único, auditável e acessível para todos os envolvidos na obra.
 
-![React](https://img.shields.io/badge/Frontend-React_JS-61DAFB?style=for-the-badge&logo=react) ![Node.js](https://img.shields.io/badge/Backend-Node.js-339933?style=for-the-badge&logo=node.js) ![Express](https://img.shields.io/badge/API-Express-000000?style=for-the-badge) ![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL-4169E1?style=for-the-badge&logo=postgresql) ![JWT](https://img.shields.io/badge/Auth-JWT-010101?style=for-the-badge&logo=jsonwebtokens) ![Mercado Pago](https://img.shields.io/badge/Pagamentos-Mercado_Pago_(planejado)-00B1EA?style=for-the-badge)
+![React](https://img.shields.io/badge/Frontend-React_JS-61DAFB?style=for-the-badge&logo=react) ![Node.js](https://img.shields.io/badge/Backend-Node.js-339933?style=for-the-badge&logo=node.js) ![Express](https://img.shields.io/badge/API-Express-000000?style=for-the-badge) ![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL-4169E1?style=for-the-badge&logo=postgresql) ![JWT](https://img.shields.io/badge/Auth-JWT-010101?style=for-the-badge&logo=jsonwebtoken) ![Mercado Pago](https://img.shields.io/badge/Pagamentos-Mercado_Pago_(sandbox)-00B1EA?style=for-the-badge)
 
 ---
 
@@ -15,7 +15,7 @@
 Pré-requisitos:
 - Node.js 20+
 - Conta no Supabase (banco PostgreSQL já hospedado na nuvem)
-- Conta sandbox no Mercado Pago (para testar pagamentos — ainda não integrado)
+- Conta sandbox no Mercado Pago para validar pagamentos (integração implementada; aprovação real ainda depende de credenciais e webhook público)
 
 **Backend** (Node.js + Express):
 ```
@@ -223,8 +223,8 @@ gestao-de-obras/
 - Modelagem multiempresa (`empresaId` em toda tabela relevante)
 - Migrations via Prisma
 
-## 💳 Integrações (planejadas, ainda não implementadas)
-- Mercado Pago (pagamentos via PIX/crédito/débito, sandbox)
+## 💳 Integrações
+- Mercado Pago Checkout Pro Orders API em sandbox. O endpoint inicia checkout; a confirmação depende de webhook assinado consultado no provedor. Ver configuração e limitações em [`docs/api-contract.md`](docs/api-contract.md).
 - Cloudinary (armazenamento de fotos/arquivos)
 
 ---
@@ -245,8 +245,11 @@ sequenceDiagram
     Backend-->>Frontend: Orçamento aprovado / obra criada
     Cliente->>Frontend: Realiza pagamento (1ª parcela)
     Frontend->>Backend: POST /obras/:id/pagamento
-    Backend->>Gateway: Confirma transação
-    Gateway-->>Backend: Pagamento aprovado
+    Backend->>Gateway: Cria Checkout Pro Order
+    Gateway-->>Backend: Retorna checkout_url
+    Cliente->>Gateway: Conclui checkout sandbox
+    Gateway-->>Backend: Notifica a Order
+    Backend->>Gateway: Consulta estado da Order
     Backend->>DB: Registra pagamento + histórico
     Backend-->>Frontend: Atualiza saldo pendente
     Frontend-->>Cliente: Exibe status atualizado da obra
@@ -328,13 +331,14 @@ POST  /obras                     (cria obra na empresa do token — ADMIN)
 GET   /obras                     (lista obras da empresa — protegida)
 GET   /obras/:id                 (detalhe da obra, filtrado por empresa — protegida)
 POST  /obras/:id/andamento       (anotação/update/ocorrência — Colaborador alocado; upload de foto pendente)
+POST  /obras/:id/pagamento       (checkout sandbox — Cliente proprietário; confirmação por webhook)
+POST  /webhooks/mercado-pago     (notificação de Order assinada; consulta estado oficial no provedor)
 ```
 
 ## 🔜 Planejados
 ```
 POST  /auth/register             (cadastro de empresa + admin)
 PATCH /obras/:id/status
-POST  /obras/:id/pagamento       (Admin)
 POST  /obras/:id/colaboradores   (alocação — Admin)
 GET   /precos
 POST  /precos
@@ -396,7 +400,7 @@ Cobre atualmente o fluxo de troca de senha (`/usuarios/me/senha`). Ainda faltam 
 - [ ] Calendário/agenda consolidada
 - [ ] Registro de andamento (fotos + anotações) pelo Colaborador
 - [ ] Alocação de colaboradores por obra
-- [ ] Pagamento parcelado (50/50) via PIX/cartão
+- [ ] Pagamento parcelado (50/50) via PIX/cartão — endpoint e confirmação por webhook implementados; aprovação real no sandbox pendente de credenciais e configuração
 - [ ] Acompanhamento de obra pelo Cliente
 - [ ] Histórico/log de auditoria
 - [ ] Testes de isolamento entre empresas, testes de frontend e CI
