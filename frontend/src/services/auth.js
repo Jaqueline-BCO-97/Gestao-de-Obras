@@ -44,6 +44,7 @@ async function requisicao(caminho, opcoes = {}) {
     const erro = new Error(dados.erro || 'Não foi possível concluir a solicitação.')
     // Anexa o código de status HTTP retornado pelo servidor ao erro
     erro.status = resposta.status
+    erro.tentativaFinalizada = Boolean(dados.tentativaFinalizada)
     // Lança o erro para a camada superior tratar
     throw erro
   }
@@ -156,6 +157,48 @@ export async function buscarUsuarioAtual() {
   const dados = await requisicaoAutenticada('/auth/me')
   // Retorna apenas a propriedade 'usuario' dos dados retornados
   return dados.usuario
+}
+
+// Consulta as obras do usuário; o backend restringe CLIENTE ao próprio vínculo.
+export async function listarObras() {
+  return requisicaoAutenticada('/obras')
+}
+
+// A API aplica empresa, perfil e vínculo do cliente antes de retornar a obra.
+export async function buscarObra(id) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}`)
+}
+
+// Registra somente texto; o endpoint rejeita arquivos até a entrega de Storage.
+export async function registrarAndamentoObra(obraId, descricao, tipo) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/andamento`, {
+    method: 'POST',
+    body: JSON.stringify({ descricao, tipo }),
+  })
+}
+
+// Cria checkout pela API; o servidor confere propriedade, saldo e idempotência.
+export async function iniciarPagamento(obraId, parcelaId, valor, idempotencyKey) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/pagamento`, {
+    method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify({ parcelaId, valor }),
+  })
+}
+
+// Retoma pelo identificador persistido; a chave idempotente permanece somente no backend.
+export async function retomarPagamento(obraId, tentativaId) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/pagamentos/${encodeURIComponent(tentativaId)}/retomar`, {
+    method: 'POST',
+  })
+}
+
+export async function confirmarConclusaoObra(obraId) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/conclusao/confirmar`, { method: 'POST' })
+}
+
+export async function solicitarConferenciaObra(obraId) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/conclusao/solicitar`, { method: 'POST' })
 }
 
 // Função para solicitar alteração de senha da conta do usuário atual
