@@ -1,5 +1,6 @@
 // Importa os hooks useNavigate e Link do react-router-dom para navegação interna entre páginas
 import { useNavigate, Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
 
 // Importa o componente reutilizável Card do sistema de design
 import Card from '../components/Card.jsx'
@@ -8,24 +9,76 @@ import Card from '../components/Card.jsx'
 import Button from '../components/Button.jsx'
 
 // Importa a lista de dados mockados e as funções auxiliares de formatação e cores
-import { obrasMock, formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
+import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a função de logout para permitir que o cliente encerre a sua sessão
-import { encerrarSessao } from '../services/auth.js'
+import { encerrarSessao, listarObras } from '../services/auth.js'
+import { detectarNovosAgendamentos, registrarEventosConhecidos, registrarListenerOnline } from '../utils/eventosAgendamento.js'
 
 // Componente principal da página do Painel do Cliente (/cliente)
 export default function Cliente() {
   // Inicializa o hook de navegação do React Router para trocar de rota via código
   const navigate = useNavigate()
 
+  const [obras, setObras] = useState([])
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState('')
+  const [avisoAgendamento, setAvisoAgendamento] = useState(null)
+  const idsEventosConhecidos = useRef(new Set())
+
+  useEffect(() => {
+    let ativo = true
+    let consultaEmAndamento = false
+    let primeiraLeitura = true
+
+    async function atualizarObras() {
+      if (!ativo || document.visibilityState === 'hidden' || consultaEmAndamento) return
+      consultaEmAndamento = true
+      try {
+        const resultado = await listarObras()
+        if (!ativo) return
+        const eventos = resultado.flatMap((obra) => obra.timeline || [])
+        if (primeiraLeitura) {
+          registrarEventosConhecidos(eventos, idsEventosConhecidos.current)
+          primeiraLeitura = false
+        } else {
+          const novos = detectarNovosAgendamentos(eventos, idsEventosConhecidos.current)
+          if (novos.length) setAvisoAgendamento(novos[novos.length - 1])
+        }
+        setObras(resultado)
+        setErro('')
+      } catch (falha) {
+        if (ativo) setErro(falha.message)
+      } finally {
+        consultaEmAndamento = false
+        if (ativo) setCarregando(false)
+      }
+    }
+
+    function aoRetomarAba() {
+      if (document.visibilityState === 'visible') atualizarObras()
+    }
+
+    atualizarObras()
+    const intervalo = window.setInterval(atualizarObras, 30000)
+    document.addEventListener('visibilitychange', aoRetomarAba)
+    const removerListenerOnline = registrarListenerOnline(atualizarObras)
+    return () => {
+      ativo = false
+      window.clearInterval(intervalo)
+      document.removeEventListener('visibilitychange', aoRetomarAba)
+      removerListenerOnline()
+    }
+  }, [])
+
   // Calcula a quantidade total de obras cadastradas na lista mockada
-  const totalObras = obrasMock.length
+  const totalObras = obras.length
 
   // Calcula a quantidade de obras que estão atualmente com status "Em andamento"
-  const obrasEmAndamento = obrasMock.filter((obra) => obra.status === 'Em andamento').length
+  const obrasEmAndamento = obras.filter((obra) => obra.status === 'Em andamento').length
 
   // Calcula a quantidade de obras que já foram finalizadas com status "Concluída"
-  const obrasConcluidas = obrasMock.filter((obra) => obra.status === 'Concluída').length
+  const obrasConcluidas = obras.filter((obra) => obra.status === 'Concluída').length
 
   // Função disparada quando o usuário clica no botão de sair (logout)
   function handleLogout() {
@@ -165,10 +218,21 @@ export default function Cliente() {
           </span>
         </div>
 
+        {erro && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{erro}</p>}
+        {carregando && <p className="mb-4 text-sm text-slate-500" role="status">Carregando suas obras…</p>}
+        {avisoAgendamento && (
+          <aside className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950" role="status" aria-live="polite">
+            <div className="flex items-start justify-between gap-3">
+              <div><strong className="block">Uma obra foi reagendada</strong><span>{avisoAgendamento.descricao}</span></div>
+              <button type="button" onClick={() => setAvisoAgendamento(null)} className="shrink-0 font-semibold" aria-label="Fechar aviso">Fechar</button>
+            </div>
+          </aside>
+        )}
+
         {/* Grade responsiva de cartões de obras (mobile-first: 1 coluna no mobile, 2 em tablets e desktops) */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6" aria-label="Lista de obras">
           {/* Itera sobre o array de obras fake para gerar cada card */}
-          {obrasMock.map((obra) => {
+          {obras.map((obra) => {
             // Obtém as cores personalizadas do status para aplicar na borda e badge
             const cores = obterCoresStatus(obra.status)
 
@@ -235,10 +299,10 @@ export default function Cliente() {
                         <span className="text-slate-500">1ª Parcela:</span>
                         <span
                           className={`font-semibold capitalize text-[11px] ${
-                            obra.parcela1.situacao === 'paga' ? 'text-emerald-600' : 'text-amber-600'
+                            obra.parcela1?.situacao === 'paga' ? 'text-emerald-600' : 'text-amber-600'
                           }`}
                         >
-                          {obra.parcela1.situacao}
+                          {obra.parcela1?.situacao || 'pendente'}
                         </span>
                       </div>
                       {/* Status da Parcela 2 */}
@@ -246,10 +310,10 @@ export default function Cliente() {
                         <span className="text-slate-500">2ª Parcela:</span>
                         <span
                           className={`font-semibold capitalize text-[11px] ${
-                            obra.parcela2.situacao === 'paga' ? 'text-emerald-600' : 'text-amber-600'
+                            obra.parcela2?.situacao === 'paga' ? 'text-emerald-600' : 'text-amber-600'
                           }`}
                         >
-                          {obra.parcela2.situacao}
+                          {obra.parcela2?.situacao || 'pendente'}
                         </span>
                       </div>
                     </div>
@@ -289,6 +353,7 @@ export default function Cliente() {
             )
           })}
         </section>
+        {!carregando && !erro && obras.length === 0 && <p className="rounded-xl bg-white p-5 text-sm text-slate-500">Nenhuma obra está vinculada à sua conta.</p>}
 
       </main>
     </div>
