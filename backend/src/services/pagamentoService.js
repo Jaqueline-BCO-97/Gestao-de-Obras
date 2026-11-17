@@ -27,6 +27,12 @@ function compararTentativa(pagamento, { obraId, parcelaId, usuarioId, valorCenta
     valorEmCentavos(pagamento.valor) === valorCentavos;
 }
 
+function validarAcessoSegundaParcela(pagamento) {
+  if (pagamento.parcela?.numero === 2 && (pagamento.obra?.status !== "CONCLUIDA" || !pagamento.obra?.conclusaoConfirmadaEm)) {
+    throw erroPagamento("CONCLUSAO_NAO_CONFIRMADA", "A segunda parcela só pode ser paga após a confirmação da conclusão da obra");
+  }
+}
+
 function respostaDaTentativa(pagamento, checkoutUrl = pagamento.checkoutUrl) {
   return {
     pagamento: {
@@ -54,6 +60,7 @@ async function iniciarPagamento({ obraId, empresaId, usuarioId, parcelaId, valor
     if (!compararTentativa(pagamento, { obraId, parcelaId, usuarioId, valorCentavos })) {
       throw erroPagamento("CHAVE_IDEMPOTENCIA_REUTILIZADA", "A chave de idempotência já foi usada com outros dados");
     }
+    validarAcessoSegundaParcela(pagamento);
     if (pagamento.status !== "PENDENTE") {
       return { ...respostaDaTentativa(pagamento), repetida: true };
     }
@@ -126,6 +133,41 @@ async function iniciarPagamento({ obraId, empresaId, usuarioId, parcelaId, valor
   }
 }
 
+async function retomarTentativaPagamento({ obraId, empresaId, usuarioId, pagamentoId }) {
+  const pagamento = await repository.buscarTentativaPendenteDoCliente({ pagamentoId, obraId, empresaId, usuarioId });
+  if (!pagamento) throw erroPagamento("TENTATIVA_NAO_ENCONTRADA", "Tentativa de pagamento não encontrada nesta obra");
+  if (pagamento.status !== "PENDENTE") {
+    throw erroPagamento("TENTATIVA_NAO_PENDENTE", "Somente tentativas pendentes podem ser retomadas");
+  }
+  validarAcessoSegundaParcela(pagamento);
+
+  // A retomada usa o ID persistido como referência/idempotência do provedor e nunca cria nova reserva.
+  if (pagamento.checkoutUrl && pagamento.pedidoExternoId) {
+    return { ...respostaDaTentativa(pagamento), repetida: true };
+  }
+
+  if (!process.env.MERCADO_PAGO_ACCESS_TOKEN_TEST) {
+    throw erroPagamento("MERCADO_PAGO_NAO_CONFIGURADO", "Checkout sandbox não está configurado");
+  }
+
+  try {
+    const pedido = await mercadoPago.criarPedidoSandbox({
+      pagamento,
+      obra: pagamento.obra,
+      parcela: pagamento.parcela,
+      email: pagamento.usuario.email,
+    });
+    const salvo = await repository.salvarPedidoExterno(pagamento.id, pedido.id, pedido.checkoutUrl);
+    return { ...respostaDaTentativa(salvo, pedido.checkoutUrl), repetida: true };
+  } catch (erro) {
+    // Uma rejeição definitiva encerra a tentativa; falhas ambíguas preservam a reserva para nova retomada.
+    if (erro.code === "MERCADO_PAGO_REJEITOU" && erro.statusProvedor >= 400 && erro.statusProvedor < 500) {
+      await repository.marcarTentativaComErro(pagamento.id, erro.code);
+    }
+    throw erro;
+  }
+}
+
 async function confirmarNotificacaoMercadoPago(dataId) {
   if (typeof dataId !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(dataId)) {
     throw erroPagamento("NOTIFICACAO_INVALIDA", "Identificador de pedido inválido");
@@ -193,4 +235,4 @@ async function confirmarNotificacaoMercadoPago(dataId) {
   }
 }
 
-module.exports = { iniciarPagamento, confirmarNotificacaoMercadoPago };
+module.exports = { iniciarPagamento, retomarTentativaPagamento, confirmarNotificacaoMercadoPago };

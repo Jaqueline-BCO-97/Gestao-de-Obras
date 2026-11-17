@@ -17,8 +17,11 @@ Os papéis válidos são `ADMIN`, `CLIENTE` e `COLABORADOR`.
 | `GET /obras` | Autenticado | Lista obras dentro do escopo do perfil. |
 | `GET /obras/:id` | Autenticado | Consulta obra dentro do escopo; obra inexistente ou fora dele retorna 404. |
 | `PATCH /obras/:id/agendamento` | ADMIN da empresa | Confirma novo intervalo sem conflito e registra evento de agenda visível ao cliente. |
+| `POST /obras/:id/conclusao/solicitar` | ADMIN da empresa | Envia obra em andamento para conferência; status, data e evento de timeline são persistidos em transação. |
+| `POST /obras/:id/conclusao/confirmar` | CLIENTE proprietário | Confirma obra aguardando conferência; status, data e evento são persistidos em transação. |
 | `POST /obras/:id/andamento` | COLABORADOR alocado | Registra anotação/update/ocorrência na timeline. Upload de foto retorna 501 enquanto não houver armazenamento configurado. |
 | `POST /obras/:id/pagamento` | CLIENTE proprietário | Cria uma tentativa pendente e retorna a URL do Checkout Pro sandbox. Requer `Idempotency-Key`; a criação do checkout não quita a parcela. |
+| `POST /obras/:id/pagamentos/:pagamentoId/retomar` | CLIENTE proprietário | Retoma tentativa persistida `PENDENTE` sem chave idempotente no cliente; retorna checkout existente ou repete a criação pela referência estável. |
 | `POST /webhooks/mercado-pago` | Webhook público com assinatura HMAC | Valida a notificação de Order, consulta a Order na API Mercado Pago e só então persiste o estado confirmado. |
 | `PATCH /usuarios/me/senha` | Autenticado | Troca a própria senha com `senhaAtual` e `novaSenha`; aceita também nomes snake_case. |
 
@@ -37,7 +40,13 @@ O objeto de obra usa os campos `id`, `titulo`, `cliente`, `colaboradores`, `ende
 
 ## Ainda não implementado
 
-Cadastro/convite de clientes, alteração de status, upload de fotos e rotas de tabela de preços pertencem ao escopo planejado do produto. O endpoint de andamento registra eventos textuais; fotos dependem de armazenamento persistente ainda não configurado. O fluxo de pagamento está implementado como checkout sandbox pendente de credenciais e validação real no provedor.
+Cadastro/convite de clientes, alteração genérica de status, upload de fotos e rotas de tabela de preços pertencem ao escopo planejado do produto. Solicitação e confirmação de conclusão são operações explícitas descritas abaixo. O endpoint de andamento registra eventos textuais; fotos dependem de armazenamento persistente ainda não configurado. O checkout usa sandbox e depende de credenciais e webhook público para validação fim a fim.
+
+### Conclusão e RN8 — Issue #22
+
+`POST /obras/:id/conclusao/solicitar` aceita somente ADMIN da empresa e somente quando a obra está `EM_ANDAMENTO`; grava `AGUARDANDO_CONFERENCIA`, `conclusaoSolicitadaEm` e evento visível ao cliente na mesma transação. Repetições ou status incompatíveis retornam 409.
+
+`POST /obras/:id/conclusao/confirmar` aceita somente CLIENTE proprietário da obra, dentro da empresa autenticada, e somente em `AGUARDANDO_CONFERENCIA`; grava `CONCLUIDA`, `conclusaoConfirmadaEm` e evento visível na mesma transação. Obra fora do escopo retorna 404; status incompatível ou repetição retorna 409. A segunda parcela é validada no backend em toda tentativa nova: requer `CONCLUIDA` e confirmação persistida. A tela não altera status de parcelas; somente o webhook assinado e consultado no Mercado Pago registra aprovação.
 
 ### Agendamento/reagendamento — Issue #19
 
@@ -75,7 +84,7 @@ O backend não possui SDK, credenciais ou bucket de armazenamento. Enviar `foto`
 
 ### Pagamento de parcela — Issue #18
 
-`POST /obras/:id/pagamento` exige token de `CLIENTE` e que a obra pertença ao usuário autenticado e à empresa do token. Exemplo:
+`POST /obras/:id/pagamento` exige token de `CLIENTE` e que a obra pertença ao usuário autenticado e à empresa do token. O corpo contém `parcelaId` e `valor`; a chave única da tentativa vai no cabeçalho `Idempotency-Key`. A segunda parcela exige que o status persistido seja `CONCLUIDA` e `conclusaoConfirmadaEm` esteja preenchido. Exemplo:
 
 ```http
 Authorization: Bearer <token>
@@ -93,6 +102,8 @@ Content-Type: application/json
 O backend valida valor positivo com até duas casas decimais, obra, parcela e saldo persistido. Tentativas pendentes reservam saldo; aprovações e pagamentos parciais são somados em centavos, e a parcela só muda para `PAGA` quando o total confirmado cobre seu valor. A chave idempotente não pode ser reutilizada com dados diferentes. Cada order do provedor recebe o ID local como `external_reference` e `X-Idempotency-Key`; IDs externos têm índices únicos no banco.
 
 Uma nova solicitação retorna HTTP 201 com `{ "pagamento": { "id", "status": "PENDENTE", ... }, "checkoutUrl": "https://www.mercadopago.com.br/..." }`. A mesma solicitação repetida retorna HTTP 200 com a tentativa e o checkout já criados. Erros esperados: 400 (payload ou chave inválidos), 401 (sem autenticação), 403 (papel não permitido), 404 (obra/parcela fora do escopo do cliente), 409 (saldo insuficiente, concorrência ou idempotência conflitante), 502 (falha do provedor) e 503 (banco ou configuração sandbox ausente).
+
+`POST /obras/:id/pagamentos/:pagamentoId/retomar` exige token de `CLIENTE`. A busca restringe simultaneamente o ID da tentativa, ID da obra, ID do cliente autenticado e empresa da obra igual à empresa autenticada, e só permite estado `PENDENTE`. Não recebe empresa, valor nem chave idempotente do navegador e não cria uma segunda reserva. Se o checkout estiver persistido, devolve a mesma URL sem exigir Access Token do Mercado Pago; se a criação anterior falhou antes de persistir a URL, exige a configuração sandbox e o provedor recebe novamente o mesmo ID local como referência e chave idempotente. Tentativas aprovadas, recusadas, canceladas ou encerradas (`ERRO`) retornam 409; IDs de outra obra/cliente/empresa retornam 404. A resposta nunca contém a chave idempotente ou credenciais.
 
 O retorno do navegador não confirma pagamento. A URL configurada deve receber notificações de Orders (`type=order`). O endpoint `POST /webhooks/mercado-pago` valida `x-signature` e `x-request-id`, usa `data.id` para consultar `GET /v1/orders/{id}` com o Access Token de teste e processa apenas os dados dessa resposta autenticada no provedor. Uma Order `processed` só aprova se tiver uma transação processada identificada e os valores pagos corresponderem ao valor local. Estados pendentes, recusados ou cancelados nunca quitam parcela. A Order, a referência local, a moeda BRL, o valor e o identificador único da transação são verificados antes da gravação.
 

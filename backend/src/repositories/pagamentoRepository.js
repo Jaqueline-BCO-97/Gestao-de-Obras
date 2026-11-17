@@ -36,7 +36,20 @@ async function buscarPagamentoPorChave(chaveIdempotencia) {
   return getPrisma().pagamento.findUnique({
     where: { chaveIdempotencia },
     include: {
-      obra: { select: { id: true, nome: true } },
+      obra: { select: { id: true, nome: true, status: true, conclusaoConfirmadaEm: true } },
+      parcela: { select: { id: true, numero: true, valor: true } },
+      usuario: { select: { id: true, email: true } },
+    },
+  });
+}
+
+async function buscarTentativaPendenteDoCliente({ pagamentoId, obraId, empresaId, usuarioId }) {
+  exigirBancoConfigurado();
+  return getPrisma().pagamento.findFirst({
+    // Restringe pagamento, obra, cliente e empresa autenticados; IDs alheios viram 404.
+    where: { id: pagamentoId, obraId, usuarioId, obra: { empresaId } },
+    include: {
+      obra: { select: { id: true, nome: true, status: true, conclusaoConfirmadaEm: true } },
       parcela: { select: { id: true, numero: true, valor: true } },
       usuario: { select: { id: true, email: true } },
     },
@@ -51,7 +64,7 @@ async function criarTentativaPagamento({ obraId, empresaId, usuarioId, parcelaId
     const existente = await tx.pagamento.findUnique({
       where: { chaveIdempotencia },
       include: {
-        obra: { select: { id: true, nome: true } },
+        obra: { select: { id: true, nome: true, status: true, conclusaoConfirmadaEm: true } },
         parcela: { select: { id: true, numero: true, valor: true } },
         usuario: { select: { id: true, email: true } },
       },
@@ -66,6 +79,8 @@ async function criarTentativaPagamento({ obraId, empresaId, usuarioId, parcelaId
         id: true,
         nome: true,
         valorTotal: true,
+        status: true,
+        conclusaoConfirmadaEm: true,
         parcelas: {
           select: { id: true, numero: true, valor: true, situacao: true },
           orderBy: { numero: "asc" },
@@ -78,6 +93,10 @@ async function criarTentativaPagamento({ obraId, empresaId, usuarioId, parcelaId
 
     const parcela = obra.parcelas.find((item) => item.id === parcelaId);
     if (!parcela) throw erroPagamento("PARCELA_NAO_ENCONTRADA", "Parcela não encontrada nesta obra");
+    // A segunda parcela só pode ser iniciada após a confirmação persistida da conclusão pelo cliente.
+    if (parcela.numero === 2 && (obra.status !== "CONCLUIDA" || !obra.conclusaoConfirmadaEm)) {
+      throw erroPagamento("CONCLUSAO_NAO_CONFIRMADA", "A segunda parcela só pode ser paga após a confirmação da conclusão da obra");
+    }
 
     const pagamentos = await tx.pagamento.findMany({
       where: { obraId, status: { in: ["PENDENTE", "APROVADO"] } },
@@ -243,6 +262,7 @@ async function processarConfirmacaoExterna({ pagamentoId, pedidoExterno }) {
 module.exports = {
   criarTentativaPagamento,
   buscarPagamentoPorChave,
+  buscarTentativaPendenteDoCliente,
   salvarPedidoExterno,
   marcarTentativaComErro,
   buscarPagamentoPorId,

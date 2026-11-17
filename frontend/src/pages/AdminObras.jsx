@@ -1,5 +1,5 @@
 // Importa o hook useState do React para controlar filtros e avisos na tela
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 // Importa os componentes de navegação do react-router-dom
 import { Link, useNavigate } from 'react-router-dom'
@@ -11,10 +11,10 @@ import Card from '../components/Card.jsx'
 import Button from '../components/Button.jsx'
 
 // Importa os dados das obras e as funções de moeda e cores
-import { obrasMock, formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
+import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a lista de colaboradores mockados para exibir os membros da equipe alocada
-import { obterColaboradoresDaObra } from '../data/colaboradoresMock.js'
+import { listarObras, solicitarConferenciaObra } from '../services/auth.js'
 
 // Importa a função de logout para permitir ao administrador encerrar a sessão
 import { encerrarSessao } from '../services/auth.js'
@@ -29,6 +29,20 @@ export default function AdminObras() {
 
   // Estado para armazenar o aviso de visualização ao clicar no botão "Ver"
   const [avisoVisual, setAvisoVisual] = useState(null)
+  const [obras, setObras] = useState([])
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState('')
+  const [solicitando, setSolicitando] = useState('')
+
+  const atualizarObras = useCallback(async () => setObras(await listarObras()), [])
+
+  useEffect(() => {
+    let ativo = true
+    listarObras().then((resultado) => { if (ativo) { setObras(resultado); setErro('') } })
+      .catch((falha) => { if (ativo) setErro(falha.message) })
+      .finally(() => { if (ativo) setCarregando(false) })
+    return () => { ativo = false }
+  }, [])
 
   // Lista fixa de opções de filtro permitidas pelo escopo
   const opcoesFiltro = [
@@ -47,9 +61,9 @@ export default function AdminObras() {
   // Filtra as obras conforme a opção selecionada no filtro
   const obrasFiltradas = filtroStatus === 'Todos'
     // Se 'Todos' estiver selecionado, exibe todas as obras
-    ? obrasMock
+    ? obras
     // Caso contrário, filtra pelo status exato selecionado
-    : obrasMock.filter((obra) => obra.status === filtroStatus)
+    : obras.filter((obra) => obra.status === filtroStatus)
 
   // Função para deslogar da conta e voltar ao login
   function handleLogout() {
@@ -62,7 +76,20 @@ export default function AdminObras() {
   // Função auxiliar para buscar os colaboradores completos que estão escalados na obra
   function obterColaboradores(obra) {
     // Usa a função compartilhada para consultar os IDs registrados na obra
-    return obterColaboradoresDaObra(obra)
+    return (obra.colaboradores || []).map((id) => ({ id, nome: id, funcao: 'Alocado', telefone: '' }))
+  }
+
+  async function handleSolicitarConferencia(obra) {
+    setSolicitando(obra.id)
+    setErro('')
+    try {
+      await solicitarConferenciaObra(obra.id)
+      await atualizarObras()
+    } catch (falha) {
+      setErro(falha.message)
+    } finally {
+      setSolicitando('')
+    }
   }
 
   // Função disparada ao clicar no botão visual "Ver" de uma obra
@@ -179,11 +206,13 @@ export default function AdminObras() {
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Exibindo</span>
             {/* Número com destaque */}
             <strong className="text-lg font-bold text-navy">
-              {obrasFiltradas.length} de {obrasMock.length} obras
+              {obrasFiltradas.length} de {obras.length} obras
             </strong>
           </div>
         </div>
 
+        {erro && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{erro}</p>}
+        {carregando && <p className="mb-4 text-sm text-slate-500" role="status">Carregando obras…</p>}
         {/* Aviso visual informativo disparado ao clicar no botão "Ver" de qualquer obra */}
         {avisoVisual && (
           // Caixa de notificação com estilo de alerta suave
@@ -225,8 +254,8 @@ export default function AdminObras() {
               const selecionado = filtroStatus === opcao
               // Conta quantas obras têm esse status (ou o total para 'Todos')
               const contagem = opcao === 'Todos'
-                ? obrasMock.length
-                : obrasMock.filter((o) => o.status === opcao).length
+                ? obras.length
+                : obras.filter((o) => o.status === opcao).length
 
               // Retorna o botão de filtro
               return (
@@ -362,6 +391,7 @@ export default function AdminObras() {
                           >
                             Ver
                           </Button>
+                          {obra.status === 'Em andamento' && <Button variant="compact" disabled={Boolean(solicitando)} onClick={() => handleSolicitarConferencia(obra)} className="ml-2 text-xs py-1 px-3">{solicitando === obra.id ? 'Enviando…' : 'Solicitar conferência'}</Button>}
                         </td>
 
                       </tr>

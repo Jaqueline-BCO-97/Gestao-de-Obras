@@ -10,6 +10,7 @@ const usuarios = [
   { id: "cliente-outro-a", email: "outro@teste.local", nome: "Outro cliente", tipo: "CLIENTE", empresaId: empresaA },
   { id: "cliente-b", email: "cliente-b@teste.local", nome: "Cliente B", tipo: "CLIENTE", empresaId: empresaB },
   { id: "admin-a", email: "admin@teste.local", nome: "Admin", tipo: "ADMIN", empresaId: empresaA },
+  { id: "admin-b", email: "admin-b@teste.local", nome: "Admin B", tipo: "ADMIN", empresaId: empresaB },
   { id: "colab-ativo", email: "colab@teste.local", nome: "Colaborador", tipo: "COLABORADOR", empresaId: empresaA },
   { id: "colab-inativo", email: "inativo@teste.local", nome: "Inativo", tipo: "COLABORADOR", empresaId: empresaA },
 ];
@@ -46,7 +47,7 @@ function expandirPagamento(pagamento) {
   const parcela = obra?.parcelas.find((item) => item.id === pagamento.parcelaId);
   return {
     ...pagamento,
-    obra: obra ? { id: obra.id, nome: obra.nome, empresaId: obra.empresaId } : null,
+    obra: obra ? { id: obra.id, nome: obra.nome, empresaId: obra.empresaId, status: obra.status, conclusaoConfirmadaEm: obra.conclusaoConfirmadaEm } : null,
     parcela: parcela ? { id: parcela.id, numero: parcela.numero, valor: parcela.valor, situacao: parcela.situacao } : null,
     usuario: localizar(usuarios, { id: pagamento.usuarioId }),
   };
@@ -58,7 +59,22 @@ const prismaFalso = {
       const obra = localizar(obras, where);
       if (!obra) return null;
       const cliente = localizar(usuarios, { id: obra.clienteId });
-      return { ...obra, cliente: cliente ? { id: cliente.id, email: cliente.email } : null };
+      return {
+        ...obra,
+        nome: obra.nome,
+        endereco: "Rua de teste",
+        prazoFinal: null,
+        cliente: cliente ? { id: cliente.id, nome: cliente.nome, email: cliente.email, empresaId: cliente.empresaId } : null,
+        parcelas: obra.parcelas.map((parcela) => ({ ...parcela, pagamentos: pagamentos.filter((item) => item.parcelaId === parcela.id) })),
+        escalas: [],
+        eventos: eventos.map((evento) => ({ ...evento, criadoEm: evento.criadoEm || new Date(), usuario: localizar(usuarios, { id: evento.usuarioId }) || { nome: "Teste" } })),
+      };
+    },
+    update: async ({ where, data }) => {
+      const obra = localizar(obras, where);
+      if (!obra) throw Object.assign(new Error("Missing project"), { code: "P2025" });
+      Object.assign(obra, data);
+      return { ...obra };
     },
   },
   pagamento: {
@@ -68,6 +84,10 @@ const prismaFalso = {
         : localizar(pagamentos, { chaveIdempotencia: where.chaveIdempotencia });
       return expandirPagamento(found);
     },
+    findFirst: async ({ where }) => expandirPagamento(pagamentos.find((item) =>
+      Object.entries(where).filter(([chave]) => chave !== "obra").every(([chave, valor]) => item[chave] === valor) &&
+      (!where.obra?.empresaId || localizar(obras, { id: item.obraId })?.empresaId === where.obra.empresaId)
+    ) || null),
     findMany: async ({ where }) => pagamentosDaConsulta(where).map((item) => ({ parcelaId: item.parcelaId, valor: item.valor, status: item.status })),
     create: async ({ data }) => {
       if (localizar(pagamentos, { chaveIdempotencia: data.chaveIdempotencia })) {
@@ -213,6 +233,13 @@ function criarPagamento(usuarioId = "cliente-a", { valor = 100, chave = `chave-$
   });
 }
 
+function retomarPagamento(usuarioId, obraId, pagamentoId) {
+  return chamarRota("POST", "/obras/:id/pagamentos/:pagamentoId/retomar", {
+    usuarioId,
+    params: { id: obraId, pagamentoId },
+  });
+}
+
 function assinaturaPara(dataId, requestId = `req-${dataId}`) {
   const ts = "1784210400";
   const manifesto = `id:${String(dataId).toLowerCase()};request-id:${requestId};ts:${ts};`;
@@ -254,13 +281,13 @@ describe("Issue #18 — pagamento por checkout sandbox", () => {
   beforeEach(() => {
     obras = [
       {
-        id: "obra-a", nome: "Reforma A", empresaId: empresaA, clienteId: "cliente-a", valorTotal: "1500.00",
+        id: "obra-a", nome: "Reforma A", empresaId: empresaA, clienteId: "cliente-a", valorTotal: "1500.00", status: "EM_ANDAMENTO", conclusaoSolicitadaEm: null, conclusaoConfirmadaEm: null,
         parcelas: [
           { id: "parcela-1", numero: 1, valor: "1000.00", situacao: "PENDENTE", pagaEm: null, pagamentoExternoId: null },
           { id: "parcela-2", numero: 2, valor: "500.00", situacao: "PENDENTE", pagaEm: null, pagamentoExternoId: null },
         ],
       },
-      { id: "obra-b", nome: "Reforma B", empresaId: empresaB, clienteId: "cliente-b", valorTotal: "500.00", parcelas: [{ id: "parcela-b", numero: 1, valor: "500.00", situacao: "PENDENTE", pagaEm: null, pagamentoExternoId: null }] },
+      { id: "obra-b", nome: "Reforma B", empresaId: empresaB, clienteId: "cliente-b", valorTotal: "500.00", status: "EM_ANDAMENTO", conclusaoSolicitadaEm: null, conclusaoConfirmadaEm: null, parcelas: [{ id: "parcela-b", numero: 1, valor: "500.00", situacao: "PENDENTE", pagaEm: null, pagamentoExternoId: null }] },
     ];
     pagamentos = [];
     eventos = [];
@@ -303,6 +330,60 @@ describe("Issue #18 — pagamento por checkout sandbox", () => {
     assert.equal(pagamentos.length, 0);
   });
 
+  it("RN8 bloqueia a segunda parcela até persistir a confirmação do cliente", async () => {
+    const antes = await criarPagamento("cliente-a", { valor: 500, chave: "rn8-bloqueada-01", parcelaId: "parcela-2" });
+    assert.equal(antes.statusCode, 409);
+    assert.match(antes.body.erro, /confirmação da conclusão/);
+    assert.equal(pagamentos.length, 0);
+
+    const solicitacao = await chamarRota("POST", "/obras/:id/conclusao/solicitar", { usuarioId: "admin-a", params: { id: "obra-a" } });
+    assert.equal(solicitacao.statusCode, 200);
+    assert.equal(obras[0].status, "AGUARDANDO_CONFERENCIA");
+    assert.ok(obras[0].conclusaoSolicitadaEm instanceof Date);
+    assert.equal(eventos.length, 1);
+    assert.equal(eventos[0].visivelParaCliente, true);
+
+    const confirmacao = await chamarRota("POST", "/obras/:id/conclusao/confirmar", { usuarioId: "cliente-a", params: { id: "obra-a" } });
+    assert.equal(confirmacao.statusCode, 200);
+    assert.equal(obras[0].status, "CONCLUIDA");
+    assert.ok(obras[0].conclusaoConfirmadaEm instanceof Date);
+    assert.equal(eventos.length, 2);
+
+    const depois = await criarPagamento("cliente-a", { valor: 500, chave: "rn8-liberada-01", parcelaId: "parcela-2" });
+    assert.equal(depois.statusCode, 201);
+    assert.equal(pagamentos[0].parcelaId, "parcela-2");
+  });
+
+  it("somente ADMIN da empresa solicita conferência e somente o cliente proprietário confirma", async () => {
+    const naoAdmin = await chamarRota("POST", "/obras/:id/conclusao/solicitar", { usuarioId: "cliente-a", params: { id: "obra-a" } });
+    const adminOutraEmpresa = await chamarRota("POST", "/obras/:id/conclusao/solicitar", { usuarioId: "admin-b", params: { id: "obra-a" } });
+    assert.equal(naoAdmin.statusCode, 403);
+    assert.equal(adminOutraEmpresa.statusCode, 404);
+
+    await chamarRota("POST", "/obras/:id/conclusao/solicitar", { usuarioId: "admin-a", params: { id: "obra-a" } });
+    const outroCliente = await chamarRota("POST", "/obras/:id/conclusao/confirmar", { usuarioId: "cliente-outro-a", params: { id: "obra-a" } });
+    const clienteOutraEmpresa = await chamarRota("POST", "/obras/:id/conclusao/confirmar", { usuarioId: "cliente-b", params: { id: "obra-a" } });
+    assert.equal(outroCliente.statusCode, 404);
+    assert.equal(clienteOutraEmpresa.statusCode, 404);
+    const confirmacao = await chamarRota("POST", "/obras/:id/conclusao/confirmar", { usuarioId: "cliente-a", params: { id: "obra-a" } });
+    assert.equal(confirmacao.statusCode, 200);
+    const duplicada = await chamarRota("POST", "/obras/:id/conclusao/confirmar", { usuarioId: "cliente-a", params: { id: "obra-a" } });
+    assert.equal(duplicada.statusCode, 409);
+    assert.equal(eventos.length, 2);
+  });
+
+  it("recusa solicitação de conferência em status inválido e não duplica evento", async () => {
+    obras[0].status = "AGENDADA";
+    const invalida = await chamarRota("POST", "/obras/:id/conclusao/solicitar", { usuarioId: "admin-a", params: { id: "obra-a" } });
+    assert.equal(invalida.statusCode, 409);
+    assert.equal(eventos.length, 0);
+    obras[0].status = "EM_ANDAMENTO";
+    await chamarRota("POST", "/obras/:id/conclusao/solicitar", { usuarioId: "admin-a", params: { id: "obra-a" } });
+    const duplicada = await chamarRota("POST", "/obras/:id/conclusao/solicitar", { usuarioId: "admin-a", params: { id: "obra-a" } });
+    assert.equal(duplicada.statusCode, 409);
+    assert.equal(eventos.length, 1);
+  });
+
   it("rejeita valores ausentes, zero, negativos e fora do saldo", async () => {
     const ausente = await chamarRota("POST", "/obras/:id/pagamento", {
       usuarioId: "cliente-a",
@@ -329,6 +410,18 @@ describe("Issue #18 — pagamento por checkout sandbox", () => {
     assert.equal(repetida.body.checkoutUrl, primeira.body.checkoutUrl);
     assert.equal(pagamentos.length, 1);
     assert.equal(chamadasCriacao.length, 1);
+  });
+
+  it("requisições simultâneas compartilham uma única tentativa e a mesma referência externa", async () => {
+    const respostas = await Promise.all([
+      criarPagamento("cliente-a", { valor: 125, chave: "idempotencia-concorrente-01" }),
+      criarPagamento("cliente-a", { valor: 125, chave: "idempotencia-concorrente-01" }),
+    ]);
+    assert.deepEqual(respostas.map((item) => item.statusCode).sort(), [200, 201]);
+    assert.equal(pagamentos.length, 1);
+    assert.ok(chamadasCriacao.length >= 1);
+    assert.ok(chamadasCriacao.every((id) => id === pagamentos[0].id));
+    assert.equal(respostas[0].body.pagamento.id, respostas[1].body.pagamento.id);
   });
 
   it("recusa reutilizar a chave idempotente com valor ou obra diferente", async () => {
@@ -369,6 +462,24 @@ describe("Issue #18 — pagamento por checkout sandbox", () => {
     assert.equal(pagamentos[1].status, "RECUSADO");
     assert.equal(obras[0].parcelas[0].situacao, "PENDENTE");
     assert.equal(pendente.body.pagamento.status, "PENDENTE");
+  });
+
+  it("API apresenta dívida após pagamento parcial e reserva pendente separadamente", async () => {
+    await criarPagamento("cliente-a", { valor: 200, chave: "saldo-aprovado-01" });
+    const aprovado = pagamentos[0];
+    await notificarPagamento(aprovado, {
+      id: "9876531", external_reference: aprovado.id, currency_id: "BRL", transaction_amount: 200,
+      status: "approved", status_detail: "accredited",
+    });
+    erroProvedor = Object.assign(new Error("timeout"), { code: "MERCADO_PAGO_INDISPONIVEL" });
+    await criarPagamento("cliente-a", { valor: 100, chave: "saldo-reservado-01" });
+    const resposta = await chamarRota("GET", "/obras/:id", { usuarioId: "cliente-a", params: { id: "obra-a" } });
+    assert.equal(resposta.statusCode, 200);
+    assert.equal(resposta.body.parcela1.valorPago, 200);
+    assert.equal(resposta.body.parcela1.valorReservado, 100);
+    assert.equal(resposta.body.parcela1.saldoDevedor, 800);
+    assert.equal(resposta.body.parcela1.saldoDisponivel, 700);
+    assert.equal(resposta.body.parcela1.situacao, "pendente");
   });
 
   it("só quita após confirmação aprovada e permite completar parcela com pagamentos parciais", async () => {
@@ -414,6 +525,7 @@ describe("Issue #18 — pagamento por checkout sandbox", () => {
     erroProvedor = Object.assign(new Error("sandbox rejeitou a order"), { code: "MERCADO_PAGO_REJEITOU", statusProvedor: 400 });
     const resposta = await criarPagamento("cliente-a", { valor: 100, chave: "provedor-recusou-01" });
     assert.equal(resposta.statusCode, 502);
+    assert.equal(resposta.body.tentativaFinalizada, true);
     assert.equal(pagamentos[0].status, "ERRO");
     assert.equal(obras[0].parcelas[0].situacao, "PENDENTE");
   });
@@ -431,6 +543,129 @@ describe("Issue #18 — pagamento por checkout sandbox", () => {
     assert.equal(chamadasCriacao.length, 2);
     assert.equal(chamadasCriacao[0], chamadasCriacao[1]);
     assert.equal(pagamentos.length, 1);
+  });
+
+  it("retoma a tentativa persistida sem depender da sessão e devolve o checkout já salvo", async () => {
+    await criarPagamento("cliente-a", { valor: 100, chave: "retomar-checkout-01" });
+    const tentativa = pagamentos[0];
+    const urlOriginal = tentativa.checkoutUrl;
+    const chamadasAntes = chamadasCriacao.length;
+    // A rota de retomada recebe somente o ID persistido; nenhuma chave de sessão é enviada.
+    const retomada = await retomarPagamento("cliente-a", "obra-a", tentativa.id);
+    assert.equal(retomada.statusCode, 200);
+    assert.equal(retomada.body.pagamento.id, tentativa.id);
+    assert.equal(retomada.body.checkoutUrl, urlOriginal);
+    assert.equal(Object.hasOwn(retomada.body.pagamento, "chaveIdempotencia"), false);
+    assert.equal(chamadasCriacao.length, chamadasAntes);
+    assert.equal(pagamentos.filter((item) => item.status === "PENDENTE").length, 1);
+  });
+
+  it("repete checkout sem URL usando a mesma referência e não cria nova reserva", async () => {
+    erroProvedor = Object.assign(new Error("timeout"), { code: "MERCADO_PAGO_INDISPONIVEL" });
+    await criarPagamento("cliente-a", { valor: 100, chave: "retomar-timeout-01" });
+    const tentativa = pagamentos[0];
+    const chamadasOriginais = [...chamadasCriacao];
+    assert.equal(tentativa.checkoutUrl, null);
+    erroProvedor = null;
+    const retomada = await retomarPagamento("cliente-a", "obra-a", tentativa.id);
+    assert.equal(retomada.statusCode, 200);
+    assert.equal(retomada.body.pagamento.id, tentativa.id);
+    assert.equal(chamadasCriacao.length, chamadasOriginais.length + 1);
+    assert.equal(chamadasCriacao.at(-1), tentativa.id);
+    assert.equal(pagamentos.length, 1);
+    assert.equal(tentativa.valor, "100.00");
+  });
+
+  it("não permite retomar tentativa de outro cliente nem de outra obra", async () => {
+    await criarPagamento("cliente-b", { valor: 100, chave: "retomar-outro-cliente-01", parcelaId: "parcela-b", obraId: "obra-b" });
+    const tentativaOutroCliente = pagamentos[0];
+    const negadaOutroCliente = await retomarPagamento("cliente-a", "obra-a", tentativaOutroCliente.id);
+    assert.equal(negadaOutroCliente.statusCode, 404);
+
+    obras.push({
+      id: "obra-c", nome: "Reforma C", empresaId: empresaA, clienteId: "cliente-a", valorTotal: "300.00", status: "EM_ANDAMENTO",
+      parcelas: [{ id: "parcela-c", numero: 1, valor: "300.00", situacao: "PENDENTE", pagaEm: null, pagamentoExternoId: null }],
+    });
+    await criarPagamento("cliente-a", { valor: 100, chave: "retomar-outra-obra-01", parcelaId: "parcela-c", obraId: "obra-c" });
+    const tentativaOutraObra = pagamentos[1];
+    const negadaOutraObra = await retomarPagamento("cliente-a", "obra-a", tentativaOutraObra.id);
+    assert.equal(negadaOutraObra.statusCode, 404);
+    assert.equal(pagamentos.length, 2);
+  });
+
+  it("retorna 404 para tentativa inexistente e para registro associado a outra empresa", async () => {
+    const inexistente = await retomarPagamento("cliente-a", "obra-a", "tentativa-inexistente");
+    assert.equal(inexistente.statusCode, 404);
+
+    // Simula um registro inconsistente que aponta para cliente A, mas cuja obra pertence à empresa B.
+    pagamentos.push({
+      id: "tentativa-empresa-b", obraId: "obra-b", parcelaId: "parcela-b", usuarioId: "cliente-a",
+      valor: "100.00", status: "PENDENTE", chaveIdempotencia: "empresa-b-key-01", pedidoExternoId: "ORD_EMPRESA_B",
+      checkoutUrl: "https://www.mercadopago.com.br/checkout/alheio",
+    });
+    const outraEmpresa = await retomarPagamento("cliente-a", "obra-b", "tentativa-empresa-b");
+    assert.equal(outraEmpresa.statusCode, 404);
+  });
+
+  it("retoma checkout já salvo sem Access Token e não chama o provedor", async () => {
+    await criarPagamento("cliente-a", { valor: 100, chave: "retomar-sem-token-01" });
+    const tentativa = pagamentos[0];
+    const urlPersistida = tentativa.checkoutUrl;
+    const chamadasAntes = chamadasCriacao.length;
+    const tokenOriginal = process.env.MERCADO_PAGO_ACCESS_TOKEN_TEST;
+    delete process.env.MERCADO_PAGO_ACCESS_TOKEN_TEST;
+    try {
+      const resposta = await retomarPagamento("cliente-a", "obra-a", tentativa.id);
+      assert.equal(resposta.statusCode, 200);
+      assert.equal(resposta.body.checkoutUrl, urlPersistida);
+      assert.equal(chamadasCriacao.length, chamadasAntes);
+      assert.equal(pagamentos.length, 1);
+    } finally {
+      process.env.MERCADO_PAGO_ACCESS_TOKEN_TEST = tokenOriginal;
+    }
+  });
+
+  it("exige Access Token quando falta URL persistida e mantém uma única reserva", async () => {
+    erroProvedor = Object.assign(new Error("timeout"), { code: "MERCADO_PAGO_INDISPONIVEL" });
+    await criarPagamento("cliente-a", { valor: 100, chave: "retomar-token-obrigatorio-01" });
+    const tentativa = pagamentos[0];
+    assert.equal(tentativa.checkoutUrl, null);
+    const chamadasAntes = chamadasCriacao.length;
+    const tokenOriginal = process.env.MERCADO_PAGO_ACCESS_TOKEN_TEST;
+    delete process.env.MERCADO_PAGO_ACCESS_TOKEN_TEST;
+    try {
+      const resposta = await retomarPagamento("cliente-a", "obra-a", tentativa.id);
+      assert.equal(resposta.statusCode, 503);
+      assert.equal(chamadasCriacao.length, chamadasAntes);
+      assert.equal(pagamentos.length, 1);
+      assert.equal(pagamentos[0].id, tentativa.id);
+    } finally {
+      process.env.MERCADO_PAGO_ACCESS_TOKEN_TEST = tokenOriginal;
+    }
+  });
+
+  it("não retoma tentativas recusadas, canceladas, encerradas ou aprovadas", async () => {
+    for (const [indice, status] of ["RECUSADO", "CANCELADO", "ERRO"].entries()) {
+      await criarPagamento("cliente-a", { valor: 50, chave: `retomar-terminal-${indice}-01` });
+      const tentativa = pagamentos.at(-1);
+      tentativa.status = status;
+      const chamadasAntes = chamadasCriacao.length;
+      const resposta = await retomarPagamento("cliente-a", "obra-a", tentativa.id);
+      assert.equal(resposta.statusCode, 409, status);
+      assert.equal(chamadasCriacao.length, chamadasAntes, status);
+    }
+
+    await criarPagamento("cliente-a", { valor: 50, chave: "retomar-aprovado-01" });
+    const aprovada = pagamentos.at(-1);
+    await notificarPagamento(aprovada, {
+      id: "9876599", external_reference: aprovada.id, currency_id: "BRL", transaction_amount: 50,
+      status: "approved", status_detail: "accredited",
+    });
+    const chamadasAntes = chamadasCriacao.length;
+    const respostaAprovada = await retomarPagamento("cliente-a", "obra-a", aprovada.id);
+    assert.equal(respostaAprovada.statusCode, 409);
+    assert.equal(aprovada.status, "APROVADO");
+    assert.equal(chamadasCriacao.length, chamadasAntes);
   });
 
   it("não aceita aprovação externa com valor divergente", async () => {

@@ -27,6 +27,8 @@ const {
   encerrarAlocacao,
   registrarAndamento,
   reagendarObra,
+  solicitarConferenciaObra,
+  confirmarConclusaoObra,
 } = require("./src/repositories/obraRepository");
 const pagamentoService = require("./src/services/pagamentoService");
 const mercadoPagoService = require("./src/services/mercadoPagoService");
@@ -357,6 +359,35 @@ app.patch("/obras/:id/agendamento", authMiddleware, exigirEmpresaDoToken, exigir
   }
 });
 
+// A conclusão percorre duas operações explícitas, cada uma autorizada por perfil.
+app.post("/obras/:id/conclusao/solicitar", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const resultado = await solicitarConferenciaObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id });
+    return res.json(resultado);
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "OBRA_NAO_ENCONTRADA") return res.status(404).json({ erro: erro.message });
+    if (erro.code === "STATUS_INVALIDO") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada por outra operação; atualize e tente novamente" });
+    console.error("Erro ao solicitar conferência da obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao solicitar conferência da obra" });
+  }
+});
+
+app.post("/obras/:id/conclusao/confirmar", authMiddleware, exigirEmpresaDoToken, exigirPapel("CLIENTE"), async (req, res) => {
+  try {
+    const resultado = await confirmarConclusaoObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, clienteId: req.usuario.id });
+    return res.json(resultado);
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "OBRA_NAO_ENCONTRADA") return res.status(404).json({ erro: erro.message });
+    if (erro.code === "STATUS_INVALIDO") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada por outra operação; atualize e tente novamente" });
+    console.error("Erro ao confirmar conclusão da obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao confirmar conclusão da obra" });
+  }
+});
+
 // O cliente inicia somente pagamentos das próprias obras. Valor e saldo são
 // revalidados no repositório contra as parcelas persistidas.
 app.post("/obras/:id/pagamento", authMiddleware, exigirEmpresaDoToken, exigirPapel("CLIENTE"), async (req, res) => {
@@ -404,6 +435,7 @@ app.post("/obras/:id/pagamento", authMiddleware, exigirEmpresaDoToken, exigirPap
       PARCELAS_NAO_ENCONTRADAS: [409, "A obra não possui parcelas cadastradas"],
       PARCELA_NAO_ENCONTRADA: [404, "Parcela não encontrada nesta obra"],
       SALDO_INSUFICIENTE: [409, "O valor excede o saldo pendente da obra ou da parcela"],
+      CONCLUSAO_NAO_CONFIRMADA: [409, "A segunda parcela só pode ser paga após a confirmação da conclusão da obra"],
       CHAVE_IDEMPOTENCIA_REUTILIZADA: [409, "A chave de idempotência já foi usada com outros dados"],
     };
     if (respostas[erro.code]) {
@@ -414,10 +446,38 @@ app.post("/obras/:id/pagamento", authMiddleware, exigirEmpresaDoToken, exigirPap
     if (erro.code === "P2002") return res.status(409).json({ erro: "Identificador de pagamento duplicado" });
     if (erro.code?.startsWith("MERCADO_PAGO")) {
       console.error("Falha ao criar checkout sandbox:", erro.code, erro.statusProvedor || "");
-      return res.status(502).json({ erro: "Não foi possível iniciar o checkout do Mercado Pago" });
+      const tentativaFinalizada = erro.code === "MERCADO_PAGO_REJEITOU" && erro.statusProvedor >= 400 && erro.statusProvedor < 500;
+      return res.status(502).json({ erro: "Não foi possível iniciar o checkout do Mercado Pago", tentativaFinalizada });
     }
     console.error("Erro ao iniciar pagamento:", erro.code || erro.message);
     return res.status(500).json({ erro: "Erro ao iniciar pagamento" });
+  }
+});
+
+// Retoma somente uma tentativa persistida pertencente ao cliente e à obra informados.
+app.post("/obras/:id/pagamentos/:pagamentoId/retomar", authMiddleware, exigirEmpresaDoToken, exigirPapel("CLIENTE"), async (req, res) => {
+  try {
+    const resultado = await pagamentoService.retomarTentativaPagamento({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      usuarioId: req.usuario.id,
+      pagamentoId: req.params.pagamentoId,
+    });
+    return res.status(200).json({ pagamento: resultado.pagamento, checkoutUrl: resultado.checkoutUrl });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED" || erro.code === "MERCADO_PAGO_NAO_CONFIGURADO") {
+      return res.status(503).json({ erro: erro.message });
+    }
+    if (erro.code === "TENTATIVA_NAO_ENCONTRADA") return res.status(404).json({ erro: erro.message });
+    if (erro.code === "TENTATIVA_NAO_PENDENTE" || erro.code === "CONCLUSAO_NAO_CONFIRMADA") {
+      return res.status(409).json({ erro: erro.message });
+    }
+    if (erro.code?.startsWith("MERCADO_PAGO")) {
+      console.error("Falha ao retomar checkout sandbox:", erro.code, erro.statusProvedor || "");
+      return res.status(502).json({ erro: "Não foi possível retomar o checkout do Mercado Pago" });
+    }
+    console.error("Erro ao retomar tentativa de pagamento:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao retomar tentativa de pagamento" });
   }
 });
 

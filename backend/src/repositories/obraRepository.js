@@ -34,6 +34,60 @@ function erroAgendamento(code, message) {
   return erro;
 }
 
+function erroConclusao(code, message) {
+  const erro = new Error(message);
+  erro.code = code;
+  return erro;
+}
+
+async function solicitarConferenciaObra({ obraId, empresaId, administradorId }) {
+  exigirBancoConfigurado();
+  const prisma = getPrisma();
+  return prisma.$transaction(async (tx) => {
+    const obra = await tx.obra.findFirst({
+      where: { id: obraId, empresaId },
+      select: { id: true, status: true },
+    });
+    if (!obra) throw erroConclusao("OBRA_NAO_ENCONTRADA", "Obra não encontrada");
+    if (obra.status !== "EM_ANDAMENTO") {
+      throw erroConclusao("STATUS_INVALIDO", "Somente obras em andamento podem ser enviadas para conferência");
+    }
+    const agora = new Date();
+    const atualizada = await tx.obra.update({
+      where: { id: obraId },
+      data: { status: "AGUARDANDO_CONFERENCIA", conclusaoSolicitadaEm: agora },
+    });
+    const evento = await tx.obraEvento.create({
+      data: { obraId, empresaId, usuarioId: administradorId, tipo: "STATUS", descricao: "Obra pronta para conferência do cliente.", visivelParaCliente: true },
+    });
+    return { obra: atualizada, evento };
+  }, { isolationLevel: "Serializable" });
+}
+
+async function confirmarConclusaoObra({ obraId, empresaId, clienteId }) {
+  exigirBancoConfigurado();
+  const prisma = getPrisma();
+  return prisma.$transaction(async (tx) => {
+    const obra = await tx.obra.findFirst({
+      where: { id: obraId, empresaId, clienteId },
+      select: { id: true, status: true, conclusaoConfirmadaEm: true },
+    });
+    if (!obra) throw erroConclusao("OBRA_NAO_ENCONTRADA", "Obra não encontrada");
+    if (obra.status !== "AGUARDANDO_CONFERENCIA" || obra.conclusaoConfirmadaEm) {
+      throw erroConclusao("STATUS_INVALIDO", "A obra não está aguardando confirmação de conclusão");
+    }
+    const agora = new Date();
+    const atualizada = await tx.obra.update({
+      where: { id: obraId },
+      data: { status: "CONCLUIDA", conclusaoConfirmadaEm: agora },
+    });
+    const evento = await tx.obraEvento.create({
+      data: { obraId, empresaId, usuarioId: clienteId, tipo: "STATUS", descricao: "Conclusão da obra confirmada pelo cliente.", visivelParaCliente: true },
+    });
+    return { obra: atualizada, evento };
+  }, { isolationLevel: "Serializable" });
+}
+
 // Executa mudanças de escala em transação serializável para reduzir disputas
 // concorrentes, especialmente duas tentativas simultâneas da mesma alocação.
 function emTransacaoSerializavel(prisma, operacao) {
@@ -337,7 +391,7 @@ function incluirDadosDaObra(empresaId) {
     // Busca os dados do cliente relacionado à obra.
     cliente: { select: { id: true, nome: true, empresaId: true } },
     // Busca as parcelas na ordem em que devem aparecer.
-    parcelas: { orderBy: { numero: "asc" } },
+    parcelas: { orderBy: { numero: "asc" }, include: { pagamentos: { select: { valor: true, status: true } } } },
     // Busca eventos e autores da mesma empresa da obra.
     eventos: {
       where: { empresaId, usuario: { empresaId } },
@@ -373,7 +427,14 @@ function formatarParcela(parcela) {
   // Retorna nulo quando a obra não possui esta parcela.
   if (!parcela) return null;
   // Prepara a parcela com número, valor numérico e situação legível.
-  const resposta = { numero: parcela.numero, valor: Number(parcela.valor), situacao: parcela.situacao === "PAGA" ? "paga" : "pendente" };
+  const valor = Number(parcela.valor);
+  const pagamentos = parcela.pagamentos || [];
+  const aprovado = pagamentos.filter((pagamento) => pagamento.status === "APROVADO").reduce((total, pagamento) => total + Number(pagamento.valor), 0);
+  const reservado = pagamentos.filter((pagamento) => pagamento.status === "PENDENTE").reduce((total, pagamento) => total + Number(pagamento.valor), 0);
+  // Saldo devedor considera apenas aprovações; reservas são informadas separadamente.
+  const saldoDevedor = parcela.situacao === "PAGA" ? 0 : Math.max(0, valor - aprovado);
+  const saldoDisponivel = Math.max(0, saldoDevedor - reservado);
+  const resposta = { id: parcela.id, numero: parcela.numero, valor, situacao: parcela.situacao === "PAGA" ? "paga" : "pendente", valorPago: parcela.situacao === "PAGA" ? valor : aprovado, valorReservado: reservado, saldoDevedor, saldoDisponivel, tentativasPendentes: pagamentos.filter((pagamento) => pagamento.status === "PENDENTE").map((pagamento) => ({ id: pagamento.id, valor: Number(pagamento.valor) })) };
   // Inclui a data do pagamento quando a parcela foi quitada.
   if (parcela.pagaEm) resposta.pagamento = formatarData(parcela.pagaEm);
   // Informa vencimento nulo porque o banco não possui esse campo no schema atual.
@@ -473,4 +534,6 @@ module.exports = {
   encerrarAlocacao,
   registrarAndamento,
   reagendarObra,
+  solicitarConferenciaObra,
+  confirmarConclusaoObra,
 };
