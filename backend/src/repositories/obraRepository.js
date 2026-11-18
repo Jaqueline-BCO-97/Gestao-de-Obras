@@ -451,8 +451,9 @@ function incluirDadosDaObra(empresaId) {
     // Busca escalas abertas e funcionários da mesma empresa da obra.
     escalas: {
       where: { dataFim: null, funcionario: { empresaId } },
-      include: { funcionario: { select: { id: true, nome: true } } },
+      include: { funcionario: { select: { id: true, nome: true, funcao: true, telefone: true } } },
     },
+    contrato: { select: { id: true, termos: true, arquivoUrl: true, criadoEm: true } },
   };
 }
 
@@ -523,21 +524,34 @@ function formatarObra(obra, tipo) {
     id: obra.id,
     // Renomeia o nome armazenado para o título do mock.
     titulo: obra.nome,
+    clienteId: obra.clienteId,
+    descricao: obra.descricao,
     // Inclui o nome do cliente ou nulo se não houver associação.
     cliente: obra.cliente?.empresaId === obra.empresaId ? obra.cliente.nome : null,
     // Apresenta os nomes dos funcionários atualmente escalados.
-    colaboradores: tipo === "ADMIN"
-      ? obra.escalas.map((escala) => ({ id: escala.funcionario.id, nome: escala.funcionario.nome, funcao: escala.funcionario.funcao }))
-      : obra.escalas.map((escala) => escala.funcionario.id),
+    colaboradores: obra.escalas.map((escala) => ({ id: escala.funcionario.id, nome: escala.funcionario.nome, funcao: escala.funcionario.funcao, ...(tipo === "ADMIN" ? { telefone: escala.funcionario.telefone } : {}) })),
     // Preserva o endereço cadastrado.
-    endereco: obra.endereco,
+    endereco: [obra.endereco, obra.numero, obra.semApartamento ? null : obra.apartamento ? `Apto ${obra.apartamento}` : null, obra.semBloco ? null : obra.bloco ? `Bloco ${obra.bloco}` : null, obra.bairro, obra.cidade, obra.estado].filter(Boolean).join(" - ") || obra.endereco,
+    enderecoBase: obra.endereco,
+    estado: obra.estado,
+    cidade: obra.cidade,
+    bairro: obra.bairro,
+    numero: obra.numero,
+    apartamento: obra.apartamento,
+    bloco: obra.bloco,
+    semApartamento: obra.semApartamento,
+    semBloco: obra.semBloco,
+    fotos: obra.fotos || [],
     // Converte o estado para uma descrição legível.
     status: formatarStatus(obra.status),
     // Converte o prazo para o padrão de data do mock.
     prazo: formatarData(obra.prazoFinal),
+    prazoISO: obra.prazoFinal ? new Date(obra.prazoFinal).toISOString().slice(0, 10) : "",
     // Adapta os eventos ao formato da linha do tempo do mock.
     timeline: formatarTimeline(obra.eventos, tipo),
   };
+  if (tipo !== "CLIENTE") resposta.informacoesAdicionais = obra.informacoesAdicionais;
+  if (tipo !== "COLABORADOR") resposta.contrato = obra.contrato;
   // Inclui dados financeiros apenas para clientes e administradores.
   if (tipo !== "COLABORADOR") {
     // Converte o valor Decimal para número compatível com JSON.
@@ -584,11 +598,38 @@ async function buscarObraPorId(id, empresaId, usuarioId, tipo) {
 }
 
 // Cria uma obra com os dados aceitos atualmente pela rota POST.
-async function criarObra({ empresaId, nome, descricao, endereco }) {
+async function criarObra({ empresaId, nome, descricao, endereco, estado, cidade, bairro, numero, apartamento, bloco, semApartamento, semBloco, informacoesAdicionais, valorTotal, prazoFinal, clienteId, fotos = [] }) {
   // Confirma que o banco pode receber gravações.
   exigirBancoConfigurado();
-  // Insere a obra sem alterar o contrato existente da rota POST.
-  return getPrisma().obra.create({ data: { empresaId, nome, descricao, endereco } });
+  return getPrisma().$transaction(async (tx) => tx.obra.create({ data: {
+    empresaId, nome, descricao, endereco, estado, cidade, bairro, numero, apartamento, bloco,
+    semApartamento: Boolean(semApartamento), semBloco: Boolean(semBloco), informacoesAdicionais,
+    valorTotal, prazoFinal, clienteId, fotos,
+    parcelas: { create: [
+      { numero: 1, valor: (Number(valorTotal) / 2).toFixed(2) },
+      { numero: 2, valor: (Number(valorTotal) - Number((Number(valorTotal) / 2).toFixed(2))).toFixed(2) },
+    ] },
+  } }));
+}
+
+async function anexarFotoObra({ obraId, empresaId, administradorId, fotoUrl }) {
+  exigirBancoConfigurado();
+  const prisma = getPrisma();
+  return prisma.$transaction(async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, empresaId }, select: { id: true } });
+    if (!obra) return null;
+    const atualizada = await tx.obra.update({ where: { id: obraId }, data: { fotos: { push: fotoUrl } } });
+    await tx.obraEvento.create({ data: { obraId, empresaId, usuarioId: administradorId, tipo: "FOTO", descricao: "Foto adicionada às informações da obra.", fotoUrl, visivelParaCliente: true } });
+    return atualizada;
+  });
+}
+
+async function salvarContratoObra({ obraId, empresaId, termos, arquivoUrl }) {
+  exigirBancoConfigurado();
+  const prisma = getPrisma();
+  const obra = await prisma.obra.findFirst({ where: { id: obraId, empresaId }, select: { id: true } });
+  if (!obra) return null;
+  return prisma.contrato.upsert({ where: { obraId }, create: { obraId, empresaId, termos, arquivoUrl }, update: { termos, arquivoUrl } });
 }
 
 async function atualizarDadosObra({ obraId, empresaId, administradorId, dados }) {
@@ -597,6 +638,16 @@ async function atualizarDadosObra({ obraId, empresaId, administradorId, dados })
   return prisma.$transaction(async (tx) => {
     const obra = await tx.obra.findFirst({ where: { id: obraId, empresaId }, select: { id: true } });
     if (!obra) return null;
+    if (dados.valorTotal !== undefined) {
+      const parcelas = await tx.parcela.findMany({ where: { obraId }, include: { pagamentos: { select: { id: true } } }, orderBy: { numero: "asc" } });
+      if (parcelas.some((parcela) => parcela.situacao === "PAGA" || parcela.pagamentos.length > 0)) {
+        const erro = new Error("O valor da obra não pode mudar depois de um pagamento confirmado");
+        erro.code = "VALOR_OBRA_TRAVADO";
+        throw erro;
+      }
+      const metade = (Number(dados.valorTotal) / 2).toFixed(2);
+      for (const parcela of parcelas) await tx.parcela.update({ where: { id: parcela.id }, data: { valor: parcela.numero === 1 ? metade : (Number(dados.valorTotal) - Number(metade)).toFixed(2) } });
+    }
     const atualizada = await tx.obra.update({ where: { id: obraId }, data: dados });
     const evento = await tx.obraEvento.create({
       data: { obraId, empresaId, usuarioId: administradorId, tipo: "ANOTACAO", descricao: "Dados básicos da obra atualizados pela empreiteira.", visivelParaCliente: false },
@@ -620,4 +671,6 @@ module.exports = {
   confirmarConclusaoObra,
   iniciarExecucaoObra,
   atualizarDadosObra,
+  anexarFotoObra,
+  salvarContratoObra,
 };

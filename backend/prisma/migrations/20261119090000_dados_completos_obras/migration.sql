@@ -1,0 +1,22 @@
+ALTER TABLE "Usuario"
+ADD COLUMN "endereco" TEXT;
+
+ALTER TABLE "Obra"
+ADD COLUMN "estado" TEXT,
+ADD COLUMN "cidade" TEXT,
+ADD COLUMN "bairro" TEXT,
+ADD COLUMN "numero" TEXT,
+ADD COLUMN "apartamento" TEXT,
+ADD COLUMN "bloco" TEXT,
+ADD COLUMN "semApartamento" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "semBloco" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "informacoesAdicionais" TEXT,
+ADD COLUMN "fotos" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+
+ALTER TABLE "Convite"
+ALTER COLUMN "obraId" DROP NOT NULL,
+ADD COLUMN "telefone" TEXT,
+ADD COLUMN "endereco" TEXT;
+
+ALTER TABLE "Contrato"
+ADD COLUMN "arquivoUrl" TEXT;

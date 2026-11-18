@@ -18,6 +18,8 @@ async function listarUsuarios(empresaId) {
       nome: true,
       email: true,
       tipo: true,
+      telefone: true,
+      funcionario: { select: { funcao: true, telefone: true } },
       criadoEm: true,
     },
     orderBy: { criadoEm: "desc" },
@@ -95,6 +97,8 @@ async function buscarPerfilUsuarioPorId(id) {
       nome: true,
       email: true,
       tipo: true,
+      telefone: true,
+      funcionario: { select: { funcao: true, telefone: true } },
     },
   });
 }

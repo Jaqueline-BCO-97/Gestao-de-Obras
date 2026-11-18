@@ -356,13 +356,12 @@ function ClienteObraConteudo({ id }) {
           </div>
         </section>
 
-        {/* A API ainda não fornece fotos; a tela não simula registros visuais. */}
         <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-sm" aria-label="Galeria de fotos">
           <h2 className="mb-5 text-lg font-bold text-navy">Fotos da Obra</h2>
-          <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500" role="status">
-            A API ainda não disponibiliza registros fotográficos para esta obra.
-          </p>
+          {(obra.fotos || []).length || (obra.timeline || []).some((evento) => evento.fotoUrl) ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{[...(obra.fotos || []), ...(obra.timeline || []).map((evento) => evento.fotoUrl).filter(Boolean)].map((url) => <a key={url} href={url} target="_blank" rel="noreferrer"><img src={url} alt={`Registro fotográfico de ${obra.titulo}`} loading="lazy" className="h-56 w-full rounded-xl object-cover" /></a>)}</div> : <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500" role="status">Nenhuma foto foi compartilhada nesta obra ainda.</p>}
         </section>
+
+        {obra.contrato?.arquivoUrl && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="font-bold text-navy">Contrato da obra</h2>{obra.contrato.termos && <p className="mt-2 text-sm text-slate-600">{obra.contrato.termos}</p>}<a href={obra.contrato.arquivoUrl} target="_blank" rel="noreferrer" className="mt-3 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">Abrir contrato em PDF</a></section>}
 
         {/* Bloco 4: Histórico de eventos visíveis para o cliente */}
         <HistoricoObra eventos={obra.timeline} perfil="CLIENTE" />

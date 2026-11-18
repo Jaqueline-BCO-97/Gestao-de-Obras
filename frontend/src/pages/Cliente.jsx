@@ -76,6 +76,8 @@ export default function Cliente() {
 
   // Calcula a quantidade de obras que estão atualmente com status "Em andamento"
   const obrasEmAndamento = obras.filter((obra) => obra.status === 'Em andamento').length
+  const obrasAgendadas = obras.filter((obra) => obra.status === 'Agendada').length
+  const obrasAguardando = obras.filter((obra) => obra.status === 'Aguardando conferência').length
 
   // Calcula a quantidade de obras que já foram finalizadas com status "Concluída"
   const obrasConcluidas = obras.filter((obra) => obra.status === 'Concluída').length
@@ -165,7 +167,7 @@ export default function Cliente() {
         </div>
 
         {/* Grade de cartões de métricas rápidas (reutilizando Card.jsx) */}
-        <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8" aria-label="Resumo de métricas">
+        <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-8" aria-label="Resumo de métricas">
 
           {/* Cartão de métrica: Total de obras cadastradas */}
           <Card
@@ -205,6 +207,8 @@ export default function Cliente() {
               </svg>
             }
           />
+          <Card label="Agendadas" value={obrasAgendadas} accent="border-sky-500" />
+          <Card label="Aguardando conferência" value={obrasAguardando} accent="border-purple-500" />
 
         </section>
 

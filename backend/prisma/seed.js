@@ -42,7 +42,7 @@ function dataPtBR(valor, hora = "12:00") {
 // Mantém os quatro exemplos de obra fornecidos pelo mock do frontend.
 const OBRAS = [
   // Dados da primeira obra do exemplo.
-  { titulo: "Construção Residencial Bela Vista", endereco: "Rua das Palmeiras, 120 - Gonzaga, Santos - SP", status: "Agendada", valorTotal: 180000, prazo: "15/10/2026", colaboradores: [1, 2], parcelas: [{ situacao: "PENDENTE", vencimento: "15/04/2026" }, { situacao: "PENDENTE", vencimento: "15/08/2026" }], timeline: [
+  { titulo: "Construção Residencial Bela Vista", endereco: "Rua das Palmeiras, 120 - Gonzaga, Santos - SP", estado: "SP", cidade: "Santos", bairro: "Gonzaga", rua: "Rua das Palmeiras", numero: "120", semApartamento: true, semBloco: true, detalhes: "Execução de fundação, estrutura e alvenaria residencial. Materiais e medidas devem seguir o projeto aprovado e o contrato da obra.", status: "Agendada", valorTotal: 180000, prazo: "15/10/2026", colaboradores: [1, 2], parcelas: [{ situacao: "PENDENTE", vencimento: "15/04/2026" }, { situacao: "PENDENTE", vencimento: "15/08/2026" }], timeline: [
     // Cada registro replica a data, autoria, visibilidade, tipo e descrição do mock.
     { data: "05/03/2026", hora: "09:00", autor: "admin", tipo: "CONTRATACAO", visivel: true, descricao: "Contrato de prestação de serviços assinado e projeto arquitetônico finalizado." },
     { data: "12/03/2026", hora: "14:30", autor: "admin", tipo: "ORCAMENTO_APROVADO", visivel: true, descricao: "Alvará de construção emitido e aprovado pela Prefeitura Municipal." },
@@ -51,7 +51,7 @@ const OBRAS = [
     { data: "08/04/2026", hora: "08:30", autor: "colaborador", tipo: "STATUS", visivel: true, descricao: "Obra confirmada como agendada, com mobilização prevista para meados de abril." },
   ] },
   // Dados da segunda obra do exemplo.
-  { titulo: "Reforma Completa de Apartamento Jardins", endereco: "Avenida Brasil, 850 - Itararé, São Vicente - SP", status: "Em andamento", valorTotal: 75000, prazo: "25/05/2026", colaboradores: [1, 3], parcelas: [{ situacao: "PAGA", pagamento: "10/01/2026" }, { situacao: "PENDENTE", vencimento: "20/05/2026" }], timeline: [
+  { titulo: "Reforma Completa de Apartamento Jardins", endereco: "Avenida Brasil, 850 - Itararé, São Vicente - SP", estado: "SP", cidade: "São Vicente", bairro: "Itararé", rua: "Avenida Brasil", numero: "850", semApartamento: true, semBloco: true, detalhes: "Reforma de apartamento com revisão elétrica e hidráulica, instalação de revestimentos e acabamento. Consultar as medidas e especificações do contrato antes de executar cada etapa.", status: "Em andamento", valorTotal: 75000, prazo: "25/05/2026", colaboradores: [1, 3], parcelas: [{ situacao: "PAGA", pagamento: "10/01/2026" }, { situacao: "PENDENTE", vencimento: "20/05/2026" }], timeline: [
     // Eventos da timeline mantêm as informações fornecidas no mock.
     { data: "08/01/2026", hora: "08:00", autor: "colaborador", tipo: "CONTRATACAO", visivel: true, descricao: "Demolição das paredes antigas e remoção de entulhos concluída." },
     { data: "10/01/2026", hora: "10:20", autor: "admin", tipo: "PAGAMENTO", visivel: true, descricao: "Pagamento da primeira parcela confirmado no sistema." },
@@ -61,7 +61,7 @@ const OBRAS = [
     { data: "22/02/2026", hora: "09:40", autor: "colaborador", tipo: "STATUS", visivel: true, descricao: "Reforma em andamento, com instalações concluídas e acabamentos em execução." },
   ] },
   // Dados da terceira obra do exemplo.
-  { titulo: "Modernização de Fachada Edifício Horizonte", endereco: "Rua Bahia, 2140 - Boqueirão, Praia Grande - SP", status: "Aguardando conferência", valorTotal: 120000, prazo: "30/03/2026", colaboradores: [2, 4], parcelas: [{ situacao: "PAGA", pagamento: "05/11/2025" }, { situacao: "PENDENTE", vencimento: "30/03/2026" }], timeline: [
+  { titulo: "Modernização de Fachada Edifício Horizonte", endereco: "Rua Bahia, 2140 - Boqueirão, Praia Grande - SP", estado: "SP", cidade: "Praia Grande", bairro: "Boqueirão", rua: "Rua Bahia", numero: "2140", semApartamento: true, semBloco: true, detalhes: "Recuperação de fachada, troca de revestimentos e impermeabilização. Seguir o memorial descritivo, as áreas e os quantitativos definidos no contrato.", status: "Aguardando conferência", valorTotal: 120000, prazo: "30/03/2026", colaboradores: [2, 4], parcelas: [{ situacao: "PAGA", pagamento: "05/11/2025" }, { situacao: "PENDENTE", vencimento: "30/03/2026" }], timeline: [
     // Eventos da timeline mantêm as informações fornecidas no mock.
     { data: "10/11/2025", hora: "07:30", autor: "colaborador", tipo: "CONTRATACAO", visivel: true, descricao: "Instalação de andaimes suspensos e lavagem química de toda a superfície." },
     { data: "15/12/2025", hora: "12:00", autor: "colaborador", tipo: "ATUALIZACAO", visivel: true, descricao: "Substituição de pastilhas danificadas e impermeabilização da laje superior." },
@@ -70,7 +70,7 @@ const OBRAS = [
     { data: "01/03/2026", hora: "10:30", autor: "colaborador", tipo: "STATUS", visivel: true, descricao: "Serviços físicos concluídos; obra aguardando conferência final do síndico." },
   ] },
   // Dados da quarta obra do exemplo.
-  { titulo: "Espaço Gourmet e Área de Lazer Edifício Acácias", endereco: "Rua das Acácias, 45 - Ponta da Praia, Santos - SP", status: "Concluída", valorTotal: 56000, prazo: "10/12/2025", colaboradores: [3, 4], parcelas: [{ situacao: "PAGA", pagamento: "15/09/2025" }, { situacao: "PAGA", pagamento: "10/12/2025" }], timeline: [
+  { titulo: "Espaço Gourmet e Área de Lazer Edifício Acácias", endereco: "Rua das Acácias, 45 - Ponta da Praia, Santos - SP", estado: "SP", cidade: "Santos", bairro: "Ponta da Praia", rua: "Rua das Acácias", numero: "45", semApartamento: true, semBloco: true, detalhes: "Construção de espaço gourmet, pergolado, churrasqueira e área de lazer, conforme medidas, materiais e acabamento estabelecidos no contrato.", status: "Concluída", valorTotal: 56000, prazo: "10/12/2025", colaboradores: [3, 4], parcelas: [{ situacao: "PAGA", pagamento: "15/09/2025" }, { situacao: "PAGA", pagamento: "10/12/2025" }], timeline: [
     // Eventos da timeline mantêm as informações fornecidas no mock.
     { data: "20/09/2025", hora: "08:15", autor: "colaborador", tipo: "CONTRATACAO", visivel: true, descricao: "Escavação e concretagem das bases estruturais para o pergolado." },
     { data: "15/10/2025", hora: "09:20", autor: "colaborador", tipo: "EQUIPE", visivel: false, descricao: "Equipe de carpintaria interna alocada para montagem do pergolado." },
@@ -148,7 +148,7 @@ async function main() {
       // Localiza a obra pelo nome dentro da empresa ou cria seu registro.
       const obraExistente = await prisma.obra.findFirst({ where: { empresaId: empresa.id, nome: dados.titulo } });
       // Salva os campos de negócio da obra mantendo sua identidade em reexecuções.
-      const obra = obraExistente ? await prisma.obra.update({ where: { id: obraExistente.id }, data: { endereco: dados.endereco, status: STATUS_OBRA[dados.status], valorTotal: dados.valorTotal, prazoFinal, clienteId: cliente.id } }) : await prisma.obra.create({ data: { empresaId: empresa.id, nome: dados.titulo, endereco: dados.endereco, status: STATUS_OBRA[dados.status], valorTotal: dados.valorTotal, prazoFinal, clienteId: cliente.id } });
+      const obra = obraExistente ? await prisma.obra.update({ where: { id: obraExistente.id }, data: { descricao: dados.detalhes, endereco: dados.rua, estado: dados.estado, cidade: dados.cidade, bairro: dados.bairro, numero: dados.numero, semApartamento: dados.semApartamento, semBloco: dados.semBloco, informacoesAdicionais: dados.detalhes, status: STATUS_OBRA[dados.status], valorTotal: dados.valorTotal, prazoFinal, clienteId: cliente.id } }) : await prisma.obra.create({ data: { empresaId: empresa.id, nome: dados.titulo, descricao: dados.detalhes, endereco: dados.rua, estado: dados.estado, cidade: dados.cidade, bairro: dados.bairro, numero: dados.numero, semApartamento: dados.semApartamento, semBloco: dados.semBloco, informacoesAdicionais: dados.detalhes, status: STATUS_OBRA[dados.status], valorTotal: dados.valorTotal, prazoFinal, clienteId: cliente.id } });
       // Cria cada uma das duas parcelas com metade do valor da obra.
       for (const parcela of dados.parcelas) {
         // Usa o número da parcela para impedir duplicatas em execuções futuras.

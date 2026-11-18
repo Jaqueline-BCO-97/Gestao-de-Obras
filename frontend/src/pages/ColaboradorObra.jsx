@@ -191,6 +191,13 @@ function DetalhesObra({ id }) {
           <p className="flex items-center gap-2 text-xs text-slate-500"><span aria-hidden="true">📅</span>Previsão de entrega: <strong className="text-slate-700">{obra.prazo || 'Não informado'}</strong></p>
         </section>
 
+        <section className="grid gap-5 lg:grid-cols-2">
+          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"><h2 className="font-bold text-navy">O que será executado</h2><p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{obra.informacoesAdicionais || obra.descricao || 'A empreiteira ainda não registrou os serviços, materiais e medidas desta obra.'}</p></article>
+          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"><h2 className="font-bold text-navy">Gerentes e responsáveis alocados</h2>{(obra.colaboradores || []).length ? <ul className="mt-3 space-y-2">{obra.colaboradores.map((pessoa) => <li key={pessoa.id} className="rounded-lg bg-slate-50 px-3 py-2 text-sm"><strong className="text-navy">{pessoa.nome}</strong><span className="text-slate-600"> · {pessoa.funcao || 'Responsável'}</span></li>)}</ul> : <p className="mt-2 text-sm text-slate-500">Nenhum responsável ativo foi informado.</p>}</article>
+        </section>
+
+        {(obra.fotos || []).length > 0 && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"><h2 className="font-bold text-navy">Fotos e referências do canteiro</h2><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{obra.fotos.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer"><img src={url} alt={`Referência da obra ${obra.titulo}`} loading="lazy" className="h-52 w-full rounded-lg object-cover" /></a>)}</div></section>}
+
         <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-xs" aria-label="Formulário de andamento">
           <div className="mb-5">
             <h2 className="text-lg sm:text-xl font-bold text-navy">Registrar Andamento no Canteiro</h2>

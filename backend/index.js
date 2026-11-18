@@ -33,6 +33,8 @@ const {
   confirmarConclusaoObra,
   iniciarExecucaoObra,
   atualizarDadosObra,
+  anexarFotoObra,
+  salvarContratoObra,
 } = require("./src/repositories/obraRepository");
 const pagamentoService = require("./src/services/pagamentoService");
 const mercadoPagoService = require("./src/services/mercadoPagoService");
@@ -41,7 +43,7 @@ const authMiddleware = require("./src/middlewares/authMiddleware");
 const exigirPapel = require("./src/middlewares/exigirPapel");
 
 const app = express();
-app.use(express.json({ limit: "8mb" }));
+app.use(express.json({ limit: "40mb" }));
 
 function exigirEmpresaDoToken(req, res, next) {
   if (typeof req.usuario?.empresaId !== "string" || !req.usuario.empresaId) {
@@ -115,7 +117,7 @@ app.get("/convites/:token", async (req, res) => {
     if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
     const convite = await prisma.convite.findUnique({ where: { tokenHash: hashConvite(req.params.token) }, include: { empresa: { select: { nome: true } }, obra: { select: { nome: true } } } });
     if (!convite) return res.status(404).json({ erro: "Convite não encontrado" });
-    return res.json({ tipo: convite.tipo, nome: convite.nome, email: convite.email, empresa: convite.empresa.nome, obra: convite.obra.nome, expirado: convite.expiraEm <= new Date(), usado: Boolean(convite.usadoEm) });
+    return res.json({ tipo: convite.tipo, nome: convite.nome, email: convite.email, empresa: convite.empresa.nome, obra: convite.obra?.nome || null, expirado: convite.expiraEm <= new Date(), usado: Boolean(convite.usadoEm) });
   } catch (erro) { return res.status(503).json({ erro: "Não foi possível consultar o convite" }); }
 });
 
@@ -152,15 +154,21 @@ app.post("/convites/:token/aceitar", async (req, res) => {
         if (!usuarioSessao || usuarioSessao.id !== novo.id || novo.empresaId !== convite.empresaId || novo.tipo !== tipoUsuario) throw Object.assign(new Error("Entre com a conta deste e-mail antes de aceitar o convite."), { code: "EMAIL_EXISTS" });
       } else {
         if (usuarioSessao) throw Object.assign(new Error("O convite foi enviado para outro e-mail. Saia da conta atual e use o e-mail convidado."), { code: "ACCOUNT_MISMATCH" });
-        novo = await tx.usuario.create({ data: { empresaId: convite.empresaId, nome: convite.nome, email: convite.email, senhaHash, tipo: tipoUsuario } });
+        novo = await tx.usuario.create({ data: { empresaId: convite.empresaId, nome: convite.nome, email: convite.email, senhaHash, tipo: tipoUsuario, telefone: convite.telefone, endereco: convite.endereco } });
+      }
+      if (usuarioSessao && (convite.telefone || convite.endereco)) {
+        novo = await tx.usuario.update({ where: { id: novo.id }, data: { ...(convite.telefone ? { telefone: convite.telefone } : {}), ...(convite.endereco ? { endereco: convite.endereco } : {}) } });
       }
       if (convite.tipo === "CLIENTE") {
-        const vinculada = await tx.obra.updateMany({ where: { id: convite.obraId, empresaId: convite.empresaId, clienteId: null }, data: { clienteId: novo.id } });
-        const obra = await tx.obra.findFirst({ where: { id: convite.obraId, empresaId: convite.empresaId }, select: { clienteId: true } });
-        if (!obra || (obra.clienteId !== novo.id && vinculada.count === 0)) throw Object.assign(new Error("A obra já está vinculada a outro cliente."), { code: "WORK_ALREADY_LINKED" });
+        if (convite.obraId) {
+          const vinculada = await tx.obra.updateMany({ where: { id: convite.obraId, empresaId: convite.empresaId, clienteId: null }, data: { clienteId: novo.id } });
+          const obra = await tx.obra.findFirst({ where: { id: convite.obraId, empresaId: convite.empresaId }, select: { clienteId: true } });
+          if (!obra || (obra.clienteId !== novo.id && vinculada.count === 0)) throw Object.assign(new Error("A obra já está vinculada a outro cliente."), { code: "WORK_ALREADY_LINKED" });
+        }
       } else {
         let funcionario = await tx.funcionario.findUnique({ where: { usuarioId: novo.id } });
-        if (!funcionario) funcionario = await tx.funcionario.create({ data: { empresaId: convite.empresaId, nome: convite.nome, funcao: convite.funcao || "Gerente de obras", nivel: "RESPONSAVEL", usuarioId: novo.id } });
+        if (!funcionario) funcionario = await tx.funcionario.create({ data: { empresaId: convite.empresaId, nome: convite.nome, funcao: convite.funcao || "Gerente de obras", nivel: "RESPONSAVEL", telefone: convite.telefone, usuarioId: novo.id } });
+        else if (convite.telefone) await tx.funcionario.update({ where: { id: funcionario.id }, data: { telefone: convite.telefone } });
         if (funcionario.empresaId !== convite.empresaId || !funcionario.ativo || funcionario.nivel !== "RESPONSAVEL") throw Object.assign(new Error("A conta existente não pode receber acesso de gerente."), { code: "MANAGER_PROFILE_INVALID" });
         const escalaAberta = await tx.obraEscala.findFirst({ where: { obraId: convite.obraId, funcionarioId: funcionario.id, dataFim: null } });
         if (!escalaAberta) {
@@ -183,16 +191,19 @@ app.post("/convites/:token/aceitar", async (req, res) => {
 
 async function criarConvite(req, res, tipo) {
   try {
-    const { obraId, nome, email, funcao } = req.body || {};
-    if (![obraId, nome, email].every((v) => typeof v === "string" && v.trim()) || (tipo === "GERENTE" && (typeof funcao !== "string" || !funcao.trim()))) return res.status(400).json({ erro: "Obra, nome e e-mail são obrigatórios" });
+    const { obraId, nome, email, funcao, telefone, endereco } = req.body || {};
+    const obraIdInformada = typeof obraId === "string" && obraId.trim() ? obraId.trim() : null;
+    if (![nome, email].every((v) => typeof v === "string" && v.trim()) || (obraId != null && typeof obraId !== "string") || (tipo === "GERENTE" && (!obraIdInformada || typeof funcao !== "string" || !funcao.trim()))) return res.status(400).json({ erro: tipo === "GERENTE" ? "Obra, nome, e-mail e função são obrigatórios" : "Nome e e-mail são obrigatórios" });
+    if (telefone != null && typeof telefone !== "string") return res.status(400).json({ erro: "Telefone inválido" });
+    if (endereco != null && tipo === "CLIENTE" && typeof endereco !== "string") return res.status(400).json({ erro: "Endereço do cliente inválido" });
     const prisma = getPrisma();
     if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
-    const obra = await prisma.obra.findFirst({ where: { id: obraId, empresaId: req.usuario.empresaId } });
-    if (!obra) return res.status(404).json({ erro: "Obra não encontrada" });
-    if (tipo === "CLIENTE" && obra.clienteId) return res.status(409).json({ erro: "Esta obra já está vinculada a um cliente" });
+    const obra = obraIdInformada ? await prisma.obra.findFirst({ where: { id: obraIdInformada, empresaId: req.usuario.empresaId } }) : null;
+    if (obraIdInformada && !obra) return res.status(404).json({ erro: "Obra não encontrada" });
+    if (tipo === "CLIENTE" && obra?.clienteId) return res.status(409).json({ erro: "Esta obra já está vinculada a um cliente" });
     const normalizedEmail = email.trim().toLowerCase();
     const rawToken = crypto.randomBytes(32).toString("base64url");
-    const convite = await prisma.convite.create({ data: { empresaId: req.usuario.empresaId, obraId, criadoPorId: req.usuario.id, tipo, nome: nome.trim(), email: normalizedEmail, funcao: tipo === "GERENTE" ? funcao.trim() : null, tokenHash: hashConvite(rawToken), expiraEm: new Date(Date.now() + 48 * 60 * 60 * 1000) } });
+    const convite = await prisma.convite.create({ data: { empresaId: req.usuario.empresaId, obraId: obra?.id || null, criadoPorId: req.usuario.id, tipo, nome: nome.trim(), email: normalizedEmail, telefone: telefone?.trim() || null, endereco: tipo === "CLIENTE" ? endereco?.trim() || null : null, funcao: tipo === "GERENTE" ? funcao.trim() : null, tokenHash: hashConvite(rawToken), expiraEm: new Date(Date.now() + 48 * 60 * 60 * 1000) } });
     const base = process.env.FRONTEND_URL || "http://localhost:5173";
     return res.status(201).json({ convite: { id: convite.id, email: convite.email, expiraEm: convite.expiraEm, link: `${base.replace(/\/$/, "")}/convite/${rawToken}` } });
   } catch (erro) { console.error("Erro ao criar convite:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível criar o convite" }); }
@@ -483,7 +494,7 @@ app.get("/clientes", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"),
     const clientes = await prisma.usuario.findMany({
       where: { empresaId: req.usuario.empresaId, tipo: "CLIENTE" },
       select: {
-        id: true, nome: true, email: true, criadoEm: true,
+        id: true, nome: true, email: true, telefone: true, endereco: true, criadoEm: true,
         obrasComoCliente: { where: { empresaId: req.usuario.empresaId }, select: { id: true, nome: true, status: true } },
       },
       orderBy: { nome: "asc" },
@@ -532,22 +543,30 @@ app.post("/colaboradores", authMiddleware, exigirEmpresaDoToken, exigirPapel("AD
 // Criação restrita a ADMIN: leitura (GET) continua liberada pra qualquer usuário autenticado da empresa.
 app.post("/obras", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
   try {
-    const { nome, descricao, endereco } = req.body || {};
-    if (typeof nome !== "string" || !nome.trim()) {
-      return res.status(400).json({ erro: "Nome da obra é obrigatório" });
+    const corpo = req.body || {};
+    const obrigatorios = ["nome", "descricao", "estado", "cidade", "bairro", "endereco", "numero", "prazoFinal", "clienteId"];
+    if (obrigatorios.some((campo) => typeof corpo[campo] !== "string" || !corpo[campo].trim())) return res.status(400).json({ erro: "Preencha nome, descrição, cliente, estado, cidade, bairro, endereço, número e prazo da obra" });
+    if (typeof corpo.semApartamento !== "boolean" || typeof corpo.semBloco !== "boolean") return res.status(400).json({ erro: "Informe se o endereço possui apartamento e bloco" });
+    if (!corpo.semApartamento && (typeof corpo.apartamento !== "string" || !corpo.apartamento.trim())) return res.status(400).json({ erro: "Informe o apartamento ou marque que não existe" });
+    if (!corpo.semBloco && (typeof corpo.bloco !== "string" || !corpo.bloco.trim())) return res.status(400).json({ erro: "Informe o bloco ou marque que não existe" });
+    if (typeof corpo.descricao !== "string" || corpo.descricao.trim().length > 5000 || typeof corpo.informacoesAdicionais !== "string" || !corpo.informacoesAdicionais.trim()) return res.status(400).json({ erro: "Descrição e informações de execução são obrigatórias" });
+    if (typeof corpo.valorTotal !== "string" && typeof corpo.valorTotal !== "number") return res.status(400).json({ erro: "Valor final da obra é obrigatório" });
+    const valorTotal = String(corpo.valorTotal);
+    if (!/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(valorTotal) || Number(valorTotal) <= 0) return res.status(400).json({ erro: "Valor final deve ser positivo e ter até duas casas decimais" });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(corpo.prazoFinal) || !Number.isFinite(new Date(`${corpo.prazoFinal}T12:00:00.000Z`).getTime())) return res.status(400).json({ erro: "Informe um prazo final válido" });
+    if (corpo.fotos !== undefined && (!Array.isArray(corpo.fotos) || corpo.fotos.length > 5)) return res.status(400).json({ erro: "Envie até cinco fotos iniciais" });
+    const prisma = getPrisma();
+    const cliente = await prisma.usuario.findFirst({ where: { id: corpo.clienteId, empresaId: req.usuario.empresaId, tipo: "CLIENTE" }, select: { id: true } });
+    if (!cliente) return res.status(400).json({ erro: "Selecione um cliente cadastrado nesta empreiteira" });
+    const obra = await criarObra({ empresaId: req.usuario.empresaId, nome: corpo.nome.trim(), descricao: corpo.descricao.trim(), endereco: corpo.endereco.trim(), estado: corpo.estado.trim(), cidade: corpo.cidade.trim(), bairro: corpo.bairro.trim(), numero: corpo.numero.trim(), apartamento: corpo.semApartamento ? null : corpo.apartamento.trim(), bloco: corpo.semBloco ? null : corpo.bloco.trim(), semApartamento: corpo.semApartamento, semBloco: corpo.semBloco, informacoesAdicionais: corpo.informacoesAdicionais.trim(), valorTotal, prazoFinal: new Date(`${corpo.prazoFinal}T12:00:00.000Z`), clienteId: cliente.id });
+    const avisos = [];
+    for (const foto of corpo.fotos || []) {
+      try {
+        const fotoUrl = await cloudinaryService.enviarFotoObra({ foto, obraId: obra.id });
+        await anexarFotoObra({ obraId: obra.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id, fotoUrl });
+      } catch (erroFoto) { avisos.push(erroFoto.message || "Não foi possível enviar uma das fotos."); }
     }
-    for (const [campo, valor] of [["descricao", descricao], ["endereco", endereco]]) {
-      if (valor !== undefined && typeof valor !== "string") {
-        return res.status(400).json({ erro: `Campo ${campo} deve ser texto` });
-      }
-    }
-    const obra = await criarObra({
-      empresaId: req.usuario.empresaId,
-      nome: nome.trim(),
-      descricao: descricao?.trim() || null,
-      endereco: endereco?.trim() || null,
-    });
-    return res.status(201).json({ obra });
+    return res.status(201).json({ obra, avisos });
   } catch (erro) {
     if (erro.code === "DATABASE_NOT_CONFIGURED") {
       return res.status(503).json({ erro: erro.message });
@@ -591,7 +610,7 @@ app.get("/obras/:id", authMiddleware, exigirEmpresaDoToken, async (req, res) => 
 app.patch("/obras/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
   try {
     const dados = {};
-    for (const campo of ["nome", "descricao", "endereco"]) {
+    for (const campo of ["nome", "descricao", "endereco", "estado", "cidade", "bairro", "numero", "apartamento", "bloco", "informacoesAdicionais"]) {
       if (req.body?.[campo] !== undefined) {
         if (typeof req.body[campo] !== "string" || (campo === "nome" && !req.body[campo].trim())) {
           return res.status(400).json({ erro: campo === "nome" ? "Nome da obra não pode ficar vazio" : `${campo} deve ser texto` });
@@ -599,14 +618,56 @@ app.patch("/obras/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN
         dados[campo] = req.body[campo].trim() || null;
       }
     }
+    for (const campo of ["semApartamento", "semBloco"]) {
+      if (req.body?.[campo] !== undefined) {
+        if (typeof req.body[campo] !== "boolean") return res.status(400).json({ erro: `${campo} deve ser booleano` });
+        dados[campo] = req.body[campo];
+      }
+    }
+    if (req.body?.prazoFinal !== undefined) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.body.prazoFinal) || !Number.isFinite(new Date(`${req.body.prazoFinal}T12:00:00.000Z`).getTime())) return res.status(400).json({ erro: "Informe um prazo final válido" });
+      dados.prazoFinal = new Date(`${req.body.prazoFinal}T12:00:00.000Z`);
+    }
+    if (req.body?.valorTotal !== undefined) {
+      const valor = String(req.body.valorTotal);
+      if (!/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(valor) || Number(valor) <= 0) return res.status(400).json({ erro: "Valor final deve ser positivo e ter até duas casas decimais" });
+      dados.valorTotal = valor;
+    }
+    if (req.body?.clienteId !== undefined) {
+      if (typeof req.body.clienteId !== "string" || !req.body.clienteId.trim()) return res.status(400).json({ erro: "Selecione um cliente válido" });
+      const cliente = await getPrisma().usuario.findFirst({ where: { id: req.body.clienteId, empresaId: req.usuario.empresaId, tipo: "CLIENTE" }, select: { id: true } });
+      if (!cliente) return res.status(400).json({ erro: "Cliente não encontrado nesta empreiteira" });
+      dados.clienteId = cliente.id;
+    }
     if (Object.keys(dados).length === 0) return res.status(400).json({ erro: "Informe ao menos um campo para atualizar" });
     const resultado = await atualizarDadosObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id, dados });
     if (!resultado) return res.status(404).json({ erro: "Obra não encontrada" });
     return res.json(resultado);
   } catch (erro) {
     if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "VALOR_OBRA_TRAVADO") return res.status(409).json({ erro: erro.message });
     console.error("Erro ao atualizar dados da obra:", erro.code || erro.message);
     return res.status(500).json({ erro: "Erro ao atualizar dados da obra" });
+  }
+});
+
+app.post("/obras/:id/contrato", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const { arquivo, termos } = req.body || {};
+    if (typeof arquivo?.data !== "string" || arquivo.mimeType !== "application/pdf") return res.status(400).json({ erro: "Selecione um arquivo PDF de contrato" });
+    if (termos !== undefined && (typeof termos !== "string" || termos.length > 10000)) return res.status(400).json({ erro: "As observações do contrato devem ter até 10.000 caracteres" });
+    const obra = await getPrisma().obra.findFirst({ where: { id: req.params.id, empresaId: req.usuario.empresaId }, select: { id: true } });
+    if (!obra) return res.status(404).json({ erro: "Obra não encontrada" });
+    const arquivoUrl = await cloudinaryService.enviarContratoObra({ arquivo, obraId: req.params.id });
+    const contrato = await salvarContratoObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, termos: termos?.trim() || "Contrato anexado pela empreiteira.", arquivoUrl });
+    if (!contrato) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.status(201).json({ contrato });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "CLOUDINARY_NAO_CONFIGURADO") return res.status(503).json({ erro: "Configure o armazenamento seguro para anexar contratos" });
+    if (["CONTRATO_INVALIDO", "CLOUDINARY_FALHA", "CLOUDINARY_INDISPONIVEL", "CLOUDINARY_RESPOSTA_INVALIDA"].includes(erro.code)) return res.status(400).json({ erro: erro.message });
+    console.error("Erro ao anexar contrato:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível anexar o contrato" });
   }
 });
 

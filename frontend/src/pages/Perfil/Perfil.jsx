@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../../components/Button.jsx'
+import AdminMenu from '../../components/AdminMenu.jsx'
 import Input from '../../components/Input.jsx'
 import { buscarUsuarioAtual, alterarSenha, encerrarSessao } from '../../services/auth.js'
 import { obterRotaDashboard } from '../../routes/dashboardRoutes.js'
@@ -131,7 +132,7 @@ export default function Perfil() {
     <div className="flex min-h-screen bg-background text-slate-800 max-[620px]:flex-col">
 
       {/* ---------- SIDEBAR (menu lateral) ---------- */}
-      <aside className="sticky top-0 flex h-screen w-[216px] shrink-0 flex-col overflow-y-auto bg-navy px-3 py-[22px] pb-4 text-slate-200 max-[920px]:w-[190px] max-[620px]:static max-[620px]:h-auto max-[620px]:w-full max-[620px]:shrink-0 max-[620px]:px-[14px] max-[620px]:py-[13px]">
+      {tipoPerfil !== 'ADMIN' && <aside className="sticky top-0 flex h-screen w-[216px] shrink-0 flex-col overflow-y-auto bg-navy px-3 py-[22px] pb-4 text-slate-200 max-[920px]:w-[190px] max-[620px]:static max-[620px]:h-auto max-[620px]:w-full max-[620px]:shrink-0 max-[620px]:px-[14px] max-[620px]:py-[13px]">
 
         {/* Logo/marca do ObraMaster, também funciona como link pro perfil */}
         <a className="inline-flex min-w-0 items-center gap-[10px] px-[5px] text-white no-underline max-[620px]:px-[2px]" href="/perfil" aria-label="ObraMaster, Perfil">
@@ -151,7 +152,7 @@ export default function Perfil() {
         </nav>
 
         <div className="mt-auto px-[7px] pt-3 text-[9px] text-slate-400 max-[620px]:hidden">ObraMaster · Gestão de Obras</div>
-      </aside>
+      </aside>}
 
       {/* ---------- CONTEÚDO PRINCIPAL ---------- */}
       <div className="min-w-0 flex-1">
@@ -164,13 +165,7 @@ export default function Perfil() {
             <strong className="text-[13px] font-semibold text-navy">Perfil</strong>
           </div>
           {/* Botão de retorno que leva diretamente ao dashboard do perfil logado (Cliente, Admin ou Colaborador) */}
-          <Button
-            variant="outline"
-            onClick={() => navigate(rotaDashboard)}
-            className="text-xs py-1.5 px-3"
-          >
-            ← Voltar
-          </Button>
+          {tipoPerfil === 'ADMIN' ? <AdminMenu /> : <Button variant="outline" onClick={() => navigate(rotaDashboard)} className="text-xs py-1.5 px-3">← Voltar</Button>}
         </header>
 
         <main className="mx-auto w-[min(1120px,calc(100%-64px))] py-7 max-[920px]:w-[min(720px,calc(100%-44px))] max-[620px]:w-[calc(100%-32px)] max-[620px]:py-[23px] max-[360px]:w-[calc(100%-24px)]">

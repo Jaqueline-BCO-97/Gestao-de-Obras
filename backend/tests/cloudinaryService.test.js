@@ -51,6 +51,32 @@ describe("upload seguro de fotos para Cloudinary", () => {
   });
 });
 
+describe("upload seguro de contratos PDF para Cloudinary", () => {
+  it("assina o arquivo e o envia para a pasta de contratos da obra", async () => {
+    configurar();
+    let requisicao;
+    const conteudo = Buffer.from("%PDF-1.7\ncontrato de teste");
+    const arquivo = { data: `data:application/pdf;base64,${conteudo.toString("base64")}`, mimeType: "application/pdf" };
+    const url = await cloudinary.enviarContratoObra({ obraId: "obra-123", arquivo, agora: 1700000000000, fetchImpl: async (destino, opcoes) => {
+      requisicao = { destino, opcoes };
+      return { ok: true, json: async () => ({ secure_url: "https://res.cloudinary.com/teste/raw/upload/contrato.pdf" }) };
+    } });
+    assert.equal(url, "https://res.cloudinary.com/teste/raw/upload/contrato.pdf");
+    assert.match(requisicao.destino, /\/raw\/upload$/);
+    assert.equal(requisicao.opcoes.body.get("folder"), "gestao-de-obras/obra-123/contratos");
+    assert.match(requisicao.opcoes.body.get("public_id"), /\.pdf$/);
+    assert.ok(requisicao.opcoes.body.get("signature"));
+  });
+
+  it("rejeita conteúdo que não seja PDF sem fazer chamada externa", async () => {
+    configurar();
+    let chamadas = 0;
+    const conteudo = Buffer.from("não é PDF").toString("base64");
+    await assert.rejects(cloudinary.enviarContratoObra({ obraId: "x", arquivo: { data: `data:application/pdf;base64,${conteudo}`, mimeType: "application/pdf" }, fetchImpl: async () => { chamadas += 1; } }), { code: "CONTRATO_INVALIDO" });
+    assert.equal(chamadas, 0);
+  });
+});
+
 process.on("exit", () => {
   for (const [chave, valor] of Object.entries(configuracaoOriginal)) {
     if (valor === undefined) delete process.env[chave];

@@ -155,6 +155,20 @@ describe("Convites de cliente e gerente por obra", () => {
     assert.equal(eventos[0].visivelParaCliente, false);
   });
 
+  it("permite cadastrar o cliente antes de uma obra e guarda telefone e endereço de contato", async () => {
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "", nome: "Cliente sem obra", email: "sem-obra@teste.local", telefone: "11987654321", endereco: "Rua do Cliente, 90" } });
+    assert.equal(criado.statusCode, 201);
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const consulta = await chamar("GET", "/convites/:token", { params: { token: codigo }, usuario: null });
+    assert.equal(consulta.body.obra, null);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
+    assert.equal(aceite.statusCode, 200);
+    const cliente = usuarios.find((item) => item.id === aceite.body.usuario.id);
+    assert.equal(cliente.telefone, "11987654321");
+    assert.equal(cliente.endereco, "Rua do Cliente, 90");
+    assert.equal(obras[0].clienteId, null);
+  });
+
   it("nega criação de convite sem sessão administrativa e convite para outra empresa", async () => {
     const semSessao = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente", email: "cliente@teste.local" }, usuario: null });
     assert.equal(semSessao.statusCode, 401);

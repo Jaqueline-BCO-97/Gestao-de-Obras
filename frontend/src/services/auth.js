@@ -232,6 +232,10 @@ export async function atualizarObra(id, dados) {
   return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) })
 }
 
+export async function anexarContratoObra(id, arquivo, termos = '') {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/contrato`, { method: 'POST', body: JSON.stringify({ arquivo, termos }) })
+}
+
 export async function iniciarExecucaoObra(id) {
   return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/status/iniciar`, { method: 'POST' })
 }

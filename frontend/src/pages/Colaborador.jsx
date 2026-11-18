@@ -94,7 +94,7 @@ export default function Colaborador() {
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-bold text-navy">{usuario?.nome || 'Gerente de obra'}</h2>
-              <p className="text-xs text-slate-500 mt-0.5">{usuario?.email || 'Dados carregados da sua sessão autenticada'}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{usuario?.funcionario?.funcao && <>Função: <strong className="text-emerald-700">{usuario.funcionario.funcao}</strong> · </>}{usuario?.telefone || usuario?.funcionario?.telefone ? `Telefone: ${usuario.telefone || usuario.funcionario.telefone} · ` : ''}{usuario?.email || 'Dados carregados da sua sessão autenticada'}</p>
             </div>
           </div>
           <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 self-start sm:self-auto">

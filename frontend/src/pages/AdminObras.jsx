@@ -1,3 +1,4 @@
+import AdminMenu from '../components/AdminMenu.jsx'
 // Importa o hook useState do React para controlar filtros e avisos na tela
 import { useCallback, useEffect, useState } from 'react'
 
@@ -14,10 +15,9 @@ import Button from '../components/Button.jsx'
 import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a lista de colaboradores mockados para exibir os membros da equipe alocada
-import { listarObras, solicitarConferenciaObra, convidarPessoa, criarObra } from '../services/auth.js'
+import { listarObras, listarClientes, solicitarConferenciaObra, convidarPessoa, criarObra } from '../services/auth.js'
 
 // Importa a função de logout para permitir ao administrador encerrar a sessão
-import { encerrarSessao } from '../services/auth.js'
 
 // Componente da página de Gestão de Obras do Administrador (/admin/obras)
 export default function AdminObras() {
@@ -32,15 +32,17 @@ export default function AdminObras() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
   const [solicitando, setSolicitando] = useState('')
-  const [convite, setConvite] = useState({ tipo: 'cliente', obraId: '', nome: '', email: '', funcao: '' })
+  const [convite, setConvite] = useState({ tipo: 'cliente', obraId: '', nome: '', email: '', telefone: '', endereco: '', funcao: '' })
   const [linkConvite, setLinkConvite] = useState('')
-  const [novaObra, setNovaObra] = useState({ nome: '', descricao: '', endereco: '' })
+  const [clientes, setClientes] = useState([])
+  const [fotosObra, setFotosObra] = useState([])
+  const [novaObra, setNovaObra] = useState({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', valorTotal: '', informacoesAdicionais: '' })
 
-  const atualizarObras = useCallback(async () => setObras(await listarObras()), [])
+  const atualizarObras = useCallback(async () => { const [listaObras, listaClientes] = await Promise.all([listarObras(), listarClientes()]); setObras(listaObras); setClientes(listaClientes) }, [])
 
   useEffect(() => {
     let ativo = true
-    listarObras().then((resultado) => { if (ativo) { setObras(resultado); setErro('') } })
+    Promise.all([listarObras(), listarClientes()]).then(([resultado, listaClientes]) => { if (ativo) { setObras(resultado); setClientes(listaClientes); setErro('') } })
       .catch((falha) => { if (ativo) setErro(falha.message) })
       .finally(() => { if (ativo) setCarregando(false) })
     return () => { ativo = false }
@@ -67,14 +69,6 @@ export default function AdminObras() {
     // Caso contrário, filtra pelo status exato selecionado
     : obras.filter((obra) => obra.status === filtroStatus)
 
-  // Função para deslogar da conta e voltar ao login
-  function handleLogout() {
-    // Apaga os dados de sessão do navegador
-    encerrarSessao()
-    // Redireciona para a página de login
-    navigate('/login')
-  }
-
   // Função auxiliar para buscar os colaboradores completos que estão escalados na obra
   function obterColaboradores(obra) {
     // Usa os nomes e funções reais retornados para o administrador.
@@ -99,7 +93,7 @@ export default function AdminObras() {
   async function handleConvidar(event) {
     event.preventDefault(); setErro(''); setLinkConvite('')
     try {
-      const resultado = await convidarPessoa(convite.tipo, { obraId: convite.obraId, nome: convite.nome, email: convite.email, ...(convite.tipo === 'gerente' ? { funcao: convite.funcao } : {}) })
+      const resultado = await convidarPessoa(convite.tipo, { ...(convite.obraId ? { obraId: convite.obraId } : {}), nome: convite.nome, email: convite.email, telefone: convite.telefone, ...(convite.tipo === 'cliente' ? { endereco: convite.endereco } : { funcao: convite.funcao }) })
       setLinkConvite(resultado.convite.link)
       setConvite({ ...convite, nome: '', email: '', funcao: '' })
     } catch (falha) { setErro(falha.message) }
@@ -107,8 +101,15 @@ export default function AdminObras() {
 
   async function handleCriarObra(event) {
     event.preventDefault(); setErro('')
-    try { await criarObra(novaObra); setNovaObra({ nome: '', descricao: '', endereco: '' }); await atualizarObras() }
-    catch (falha) { setErro(falha.message) }
+    try {
+      const fotos = await Promise.all(fotosObra.map((arquivo) => new Promise((resolve, reject) => {
+        const leitor = new FileReader(); leitor.onload = () => resolve({ data: leitor.result, mimeType: arquivo.type }); leitor.onerror = () => reject(new Error('Não foi possível ler uma das fotos.')); leitor.readAsDataURL(arquivo)
+      })))
+      const resposta = await criarObra({ ...novaObra, fotos })
+      setNovaObra({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', valorTotal: '', informacoesAdicionais: '' }); setFotosObra([])
+      setErro(resposta.avisos?.length ? `Obra criada, mas as fotos não foram enviadas: ${resposta.avisos.join('; ')}` : '')
+      await atualizarObras()
+    } catch (falha) { setErro(falha.message) }
   }
 
   // Abre a página de gestão com dados, equipe e histórico da obra.
@@ -146,41 +147,7 @@ export default function AdminObras() {
           </div>
 
           {/* Menu de navegação entre as telas */}
-          <nav className="flex items-center flex-wrap gap-2 text-xs font-semibold" aria-label="Menu de navegação">
-            {/* Link para o Dashboard do Administrador */}
-            <Link
-              to="/admin"
-              className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition"
-            >
-              Dashboard
-            </Link>
-            {/* Link ativo da página atual de Gestão de Obras */}
-            <Link
-              to="/admin/obras"
-              className="py-1.5 px-3 rounded-md bg-navy text-white transition shadow-xs"
-            >
-              Gestão de Obras
-            </Link>
-            <Link to="/admin/funcionarios" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition">Gerentes</Link>
-            <Link to="/admin/clientes" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition">Clientes</Link>
-            <Link to="/admin/precos" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition">Preços</Link>
-            <Link to="/admin/calendario" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition">Calendário</Link>
-            {/* Link para a página de Perfil */}
-            <Link
-              to="/perfil"
-              className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition"
-            >
-              Perfil
-            </Link>
-            {/* Botão para encerrar a sessão */}
-            <Button
-              variant="outline"
-              onClick={handleLogout}
-              className="text-xs py-1.5 px-3"
-            >
-              Sair
-            </Button>
-          </nav>
+          <AdminMenu />
 
         </div>
       </header>
@@ -407,11 +374,23 @@ export default function AdminObras() {
         <section className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-bold text-navy">Cadastrar obra</h2>
           <p className="mt-1 text-sm text-slate-600">Cadastre os dados do projeto da sua empreiteira. Depois convide o cliente e atribua um gerente.</p>
-          <form onSubmit={handleCriarObra} className="mt-4 grid gap-3 sm:grid-cols-3">
+          <form onSubmit={handleCriarObra} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="text-sm">Nome da obra<input required value={novaObra.nome} onChange={(e) => setNovaObra({ ...novaObra, nome: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            <label className="text-sm">Endereço<input value={novaObra.endereco} onChange={(e) => setNovaObra({ ...novaObra, endereco: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            <label className="text-sm">Descrição<input value={novaObra.descricao} onChange={(e) => setNovaObra({ ...novaObra, descricao: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            <Button type="submit" className="sm:col-span-3">Criar obra</Button>
+            <label className="text-sm">Cliente<select required value={novaObra.clienteId} onChange={(e) => setNovaObra({ ...novaObra, clienteId: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="">Selecione um cliente cadastrado</option>{clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome} · {cliente.email}</option>)}</select>{clientes.length === 0 && <Link to="/admin/clientes" className="mt-1 inline-block text-xs text-sky-700 underline">Cadastre e convide o cliente primeiro</Link>}</label>
+            <label className="text-sm">Descrição da obra<input required value={novaObra.descricao} onChange={(e) => setNovaObra({ ...novaObra, descricao: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Estado<input required value={novaObra.estado} onChange={(e) => setNovaObra({ ...novaObra, estado: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Cidade<input required value={novaObra.cidade} onChange={(e) => setNovaObra({ ...novaObra, cidade: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Bairro<input required value={novaObra.bairro} onChange={(e) => setNovaObra({ ...novaObra, bairro: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Endereço (rua/avenida)<input required value={novaObra.endereco} onChange={(e) => setNovaObra({ ...novaObra, endereco: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Número<input required value={novaObra.numero} onChange={(e) => setNovaObra({ ...novaObra, numero: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <div className="grid gap-2 sm:grid-cols-2"><label className="text-sm">Apartamento<input disabled={novaObra.semApartamento} required={!novaObra.semApartamento} value={novaObra.apartamento} onChange={(e) => setNovaObra({ ...novaObra, apartamento: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /></label><label className="mt-6 flex items-center gap-2 text-xs"><input type="checkbox" checked={novaObra.semApartamento} onChange={(e) => setNovaObra({ ...novaObra, semApartamento: e.target.checked, apartamento: '' })} /> Não existe apartamento</label></div>
+            <div className="grid gap-2 sm:grid-cols-2"><label className="text-sm">Bloco<input disabled={novaObra.semBloco} required={!novaObra.semBloco} value={novaObra.bloco} onChange={(e) => setNovaObra({ ...novaObra, bloco: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /></label><label className="mt-6 flex items-center gap-2 text-xs"><input type="checkbox" checked={novaObra.semBloco} onChange={(e) => setNovaObra({ ...novaObra, semBloco: e.target.checked, bloco: '' })} /> Não existe bloco</label></div>
+            <label className="text-sm">Prazo final<input required type="date" value={novaObra.prazoFinal} onChange={(e) => setNovaObra({ ...novaObra, prazoFinal: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Valor final (R$)<input required type="number" min="0.01" step="0.01" value={novaObra.valorTotal} onChange={(e) => setNovaObra({ ...novaObra, valorTotal: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm sm:col-span-2 lg:col-span-3">Informações de execução: serviços, materiais e medidas previstos no contrato<textarea required rows="4" value={novaObra.informacoesAdicionais} onChange={(e) => setNovaObra({ ...novaObra, informacoesAdicionais: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm sm:col-span-2 lg:col-span-3">Fotos iniciais (JPG, PNG ou WebP; até 5 arquivos de 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(e) => setFotosObra(Array.from(e.target.files || []).slice(0, 5))} className="mt-1 block w-full rounded border border-slate-300 p-2" /></label>
+            {clientes.length === 0 && <p className="sm:col-span-2 lg:col-span-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Para cadastrar a obra, primeiro convide o cliente em <Link className="font-semibold underline" to="/admin/clientes">Clientes</Link>.</p>}
+            <Button disabled={clientes.length === 0} type="submit" className="sm:col-span-2 lg:col-span-3">Criar obra</Button>
           </form>
         </section>
 
@@ -419,11 +398,12 @@ export default function AdminObras() {
           <h2 className="text-lg font-bold text-navy">Convidar cliente ou gerente</h2>
           <p className="mt-1 text-sm text-slate-600">O cliente acompanha a obra no dashboard. O gerente pode atualizar somente as obras para as quais recebeu acesso. Copie o link gerado e envie à pessoa.</p>
           <form onSubmit={handleConvidar} className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="text-sm">Perfil<select value={convite.tipo} onChange={(e) => setConvite({ ...convite, tipo: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="cliente">Cliente</option><option value="gerente">Gerente de obra</option></select></label>
-            <label className="text-sm">Obra<select required value={convite.obraId} onChange={(e) => setConvite({ ...convite, obraId: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="">Selecione uma obra</option>{obras.map((obra) => <option key={obra.id} value={obra.id}>{obra.titulo}</option>)}</select></label>
+            <label className="text-sm">Quem deseja cadastrar?<select value={convite.tipo} onChange={(e) => setConvite({ ...convite, tipo: e.target.value, obraId: '' })} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="cliente">Cliente</option><option value="gerente">Gerente de obra</option></select></label>
+            {convite.tipo === 'gerente' ? <label className="text-sm">Obra vinculada<select required value={convite.obraId} onChange={(e) => setConvite({ ...convite, obraId: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="">Selecione uma obra</option>{obras.map((obra) => <option key={obra.id} value={obra.id}>{obra.titulo}</option>)}</select></label> : <label className="text-sm">Vincular a uma obra agora (opcional)<select value={convite.obraId} onChange={(e) => setConvite({ ...convite, obraId: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="">Ainda não; selecionar ao cadastrar a obra</option>{obras.filter((obra) => !obra.cliente).map((obra) => <option key={obra.id} value={obra.id}>{obra.titulo}</option>)}</select></label>}
             <label className="text-sm">Nome<input required value={convite.nome} onChange={(e) => setConvite({ ...convite, nome: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm">E-mail<input required type="email" value={convite.email} onChange={(e) => setConvite({ ...convite, email: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            {convite.tipo === 'gerente' && <label className="text-sm sm:col-span-2">Função<input required value={convite.funcao} onChange={(e) => setConvite({ ...convite, funcao: e.target.value })} placeholder="Ex.: Gerente de obras" className="mt-1 w-full rounded border border-slate-300 p-2" /></label>}
+            <label className="text-sm">Telefone<input type="tel" value={convite.telefone} onChange={(e) => setConvite({ ...convite, telefone: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            {convite.tipo === 'gerente' ? <label className="text-sm">Função<input required value={convite.funcao} onChange={(e) => setConvite({ ...convite, funcao: e.target.value })} placeholder="Ex.: Gerente de obras" className="mt-1 w-full rounded border border-slate-300 p-2" /></label> : <label className="text-sm">Endereço do cliente (opcional)<input value={convite.endereco} onChange={(e) => setConvite({ ...convite, endereco: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>}
             <Button type="submit" className="sm:col-span-2">Gerar convite</Button>
           </form>
           {linkConvite && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900"><p>Convite válido por 48 horas. Copie e envie:</p><input readOnly value={linkConvite} onFocus={(e) => e.target.select()} className="mt-2 w-full rounded border border-emerald-200 bg-white p-2" /></div>}

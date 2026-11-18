@@ -53,6 +53,7 @@ model Usuario {
   tipo             TipoUsuario
   // Telefone de contato opcional.
   telefone         String?
+  endereco         String?
   // Data de criação automática do registro.
   criadoEm         DateTime         @default(now())
   // Obras em que este usuário é cliente.
@@ -84,6 +85,16 @@ model Obra {
   descricao             String?
   // Endereço opcional da obra.
   endereco              String?
+  estado                String?
+  cidade                String?
+  bairro                String?
+  numero                String?
+  apartamento           String?
+  bloco                 String?
+  semApartamento        Boolean      @default(false)
+  semBloco              Boolean      @default(false)
+  informacoesAdicionais String?
+  fotos                 String[]     @default([])
   // Cliente associado opcionalmente a um usuário.
   clienteId             String?
   // Relação do cliente com o nome definido para esta associação.
@@ -151,14 +162,16 @@ model Convite {
   id          String      @id @default(uuid())
   empresaId   String
   empresa     Empresa     @relation(fields: [empresaId], references: [id])
-  obraId      String
-  obra        Obra        @relation(fields: [obraId], references: [id])
+  obraId      String?
+  obra        Obra?       @relation(fields: [obraId], references: [id])
   criadoPorId String
   criadoPor   Usuario     @relation("ConviteCriadoPor", fields: [criadoPorId], references: [id])
   tipo        TipoConvite
   nome        String
   email       String
   funcao      String?
+  telefone    String?
+  endereco    String?
   tokenHash   String      @unique
   expiraEm    DateTime
   usadoEm     DateTime?
@@ -302,6 +315,7 @@ model Contrato {
   empresa   Empresa          @relation(fields: [empresaId], references: [id])
   // Texto integral dos termos contratuais.
   termos    String
+  arquivoUrl String?
   // Data de criação automática do contrato.
   criadoEm  DateTime         @default(now())
   // Aceites registrados para este contrato.
