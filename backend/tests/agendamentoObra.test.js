@@ -76,6 +76,9 @@ function criarPrismaFalso() {
         return evento;
       },
     },
+    parcela: {
+      findMany: async ({ where }) => (estado.obras.find((obra) => obra.id === where.obraId)?.parcelas || []).map((parcela) => ({ situacao: parcela.situacao })),
+    },
   };
 
   return {

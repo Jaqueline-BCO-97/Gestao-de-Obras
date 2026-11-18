@@ -83,6 +83,21 @@ async function solicitarConferenciaObra({ obraId, empresaId, administradorId }) 
   }, { isolationLevel: "Serializable" });
 }
 
+async function iniciarExecucaoObra({ obraId, empresaId, administradorId }) {
+  exigirBancoConfigurado();
+  const prisma = getPrisma();
+  return emTransacaoSerializavel(prisma, async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, empresaId }, select: { id: true, status: true } });
+    if (!obra) throw erroConclusao("OBRA_NAO_ENCONTRADA", "Obra não encontrada");
+    if (obra.status !== "AGENDADA") throw erroConclusao("STATUS_INVALIDO", "Somente uma obra agendada pode iniciar execução");
+    const atualizada = await tx.obra.update({ where: { id: obraId }, data: { status: "EM_ANDAMENTO" } });
+    const evento = await tx.obraEvento.create({
+      data: { obraId, empresaId, usuarioId: administradorId, tipo: "STATUS", descricao: "Execução da obra iniciada.", visivelParaCliente: true },
+    });
+    return { obra: atualizada, evento };
+  });
+}
+
 async function confirmarConclusaoObra({ obraId, empresaId, clienteId }) {
   exigirBancoConfigurado();
   const prisma = getPrisma();
@@ -96,9 +111,11 @@ async function confirmarConclusaoObra({ obraId, empresaId, clienteId }) {
       throw erroConclusao("STATUS_INVALIDO", "A obra não está aguardando confirmação de conclusão");
     }
     const agora = new Date();
+    const parcelas = await tx.parcela.findMany({ where: { obraId }, select: { situacao: true } });
+    const todasParcelasPagas = parcelas.length > 0 && parcelas.every((parcela) => parcela.situacao === "PAGA");
     const atualizada = await tx.obra.update({
       where: { id: obraId },
-      data: { status: "CONCLUIDA", conclusaoConfirmadaEm: agora },
+      data: { ...(todasParcelasPagas ? { status: "CONCLUIDA" } : {}), conclusaoConfirmadaEm: agora },
     });
     const evento = await tx.obraEvento.create({
       data: { obraId, empresaId, usuarioId: clienteId, tipo: "STATUS", descricao: "Conclusão da obra confirmada pelo cliente.", visivelParaCliente: true },
@@ -189,7 +206,7 @@ async function alocarFuncionario({ obraId, empresaId, funcionarioId, administrad
     });
     if (duplicada) throw erroAlocacao("ALOCACAO_DUPLICADA", "Funcionário já possui alocação aberta nesta obra");
 
-    return tx.obraEscala.create({
+    const alocacao = await tx.obraEscala.create({
       data: {
         obraId,
         funcionarioId,
@@ -201,6 +218,10 @@ async function alocarFuncionario({ obraId, empresaId, funcionarioId, administrad
         alteradoPor: { select: { id: true, nome: true } },
       },
     });
+    await tx.obraEvento.create({
+      data: { obraId, empresaId, usuarioId: administradorId, tipo: "EQUIPE", descricao: `${funcionario.nome} (${funcionario.funcao}) recebeu acesso à obra.`, visivelParaCliente: false },
+    });
+    return alocacao;
   });
 }
 
@@ -233,13 +254,17 @@ async function encerrarAlocacao({ obraId, empresaId, alocacaoId, administradorId
       throw erroAlocacao("ALOCACAO_JA_ENCERRADA", "Esta alocação já foi encerrada");
     }
 
-    return tx.obraEscala.findUnique({
+    const encerrada = await tx.obraEscala.findUnique({
       where: { id: alocacaoId },
       include: {
         funcionario: { select: { id: true, nome: true, funcao: true, nivel: true } },
         alteradoPor: { select: { id: true, nome: true } },
       },
     });
+    await tx.obraEvento.create({
+      data: { obraId, empresaId, usuarioId: administradorId, tipo: "EQUIPE", descricao: `Acesso de ${encerrada.funcionario.nome} encerrado${motivo ? `: ${motivo}` : "."}`, visivelParaCliente: false },
+    });
+    return encerrada;
   });
 }
 
@@ -336,7 +361,7 @@ async function reagendarObra({ obraId, empresaId, administradorId, agendadaPara,
       return await prisma.$transaction(async (tx) => {
         // O hash é apenas a chave do advisory lock; colisões só serializam
         // empresas distintas e não misturam dados nem permissões.
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${empresaId}, 0))`;
+        await tx.$queryRaw`SELECT 1 FROM (SELECT pg_advisory_xact_lock(hashtextextended(${empresaId}, 0))) AS lock_empresa`;
 
         const obraAtual = await tx.obra.findFirst({
           where: { id: obraId, empresaId },
@@ -501,7 +526,9 @@ function formatarObra(obra, tipo) {
     // Inclui o nome do cliente ou nulo se não houver associação.
     cliente: obra.cliente?.empresaId === obra.empresaId ? obra.cliente.nome : null,
     // Apresenta os nomes dos funcionários atualmente escalados.
-    colaboradores: obra.escalas.map((escala) => escala.funcionario.id),
+    colaboradores: tipo === "ADMIN"
+      ? obra.escalas.map((escala) => ({ id: escala.funcionario.id, nome: escala.funcionario.nome, funcao: escala.funcionario.funcao }))
+      : obra.escalas.map((escala) => escala.funcionario.id),
     // Preserva o endereço cadastrado.
     endereco: obra.endereco,
     // Converte o estado para uma descrição legível.
@@ -564,6 +591,20 @@ async function criarObra({ empresaId, nome, descricao, endereco }) {
   return getPrisma().obra.create({ data: { empresaId, nome, descricao, endereco } });
 }
 
+async function atualizarDadosObra({ obraId, empresaId, administradorId, dados }) {
+  exigirBancoConfigurado();
+  const prisma = getPrisma();
+  return prisma.$transaction(async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, empresaId }, select: { id: true } });
+    if (!obra) return null;
+    const atualizada = await tx.obra.update({ where: { id: obraId }, data: dados });
+    const evento = await tx.obraEvento.create({
+      data: { obraId, empresaId, usuarioId: administradorId, tipo: "ANOTACAO", descricao: "Dados básicos da obra atualizados pela empreiteira.", visivelParaCliente: false },
+    });
+    return { obra: atualizada, evento };
+  });
+}
+
 // Exporta as funções usadas pelas rotas do servidor.
 module.exports = {
   listarObras,
@@ -577,4 +618,6 @@ module.exports = {
   reagendarObra,
   solicitarConferenciaObra,
   confirmarConclusaoObra,
+  iniciarExecucaoObra,
+  atualizarDadosObra,
 };

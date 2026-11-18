@@ -31,6 +31,8 @@ const {
   reagendarObra,
   solicitarConferenciaObra,
   confirmarConclusaoObra,
+  iniciarExecucaoObra,
+  atualizarDadosObra,
 } = require("./src/repositories/obraRepository");
 const pagamentoService = require("./src/services/pagamentoService");
 const mercadoPagoService = require("./src/services/mercadoPagoService");
@@ -139,6 +141,11 @@ app.post("/convites/:token/aceitar", async (req, res) => {
     const usuario = await prisma.$transaction(async (tx) => {
       const convite = await tx.convite.findFirst({ where: { id: conviteAtual.id, usadoEm: null, expiraEm: { gt: new Date() } } });
       if (!convite) throw Object.assign(new Error("Convite já utilizado"), { code: "INVITE_USED" });
+      const reivindicado = await tx.convite.updateMany({
+        where: { id: convite.id, usadoEm: null, expiraEm: { gt: new Date() } },
+        data: { usadoEm: new Date() },
+      });
+      if (reivindicado.count !== 1) throw Object.assign(new Error("Convite já utilizado"), { code: "INVITE_USED" });
       const tipoUsuario = convite.tipo === "CLIENTE" ? "CLIENTE" : "COLABORADOR";
       let novo = await tx.usuario.findUnique({ where: { email: convite.email } });
       if (novo) {
@@ -156,9 +163,11 @@ app.post("/convites/:token/aceitar", async (req, res) => {
         if (!funcionario) funcionario = await tx.funcionario.create({ data: { empresaId: convite.empresaId, nome: convite.nome, funcao: convite.funcao || "Gerente de obras", nivel: "RESPONSAVEL", usuarioId: novo.id } });
         if (funcionario.empresaId !== convite.empresaId || !funcionario.ativo || funcionario.nivel !== "RESPONSAVEL") throw Object.assign(new Error("A conta existente não pode receber acesso de gerente."), { code: "MANAGER_PROFILE_INVALID" });
         const escalaAberta = await tx.obraEscala.findFirst({ where: { obraId: convite.obraId, funcionarioId: funcionario.id, dataFim: null } });
-        if (!escalaAberta) await tx.obraEscala.create({ data: { obraId: convite.obraId, funcionarioId: funcionario.id, alteradoPorId: convite.criadoPorId, motivo: "Convite de gerente aceito" } });
+        if (!escalaAberta) {
+          await tx.obraEscala.create({ data: { obraId: convite.obraId, funcionarioId: funcionario.id, alteradoPorId: convite.criadoPorId, motivo: "Convite de gerente aceito" } });
+          await tx.obraEvento.create({ data: { obraId: convite.obraId, empresaId: convite.empresaId, usuarioId: convite.criadoPorId, tipo: "EQUIPE", descricao: `${convite.nome} recebeu acesso de gerente à obra.`, visivelParaCliente: false } });
+        }
       }
-      await tx.convite.update({ where: { id: convite.id }, data: { usadoEm: new Date() } });
       return novo;
     });
     return res.json(sessao(usuario));
@@ -166,6 +175,7 @@ app.post("/convites/:token/aceitar", async (req, res) => {
     if (erro.code === "EMAIL_EXISTS") return res.status(409).json({ erro: erro.message });
     if (["ACCOUNT_MISMATCH", "WORK_ALREADY_LINKED", "MANAGER_PROFILE_INVALID"].includes(erro.code)) return res.status(409).json({ erro: erro.message });
     if (erro.code === "INVITE_USED") return res.status(410).json({ erro: "Convite já utilizado" });
+    if (erro.code === "P2034") return res.status(409).json({ erro: "O convite foi aceito por outra solicitação; atualize a página" });
     console.error("Erro ao aceitar convite:", erro.code || erro.message);
     return res.status(500).json({ erro: "Não foi possível aceitar o convite" });
   }
@@ -183,13 +193,113 @@ async function criarConvite(req, res, tipo) {
     const normalizedEmail = email.trim().toLowerCase();
     const rawToken = crypto.randomBytes(32).toString("base64url");
     const convite = await prisma.convite.create({ data: { empresaId: req.usuario.empresaId, obraId, criadoPorId: req.usuario.id, tipo, nome: nome.trim(), email: normalizedEmail, funcao: tipo === "GERENTE" ? funcao.trim() : null, tokenHash: hashConvite(rawToken), expiraEm: new Date(Date.now() + 48 * 60 * 60 * 1000) } });
-    const base = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
+    const base = process.env.FRONTEND_URL || "http://localhost:5173";
     return res.status(201).json({ convite: { id: convite.id, email: convite.email, expiraEm: convite.expiraEm, link: `${base.replace(/\/$/, "")}/convite/${rawToken}` } });
   } catch (erro) { console.error("Erro ao criar convite:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível criar o convite" }); }
 }
 
 app.post("/convites/cliente", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), (req, res) => criarConvite(req, res, "CLIENTE"));
 app.post("/convites/gerente", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), (req, res) => criarConvite(req, res, "GERENTE"));
+
+app.get("/convites", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const convites = await prisma.convite.findMany({
+      where: { empresaId: req.usuario.empresaId },
+      include: { obra: { select: { id: true, nome: true } } },
+      orderBy: { criadoEm: "desc" },
+    });
+    return res.json(convites.map(({ tokenHash, ...convite }) => convite));
+  } catch (erro) {
+    console.error("Erro ao listar convites:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao listar convites" });
+  }
+});
+
+app.post("/convites/:id/reenviar", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const convite = await prisma.convite.findFirst({ where: { id: req.params.id, empresaId: req.usuario.empresaId, usadoEm: null } });
+    if (!convite) return res.status(404).json({ erro: "Convite pendente não encontrado" });
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const expiraEm = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    const atualizado = await prisma.convite.updateMany({
+      where: { id: convite.id, empresaId: req.usuario.empresaId, usadoEm: null },
+      data: { tokenHash: hashConvite(rawToken), expiraEm },
+    });
+    if (atualizado.count !== 1) return res.status(409).json({ erro: "O convite já foi aceito; atualize a lista" });
+    const base = process.env.FRONTEND_URL || "http://localhost:5173";
+    return res.json({ convite: { id: convite.id, email: convite.email, expiraEm, link: `${base.replace(/\/$/, "")}/convite/${rawToken}` } });
+  } catch (erro) {
+    console.error("Erro ao gerar novo link de convite:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível gerar um novo link" });
+  }
+});
+
+app.get("/tabela-precos", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const precos = await prisma.tabelaPreco.findMany({ where: { empresaId: req.usuario.empresaId }, orderBy: [{ ativo: "desc" }, { servico: "asc" }] });
+    return res.json(precos.map((item) => ({ ...item, valor: Number(item.valor) })));
+  } catch (erro) { console.error("Erro ao consultar tabela de preços:", erro.code || erro.message); return res.status(500).json({ erro: "Erro ao consultar tabela de preços" }); }
+});
+
+app.post("/tabela-precos", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const { servico, unidade, valor } = req.body || {};
+    if (typeof servico !== "string" || !servico.trim() || servico.trim().length > 120 || typeof unidade !== "string" || !unidade.trim() || unidade.trim().length > 30) return res.status(400).json({ erro: "Serviço e unidade são obrigatórios (até 120 e 30 caracteres)" });
+    const normalizado = String(valor ?? "");
+    if (!/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(normalizado) || Number(normalizado) <= 0) return res.status(400).json({ erro: "O preço deve ser positivo e ter até duas casas decimais" });
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const preco = await prisma.tabelaPreco.create({ data: { empresaId: req.usuario.empresaId, servico: servico.trim(), unidade: unidade.trim(), valor: normalizado } });
+    return res.status(201).json({ preco: { ...preco, valor: Number(preco.valor) } });
+  } catch (erro) { console.error("Erro ao criar preço:", erro.code || erro.message); return res.status(500).json({ erro: "Erro ao criar preço" }); }
+});
+
+app.patch("/tabela-precos/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const dados = {};
+    for (const campo of ["servico", "unidade"]) {
+      if (req.body?.[campo] !== undefined) {
+        if (typeof req.body[campo] !== "string" || !req.body[campo].trim() || req.body[campo].trim().length > (campo === "servico" ? 120 : 30)) return res.status(400).json({ erro: `Campo ${campo} inválido` });
+        dados[campo] = req.body[campo].trim();
+      }
+    }
+    if (req.body?.valor !== undefined) {
+      const normalizado = String(req.body.valor);
+      if (!/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(normalizado) || Number(normalizado) <= 0) return res.status(400).json({ erro: "O preço deve ser positivo e ter até duas casas decimais" });
+      dados.valor = normalizado;
+    }
+    if (req.body?.ativo !== undefined) {
+      if (typeof req.body.ativo !== "boolean") return res.status(400).json({ erro: "ativo deve ser booleano" });
+      dados.ativo = req.body.ativo;
+    }
+    if (Object.keys(dados).length === 0) return res.status(400).json({ erro: "Informe dados para atualizar" });
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const resultado = await prisma.tabelaPreco.updateMany({ where: { id: req.params.id, empresaId: req.usuario.empresaId }, data: dados });
+    if (resultado.count !== 1) return res.status(404).json({ erro: "Preço não encontrado" });
+    const preco = await prisma.tabelaPreco.findFirst({ where: { id: req.params.id, empresaId: req.usuario.empresaId } });
+    return res.json({ preco: { ...preco, valor: Number(preco.valor) } });
+  } catch (erro) { console.error("Erro ao atualizar preço:", erro.code || erro.message); return res.status(500).json({ erro: "Erro ao atualizar preço" }); }
+});
+
+app.get("/calendario", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const obras = await prisma.obra.findMany({
+      where: { empresaId: req.usuario.empresaId, agendadaPara: { not: null } },
+      select: { id: true, nome: true, status: true, agendadaPara: true, prazoFinal: true, cliente: { select: { nome: true } } },
+      orderBy: { agendadaPara: "asc" },
+    });
+    return res.json(obras);
+  } catch (erro) { console.error("Erro ao consultar calendário:", erro.code || erro.message); return res.status(500).json({ erro: "Erro ao consultar calendário" }); }
+});
 
 // Rota raiz — hello world do backend
 app.get("/", (req, res) => {
@@ -341,6 +451,50 @@ app.get("/usuarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"),
   }
 });
 
+// Lista funcionários da empresa e as obras em que têm escala ativa.
+app.get("/funcionarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const funcionarios = await prisma.funcionario.findMany({
+      where: { empresaId: req.usuario.empresaId },
+      include: {
+        usuario: { select: { id: true, email: true, tipo: true } },
+        escalas: {
+          where: { dataFim: null },
+          include: { obra: { select: { id: true, nome: true, status: true } } },
+          orderBy: { dataInicio: "desc" },
+        },
+      },
+      orderBy: [{ ativo: "desc" }, { nome: "asc" }],
+    });
+    return res.json(funcionarios);
+  } catch (erro) {
+    console.error("Erro ao listar funcionários:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao listar funcionários" });
+  }
+});
+
+// Lista clientes da empresa e as obras que cada um acompanha.
+app.get("/clientes", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const clientes = await prisma.usuario.findMany({
+      where: { empresaId: req.usuario.empresaId, tipo: "CLIENTE" },
+      select: {
+        id: true, nome: true, email: true, criadoEm: true,
+        obrasComoCliente: { where: { empresaId: req.usuario.empresaId }, select: { id: true, nome: true, status: true } },
+      },
+      orderBy: { nome: "asc" },
+    });
+    return res.json(clientes);
+  } catch (erro) {
+    console.error("Erro ao listar clientes:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao listar clientes" });
+  }
+});
+
 // Cadastro de colaborador vinculado à empresa do usuário autenticado.
 // Restrito a ADMIN: só o administrador da empresa pode criar contas de colaborador.
 app.post("/colaboradores", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
@@ -434,6 +588,28 @@ app.get("/obras/:id", authMiddleware, exigirEmpresaDoToken, async (req, res) => 
   }
 });
 
+app.patch("/obras/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const dados = {};
+    for (const campo of ["nome", "descricao", "endereco"]) {
+      if (req.body?.[campo] !== undefined) {
+        if (typeof req.body[campo] !== "string" || (campo === "nome" && !req.body[campo].trim())) {
+          return res.status(400).json({ erro: campo === "nome" ? "Nome da obra não pode ficar vazio" : `${campo} deve ser texto` });
+        }
+        dados[campo] = req.body[campo].trim() || null;
+      }
+    }
+    if (Object.keys(dados).length === 0) return res.status(400).json({ erro: "Informe ao menos um campo para atualizar" });
+    const resultado = await atualizarDadosObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id, dados });
+    if (!resultado) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.json(resultado);
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    console.error("Erro ao atualizar dados da obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao atualizar dados da obra" });
+  }
+});
+
 // Só ADMIN da empresa pode confirmar novo intervalo; obra e autor vêm da sessão,
 // e a mudança junto do evento visível ao cliente é confirmada numa transação.
 app.patch("/obras/:id/agendamento", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
@@ -481,6 +657,20 @@ app.patch("/obras/:id/agendamento", authMiddleware, exigirEmpresaDoToken, exigir
 });
 
 // A conclusão percorre duas operações explícitas, cada uma autorizada por perfil.
+app.post("/obras/:id/status/iniciar", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const resultado = await iniciarExecucaoObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id });
+    return res.json(resultado);
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "OBRA_NAO_ENCONTRADA") return res.status(404).json({ erro: erro.message });
+    if (erro.code === "STATUS_INVALIDO") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada por outra operação; atualize e tente novamente" });
+    console.error("Erro ao iniciar execução da obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao iniciar execução da obra" });
+  }
+});
+
 app.post("/obras/:id/conclusao/solicitar", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
   try {
     const resultado = await solicitarConferenciaObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id });

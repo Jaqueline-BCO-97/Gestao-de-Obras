@@ -28,7 +28,7 @@ function compararTentativa(pagamento, { obraId, parcelaId, usuarioId, valorCenta
 }
 
 function validarAcessoSegundaParcela(pagamento) {
-  if (pagamento.parcela?.numero === 2 && (pagamento.obra?.status !== "CONCLUIDA" || !pagamento.obra?.conclusaoConfirmadaEm)) {
+  if (pagamento.parcela?.numero === 2 && !pagamento.obra?.conclusaoConfirmadaEm) {
     throw erroPagamento("CONCLUSAO_NAO_CONFIRMADA", "A segunda parcela só pode ser paga após a confirmação da conclusão da obra");
   }
 }

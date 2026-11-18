@@ -32,6 +32,11 @@ import ColaboradorObra from './pages/ColaboradorObra.jsx'
 import Perfil from './pages/Perfil/Perfil.jsx'
 import RegistroEmpreiteira from './pages/RegistroEmpreiteira.jsx'
 import AceitarConvite from './pages/AceitarConvite.jsx'
+import AdminFuncionarios from './pages/AdminFuncionarios.jsx'
+import AdminClientes from './pages/AdminClientes.jsx'
+import AdminObra from './pages/AdminObra.jsx'
+import AdminPrecos from './pages/AdminPrecos.jsx'
+import AdminCalendario from './pages/AdminCalendario.jsx'
 
 // Componente raiz da aplicação (App) que define a estrutura de rotas do frontend
 export default function App() {
@@ -108,6 +113,36 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+
+        <Route
+          path="/admin/funcionarios"
+          element={
+            <ProtectedRoute perfisPermitidos={['ADMIN']}>
+              <AdminFuncionarios />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/clientes"
+          element={
+            <ProtectedRoute perfisPermitidos={['ADMIN']}>
+              <AdminClientes />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/obra/:id"
+          element={
+            <ProtectedRoute perfisPermitidos={['ADMIN']}>
+              <AdminObra />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route path="/admin/precos" element={<ProtectedRoute perfisPermitidos={['ADMIN']}><AdminPrecos /></ProtectedRoute>} />
+        <Route path="/admin/calendario" element={<ProtectedRoute perfisPermitidos={['ADMIN']}><AdminCalendario /></ProtectedRoute>} />
 
         {/* Rota protegida do painel do colaborador (/colaborador): Exige perfil COLABORADOR */}
         <Route

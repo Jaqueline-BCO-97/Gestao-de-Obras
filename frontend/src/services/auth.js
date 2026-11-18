@@ -85,6 +85,36 @@ export async function criarObra(dados) {
   return requisicaoAutenticada('/obras', { method: 'POST', body: JSON.stringify(dados) })
 }
 
+export async function listarFuncionarios() {
+  return requisicaoAutenticada('/funcionarios')
+}
+
+export async function listarClientes() {
+  return requisicaoAutenticada('/clientes')
+}
+
+export async function listarConvites() {
+  return requisicaoAutenticada('/convites')
+}
+
+export async function reenviarConvite(id) {
+  return requisicaoAutenticada(`/convites/${encodeURIComponent(id)}/reenviar`, { method: 'POST' })
+}
+
+export async function listarTabelaPrecos() { return requisicaoAutenticada('/tabela-precos') }
+export async function criarPreco(dados) { return requisicaoAutenticada('/tabela-precos', { method: 'POST', body: JSON.stringify(dados) }) }
+export async function atualizarPreco(id, dados) { return requisicaoAutenticada(`/tabela-precos/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) }) }
+export async function listarCalendario() { return requisicaoAutenticada('/calendario') }
+export async function reagendarObra(obraId, agendadaPara, prazoFinal) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/agendamento`, { method: 'PATCH', body: JSON.stringify({ agendadaPara, prazoFinal }) })
+}
+
+export async function encerrarEscala(obraId, alocacaoId, motivo = '') {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/colaboradores/${encodeURIComponent(alocacaoId)}`, {
+    method: 'PATCH', body: JSON.stringify({ motivo }),
+  })
+}
+
 // Função para salvar os dados da sessão (token e dados do usuário) no navegador
 export function salvarSessao({ token, usuario }, lembrarDeMim) {
   // Limpa qualquer sessão anterior para garantir que não haja lixo de logins passados
@@ -191,11 +221,27 @@ export async function buscarObra(id) {
 }
 
 // Registra andamento textual e, quando selecionada, foto como data URL.
-export async function registrarAndamentoObra(obraId, descricao, tipo, foto) {
+export async function registrarAndamentoObra(obraId, descricao, tipo, foto, visivelParaCliente) {
   return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/andamento`, {
     method: 'POST',
-    body: JSON.stringify({ descricao, tipo, ...(foto ? { foto } : {}) }),
+    body: JSON.stringify({ descricao, tipo, ...(visivelParaCliente !== undefined ? { visivelParaCliente } : {}), ...(foto ? { foto } : {}) }),
   })
+}
+
+export async function atualizarObra(id, dados) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) })
+}
+
+export async function iniciarExecucaoObra(id) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/status/iniciar`, { method: 'POST' })
+}
+
+export async function listarAlocacoesObra(id) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/colaboradores`)
+}
+
+export async function encerrarAlocacaoObra(obraId, alocacaoId, motivo = '') {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/colaboradores/${encodeURIComponent(alocacaoId)}`, { method: 'PATCH', body: JSON.stringify({ motivo }) })
 }
 
 // Cria checkout pela API; o servidor confere propriedade, saldo e idempotência.

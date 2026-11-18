@@ -22,6 +22,7 @@ const funcionarios = [
 ];
 let escalas = [];
 let proximoId = 1;
+const eventosEquipe = [];
 
 function encontrar(list, where) {
   return list.find((item) => Object.entries(where).every(([chave, valor]) => {
@@ -63,6 +64,9 @@ function prismaMock() {
         const escala = encontrar(escalas, where);
         return escala ? { ...escala, funcionario: encontrar(funcionarios, { id: escala.funcionarioId }), alteradoPor: encontrar(usuarios, { id: escala.alteradoPorId }) } : null;
       },
+    },
+    obraEvento: {
+      create: async ({ data }) => { const evento = { id: `evento-equipe-${eventosEquipe.length + 1}`, ...data }; eventosEquipe.push(evento); return evento; },
     },
   };
   return { ...tx, $transaction: (callback) => callback(tx) };
@@ -148,6 +152,8 @@ describe("Issue #20 — alocação de colaboradores em obras", () => {
     const corpo = await primeira.json();
     assert.equal(corpo.alocacao.alteradoPorId, "admin-a");
     assert.ok(corpo.alocacao.dataInicio);
+    assert.equal(eventosEquipe.at(-1).tipo, "EQUIPE");
+    assert.equal(eventosEquipe.at(-1).visivelParaCliente, false);
 
     const duplicada = await requisitar("/obras/obra-a/colaboradores", "admin-a", {
       method: "POST", body: JSON.stringify({ funcionarioId: "func-resp-a" }),
@@ -175,6 +181,7 @@ describe("Issue #20 — alocação de colaboradores em obras", () => {
 
   it("encerra escala sem apagar histórico e impede encerramento repetido", async () => {
     const escalaId = escalas[0].id;
+    const eventosAntes = eventosEquipe.length;
     const encerrada = await requisitar(`/obras/obra-a/colaboradores/${escalaId}`, "admin-a", {
       method: "PATCH", body: JSON.stringify({ motivo: "Alocação concluída" }),
     });
@@ -183,6 +190,8 @@ describe("Issue #20 — alocação de colaboradores em obras", () => {
     assert.equal(corpo.alocacao.motivo, "Alocação concluída");
     assert.ok(corpo.alocacao.dataFim);
     assert.equal(escalas.length, 1);
+    assert.equal(eventosEquipe.length, eventosAntes + 1);
+    assert.match(eventosEquipe.at(-1).descricao, /encerrado/);
 
     const repetida = await requisitar(`/obras/obra-a/colaboradores/${escalaId}`, "admin-a", { method: "PATCH", body: JSON.stringify({}) });
     assert.equal(repetida.status, 409);

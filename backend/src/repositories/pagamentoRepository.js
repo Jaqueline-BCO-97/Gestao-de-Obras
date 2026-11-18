@@ -94,7 +94,7 @@ async function criarTentativaPagamento({ obraId, empresaId, usuarioId, parcelaId
     const parcela = obra.parcelas.find((item) => item.id === parcelaId);
     if (!parcela) throw erroPagamento("PARCELA_NAO_ENCONTRADA", "Parcela não encontrada nesta obra");
     // A segunda parcela só pode ser iniciada após a confirmação persistida da conclusão pelo cliente.
-    if (parcela.numero === 2 && (obra.status !== "CONCLUIDA" || !obra.conclusaoConfirmadaEm)) {
+    if (parcela.numero === 2 && !obra.conclusaoConfirmadaEm) {
       throw erroPagamento("CONCLUSAO_NAO_CONFIRMADA", "A segunda parcela só pode ser paga após a confirmação da conclusão da obra");
     }
 
@@ -180,7 +180,7 @@ async function processarConfirmacaoExterna({ pagamentoId, pedidoExterno }) {
   return prisma.$transaction(async (tx) => {
     const pagamento = await tx.pagamento.findUnique({
       where: { id: pagamentoId },
-      include: { obra: { select: { id: true, empresaId: true } }, parcela: { select: { id: true, numero: true, valor: true, situacao: true } } },
+      include: { obra: { select: { id: true, empresaId: true, status: true, conclusaoConfirmadaEm: true } }, parcela: { select: { id: true, numero: true, valor: true, situacao: true } } },
     });
     if (!pagamento) throw erroPagamento("PAGAMENTO_NAO_ENCONTRADO", "Tentativa de pagamento não encontrada");
     if (pagamento.pedidoExternoId !== String(pedidoExterno.pedidoId)) {
@@ -237,6 +237,21 @@ async function processarConfirmacaoExterna({ pagamentoId, pedidoExterno }) {
             situacao: "PAGA",
             pagaEm: new Date(),
             pagamentoExternoId: String(pedidoExterno.transacaoExternaId),
+          },
+        });
+      }
+
+      const parcelasDaObra = await tx.parcela.findMany({ where: { obraId: pagamento.obraId }, select: { situacao: true } });
+      if (pagamento.obra.conclusaoConfirmadaEm && parcelasDaObra.length > 0 && parcelasDaObra.every((item) => item.situacao === "PAGA")) {
+        await tx.obra.update({ where: { id: pagamento.obraId }, data: { status: "CONCLUIDA" } });
+        await tx.obraEvento.create({
+          data: {
+            obraId: pagamento.obraId,
+            empresaId: pagamento.obra.empresaId,
+            usuarioId: pagamento.usuarioId,
+            tipo: "STATUS",
+            descricao: "Obra concluída após confirmação do cliente e quitação de todas as parcelas.",
+            visivelParaCliente: true,
           },
         });
       }

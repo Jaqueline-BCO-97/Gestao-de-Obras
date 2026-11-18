@@ -117,6 +117,7 @@ const prismaFalso = {
     },
   },
   parcela: {
+    findMany: async ({ where }) => obras.find((obra) => obra.id === where.obraId)?.parcelas.map((item) => ({ situacao: item.situacao })) || [],
     update: async ({ where, data }) => {
       const parcela = obras.flatMap((obra) => obra.parcelas).find((item) => item.id === where.id);
       if (!parcela) throw Object.assign(new Error("Missing installment"), { code: "P2025" });
@@ -310,6 +311,20 @@ describe("Issue #18 — pagamento por checkout sandbox", () => {
     assert.equal(eventos.length, 0);
   });
 
+  it("admin inicia execução somente de uma obra agendada e registra evento", async () => {
+    obras[0].status = "AGENDADA";
+    const negada = await chamarRota("POST", "/obras/:id/status/iniciar", { usuarioId: "cliente-a", params: { id: "obra-a" } });
+    assert.equal(negada.statusCode, 403);
+    const iniciada = await chamarRota("POST", "/obras/:id/status/iniciar", { usuarioId: "admin-a", params: { id: "obra-a" } });
+    assert.equal(iniciada.statusCode, 200);
+    assert.equal(obras[0].status, "EM_ANDAMENTO");
+    assert.equal(eventos.length, 1);
+    assert.match(eventos[0].descricao, /Execução da obra iniciada/);
+    const repetida = await chamarRota("POST", "/obras/:id/status/iniciar", { usuarioId: "admin-a", params: { id: "obra-a" } });
+    assert.equal(repetida.statusCode, 409);
+    assert.equal(eventos.length, 1);
+  });
+
   it("limita acesso à obra do cliente e da empresa autenticados", async () => {
     const outroCliente = await criarPagamento("cliente-outro-a", { chave: "outro-cliente-01" });
     const outraEmpresa = await criarPagamento("cliente-b", { chave: "outra-empresa-01" });
@@ -345,13 +360,38 @@ describe("Issue #18 — pagamento por checkout sandbox", () => {
 
     const confirmacao = await chamarRota("POST", "/obras/:id/conclusao/confirmar", { usuarioId: "cliente-a", params: { id: "obra-a" } });
     assert.equal(confirmacao.statusCode, 200);
-    assert.equal(obras[0].status, "CONCLUIDA");
+    assert.equal(obras[0].status, "AGUARDANDO_CONFERENCIA");
     assert.ok(obras[0].conclusaoConfirmadaEm instanceof Date);
     assert.equal(eventos.length, 2);
 
     const depois = await criarPagamento("cliente-a", { valor: 500, chave: "rn8-liberada-01", parcelaId: "parcela-2" });
     assert.equal(depois.statusCode, 201);
     assert.equal(pagamentos[0].parcelaId, "parcela-2");
+  });
+
+  it("só marca a obra como concluída depois da confirmação e da quitação de todas as parcelas", async () => {
+    const primeira = await criarPagamento("cliente-a", { valor: 1000, chave: "conclusao-parcela-1" });
+    const tentativaPrimeira = pagamentos.find((item) => item.id === primeira.body.pagamento.id);
+    await notificarPagamento(tentativaPrimeira, {
+      id: "transacao-parcela-1", external_reference: tentativaPrimeira.id, currency_id: "BRL", transaction_amount: 1000,
+      status: "approved", status_detail: "accredited",
+    });
+    assert.equal(obras[0].parcelas[0].situacao, "PAGA");
+    assert.equal(obras[0].status, "EM_ANDAMENTO");
+
+    await chamarRota("POST", "/obras/:id/conclusao/solicitar", { usuarioId: "admin-a", params: { id: "obra-a" } });
+    await chamarRota("POST", "/obras/:id/conclusao/confirmar", { usuarioId: "cliente-a", params: { id: "obra-a" } });
+    assert.equal(obras[0].status, "AGUARDANDO_CONFERENCIA");
+
+    const segunda = await criarPagamento("cliente-a", { valor: 500, chave: "conclusao-parcela-2", parcelaId: "parcela-2" });
+    assert.equal(segunda.statusCode, 201);
+    const tentativaSegunda = pagamentos.find((item) => item.id === segunda.body.pagamento.id);
+    await notificarPagamento(tentativaSegunda, {
+      id: "transacao-parcela-2", external_reference: tentativaSegunda.id, currency_id: "BRL", transaction_amount: 500,
+      status: "approved", status_detail: "accredited",
+    });
+    assert.equal(obras[0].parcelas[1].situacao, "PAGA");
+    assert.equal(obras[0].status, "CONCLUIDA");
   });
 
   it("somente ADMIN da empresa solicita conferência e somente o cliente proprietário confirma", async () => {

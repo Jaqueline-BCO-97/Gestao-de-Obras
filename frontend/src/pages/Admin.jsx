@@ -107,6 +107,10 @@ export default function Admin() {
             >
               Gestão de Obras
             </Link>
+            <Link to="/admin/funcionarios" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition">Gerentes</Link>
+            <Link to="/admin/clientes" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition">Clientes</Link>
+            <Link to="/admin/precos" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition">Preços</Link>
+            <Link to="/admin/calendario" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition">Calendário</Link>
             {/* Link para a tela de perfil */}
             <Link
               to="/perfil"
@@ -375,7 +379,7 @@ export default function Admin() {
                     {/* Botão para acessar a tela de gestão detalhada */}
                     <Button
                       variant="compact"
-                      onClick={() => navigate('/admin/obras')}
+                      onClick={() => navigate(`/admin/obra/${encodeURIComponent(obra.id)}`)}
                       className="text-xs"
                       icon="→"
                     >

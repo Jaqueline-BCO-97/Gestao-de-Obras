@@ -28,7 +28,6 @@ export default function AdminObras() {
   const [filtroStatus, setFiltroStatus] = useState('Todos')
 
   // Estado para armazenar o aviso de visualização ao clicar no botão "Ver"
-  const [avisoVisual, setAvisoVisual] = useState(null)
   const [obras, setObras] = useState([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
@@ -78,8 +77,10 @@ export default function AdminObras() {
 
   // Função auxiliar para buscar os colaboradores completos que estão escalados na obra
   function obterColaboradores(obra) {
-    // Usa a função compartilhada para consultar os IDs registrados na obra
-    return (obra.colaboradores || []).map((id) => ({ id, nome: id, funcao: 'Alocado', telefone: '' }))
+    // Usa os nomes e funções reais retornados para o administrador.
+    return (obra.colaboradores || []).map((colaborador) => typeof colaborador === 'object'
+      ? colaborador
+      : ({ id: colaborador, nome: colaborador, funcao: 'Alocado', telefone: '' }))
   }
 
   async function handleSolicitarConferencia(obra) {
@@ -110,21 +111,9 @@ export default function AdminObras() {
     catch (falha) { setErro(falha.message) }
   }
 
-  // Função disparada ao clicar no botão visual "Ver" de uma obra
+  // Abre a página de gestão com dados, equipe e histórico da obra.
   function handleVerObra(obra) {
-    // Atualiza o estado com as informações da obra clicada para exibir um aviso visual amigável
-    setAvisoVisual({
-      // Identificador da obra selecionada
-      id: obra.id,
-      // Título da obra
-      titulo: obra.titulo,
-      // Cliente responsável
-      cliente: obra.cliente,
-      // Status atual
-      status: obra.status,
-      // Valor formatado
-      valor: formatarMoeda(obra.valorTotal),
-    })
+    navigate(`/admin/obra/${encodeURIComponent(obra.id)}`)
   }
 
   // Renderiza a interface da página de Gestão de Obras
@@ -172,6 +161,10 @@ export default function AdminObras() {
             >
               Gestão de Obras
             </Link>
+            <Link to="/admin/funcionarios" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition">Gerentes</Link>
+            <Link to="/admin/clientes" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition">Clientes</Link>
+            <Link to="/admin/precos" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition">Preços</Link>
+            <Link to="/admin/calendario" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition">Calendário</Link>
             {/* Link para a página de Perfil */}
             <Link
               to="/perfil"
@@ -231,33 +224,6 @@ export default function AdminObras() {
 
         {erro && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{erro}</p>}
         {carregando && <p className="mb-4 text-sm text-slate-500" role="status">Carregando obras…</p>}
-        {/* Aviso visual informativo disparado ao clicar no botão "Ver" de qualquer obra */}
-        {avisoVisual && (
-          // Caixa de notificação com estilo de alerta suave
-          <div className="mb-6 bg-sky-50 border border-sky-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sky-900 shadow-xs">
-            {/* Conteúdo descritivo da obra clicada */}
-            <div className="text-xs sm:text-sm">
-              {/* Título em negrito do aviso */}
-              <p className="font-bold flex items-center gap-1.5 text-primary">
-                {/* Ícone de informação */}
-                <span>ℹ️</span> Visualização da Obra #{avisoVisual.id}: {avisoVisual.titulo}
-              </p>
-              {/* Detalhes rápidos da obra */}
-              <p className="mt-1 text-slate-600">
-                Cliente: <strong className="text-navy">{avisoVisual.cliente}</strong> | Status: <strong className="text-navy">{avisoVisual.status}</strong> | Valor Total: <strong className="text-navy">{avisoVisual.valor}</strong>
-              </p>
-            </div>
-            {/* Botão para fechar o aviso visual */}
-            <Button
-              variant="outline"
-              onClick={() => setAvisoVisual(null)}
-              className="text-xs py-1 px-3 self-end sm:self-auto"
-            >
-              Fechar aviso
-            </Button>
-          </div>
-        )}
-
         {/* Barra de filtros por status (mobile-first com rolagem ou quebra de linha suave) */}
         <div className="mb-6 bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
           {/* Rótulo da seção de filtro */}
@@ -407,7 +373,7 @@ export default function AdminObras() {
                             onClick={() => handleVerObra(obra)}
                             className="text-xs py-1 px-3"
                           >
-                            Ver
+                            Gerenciar
                           </Button>
                           {obra.status === 'Em andamento' && <Button variant="compact" disabled={Boolean(solicitando)} onClick={() => handleSolicitarConferencia(obra)} className="ml-2 text-xs py-1 px-3">{solicitando === obra.id ? 'Enviando…' : 'Solicitar conferência'}</Button>}
                         </td>
