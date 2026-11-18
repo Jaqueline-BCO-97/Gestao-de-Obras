@@ -48,6 +48,7 @@ function formatarEventoPersistido(evento) {
     autor: evento.usuario?.nome,
     tipo: String(evento.tipo || '').toLowerCase(),
     descricao: evento.descricao,
+    fotoUrl: evento.fotoUrl,
   }
 }
 
@@ -63,6 +64,7 @@ function DetalhesObra({ id }) {
   const [erroCarregamento, setErroCarregamento] = useState(null)
   const [tipoRegistro, setTipoRegistro] = useState('ATUALIZACAO')
   const [textoDescricao, setTextoDescricao] = useState('')
+  const [fotoSelecionada, setFotoSelecionada] = useState(null)
   const [erroFormulario, setErroFormulario] = useState('')
   const [erroAtualizacao, setErroAtualizacao] = useState('')
   const [mensagemSucesso, setMensagemSucesso] = useState('')
@@ -101,6 +103,10 @@ function DetalhesObra({ id }) {
       setErroFormulario('A descrição deve ter no máximo 2.000 caracteres.')
       return
     }
+    if (fotoSelecionada && (!['image/jpeg', 'image/png', 'image/webp'].includes(fotoSelecionada.type) || fotoSelecionada.size > 5 * 1024 * 1024)) {
+      setErroFormulario('Escolha uma foto JPG, PNG ou WebP de até 5 MB.')
+      return
+    }
     if (envioAtivo.current) return
 
     envioAtivo.current = true
@@ -110,13 +116,20 @@ function DetalhesObra({ id }) {
     setMensagemSucesso('')
     const geracao = geracaoRequisicao.current
     try {
-      const resposta = await registrarAndamentoObra(id, descricao, tipoRegistro)
+      const foto = fotoSelecionada ? await new Promise((resolve, reject) => {
+        const leitor = new FileReader()
+        leitor.onload = () => resolve({ data: leitor.result, mimeType: fotoSelecionada.type })
+        leitor.onerror = () => reject(new Error('Não foi possível ler a foto selecionada.'))
+        leitor.readAsDataURL(fotoSelecionada)
+      }) : undefined
+      const resposta = await registrarAndamentoObra(id, descricao, tipoRegistro, foto)
       if (geracaoRequisicao.current !== geracao) return
 
       // O evento retornado pelo servidor é persistido; serve de fallback se a recarga falhar.
       const eventoPersistido = resposta.evento ? formatarEventoPersistido(resposta.evento) : null
       setTextoDescricao('')
       setTipoRegistro('ATUALIZACAO')
+      setFotoSelecionada(null)
       setMensagemSucesso('Andamento registrado com sucesso.')
       if (eventoPersistido) {
         setObra((atual) => atual ? { ...atual, timeline: [...(atual.timeline || []).filter((evento) => evento.id !== eventoPersistido.id), eventoPersistido] } : atual)
@@ -199,8 +212,10 @@ function DetalhesObra({ id }) {
               <textarea id="descricao-registro" rows={4} maxLength={2000} value={textoDescricao} onChange={(event) => { setTextoDescricao(event.target.value); setErroFormulario('') }} placeholder="Descreva o serviço executado ou a ocorrência…" className="w-full rounded-xl border border-slate-300 bg-white p-3 text-xs text-slate-800" />
               <p className="mt-1 text-right text-[11px] text-slate-400">{textoDescricao.length}/2.000</p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600" role="note">
-              O envio de fotos ainda não está disponível. Esta etapa registra somente texto.
+            <div>
+              <label htmlFor="foto-registro" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Foto da obra (opcional)</label>
+              <input id="foto-registro" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { setFotoSelecionada(event.target.files?.[0] || null); setErroFormulario('') }} className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-emerald-800" />
+              <p className="mt-1 text-[11px] text-slate-500">JPG, PNG ou WebP, até 5 MB. O arquivo é enviado ao armazenamento seguro.</p>
             </div>
             <div className="pt-2 flex items-center justify-between flex-wrap gap-3">
               <Button variant="compact" type="submit" disabled={enviando} className="bg-emerald-700 hover:bg-emerald-800 text-xs py-2 px-4">

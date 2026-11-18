@@ -366,6 +366,11 @@ function ClienteObraConteudo({ id }) {
 
         {/* Bloco 4: Histórico de eventos visíveis para o cliente */}
         <HistoricoObra eventos={obra.timeline} perfil="CLIENTE" />
+        <div className="flex justify-center">
+          <Button variant="outline" onClick={() => navigate(`/cliente/obra/${encodeURIComponent(id)}/andamento`)}>
+            Ver andamento completo
+          </Button>
+        </div>
 
         {erroConclusao && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{erroConclusao}</p>}
         {sucessoConclusao && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800" role="status">{sucessoConclusao}</p>}

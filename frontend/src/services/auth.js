@@ -169,11 +169,11 @@ export async function buscarObra(id) {
   return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}`)
 }
 
-// Registra somente texto; o endpoint rejeita arquivos até a entrega de Storage.
-export async function registrarAndamentoObra(obraId, descricao, tipo) {
+// Registra andamento textual e, quando selecionada, foto como data URL.
+export async function registrarAndamentoObra(obraId, descricao, tipo, foto) {
   return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/andamento`, {
     method: 'POST',
-    body: JSON.stringify({ descricao, tipo }),
+    body: JSON.stringify({ descricao, tipo, ...(foto ? { foto } : {}) }),
   })
 }
 

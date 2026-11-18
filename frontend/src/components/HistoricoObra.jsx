@@ -107,6 +107,7 @@ export default function HistoricoObra({ eventos = [], perfil = 'CLIENTE' }) {
                   <p className="mb-1 text-xs font-semibold text-slate-500">Registrado por: {evento.autor || 'Responsável não informado'}</p>
                   {/* Texto que explica o que aconteceu na obra. */}
                   <p className="text-xs leading-relaxed text-slate-700 sm:text-sm">{descricao}</p>
+                  {evento.fotoUrl && <img src={evento.fotoUrl} alt={`Foto do andamento: ${descricao}`} loading="lazy" referrerPolicy="no-referrer" className="mt-3 max-h-72 w-full rounded-lg object-cover" />}
                 </div>
               </article>
             )

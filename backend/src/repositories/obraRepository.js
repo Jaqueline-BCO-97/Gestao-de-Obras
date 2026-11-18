@@ -40,6 +40,25 @@ function erroConclusao(code, message) {
   return erro;
 }
 
+async function validarPermissaoAndamento({ obraId, empresaId, usuarioId, papel }) {
+  exigirBancoConfigurado();
+  const prisma = getPrisma();
+  const obra = await prisma.obra.findFirst({ where: { id: obraId, empresaId }, select: { id: true } });
+  if (!obra) return false;
+  if (papel === "ADMIN") return true;
+
+  const funcionario = await prisma.funcionario.findFirst({
+    where: { empresaId, usuarioId, ativo: true },
+    select: { id: true, empresaId: true, usuarioId: true, usuario: { select: { empresaId: true, tipo: true } } },
+  });
+  if (!funcionario || funcionario.empresaId !== empresaId || funcionario.usuarioId !== usuarioId || funcionario.usuario?.empresaId !== empresaId || funcionario.usuario?.tipo !== "COLABORADOR") {
+    throw erroAndamento("COLABORADOR_SEM_VINCULO", "Usuário não possui cadastro de colaborador válido nesta empresa");
+  }
+  const alocacao = await prisma.obraEscala.findFirst({ where: { obraId, funcionarioId: funcionario.id, dataFim: null }, select: { id: true } });
+  if (!alocacao) throw erroAndamento("COLABORADOR_SEM_ALOCACAO", "Colaborador não está alocado atualmente nesta obra");
+  return true;
+}
+
 async function solicitarConferenciaObra({ obraId, empresaId, administradorId }) {
   exigirBancoConfigurado();
   const prisma = getPrisma();
@@ -224,7 +243,7 @@ async function encerrarAlocacao({ obraId, empresaId, alocacaoId, administradorId
   });
 }
 
-async function registrarAndamento({ obraId, empresaId, usuarioId, tipo, descricao }) {
+async function registrarAndamento({ obraId, empresaId, usuarioId, tipo, descricao, fotoUrl = null, visivelParaCliente = true, papel = "COLABORADOR" }) {
   exigirBancoConfigurado();
   const prisma = getPrisma();
 
@@ -237,49 +256,55 @@ async function registrarAndamento({ obraId, empresaId, usuarioId, tipo, descrica
     });
     if (!obra) return null;
 
-    const funcionario = await tx.funcionario.findFirst({
-      // A consulta exige ativo:true dentro da transação; uma escala antiga não
-      // deve permitir novo registro se o funcionário foi desativado.
-      where: { empresaId, usuarioId, ativo: true },
-      select: {
-        id: true,
-        empresaId: true,
-        usuarioId: true,
-        usuario: { select: { empresaId: true, tipo: true } },
-      },
-    });
-    if (
-      !funcionario ||
-      funcionario.empresaId !== empresaId ||
-      funcionario.usuarioId !== usuarioId ||
-      funcionario.usuario?.empresaId !== empresaId ||
-      funcionario.usuario?.tipo !== "COLABORADOR"
-    ) {
-      throw erroAndamento("COLABORADOR_SEM_VINCULO", "Usuário não possui cadastro de colaborador válido nesta empresa");
+    if (papel === "COLABORADOR") {
+      const funcionario = await tx.funcionario.findFirst({
+        // A consulta exige ativo:true dentro da transação; uma escala antiga não
+        // deve permitir novo registro se o funcionário foi desativado.
+        where: { empresaId, usuarioId, ativo: true },
+        select: {
+          id: true,
+          empresaId: true,
+          usuarioId: true,
+          usuario: { select: { empresaId: true, tipo: true } },
+        },
+      });
+      if (
+        !funcionario ||
+        funcionario.empresaId !== empresaId ||
+        funcionario.usuarioId !== usuarioId ||
+        funcionario.usuario?.empresaId !== empresaId ||
+        funcionario.usuario?.tipo !== "COLABORADOR"
+      ) {
+        throw erroAndamento("COLABORADOR_SEM_VINCULO", "Usuário não possui cadastro de colaborador válido nesta empresa");
+      }
+
+      const alocacaoAtiva = await tx.obraEscala.findFirst({
+        where: { obraId, funcionarioId: funcionario.id, dataFim: null },
+        select: { id: true },
+      });
+      if (!alocacaoAtiva) {
+        throw erroAndamento("COLABORADOR_SEM_ALOCACAO", "Colaborador não está alocado atualmente nesta obra");
+      }
     }
 
-    const alocacaoAtiva = await tx.obraEscala.findFirst({
-      where: { obraId, funcionarioId: funcionario.id, dataFim: null },
-      select: { id: true },
-    });
-    if (!alocacaoAtiva) {
-      throw erroAndamento("COLABORADOR_SEM_ALOCACAO", "Colaborador não está alocado atualmente nesta obra");
-    }
-
-    return tx.obraEvento.create({
+    const evento = await tx.obraEvento.create({
       data: {
         obraId,
         empresaId,
         usuarioId,
         tipo,
         descricao,
-        // O progresso registrado pelo colaborador faz parte da timeline do cliente.
-        visivelParaCliente: true,
-        // O upload permanece desabilitado até existir armazenamento confiável.
-        fotoUrl: null,
+        visivelParaCliente: papel === "ADMIN" ? visivelParaCliente : true,
+        fotoUrl,
       },
       include: { usuario: { select: { id: true, nome: true } } },
     });
+    const eventos = await tx.obraEvento.findMany({
+      where: { obraId, empresaId },
+      include: { usuario: { select: { id: true, nome: true } } },
+      orderBy: [{ criadoEm: "desc" }, { id: "desc" }],
+    });
+    return { evento, timeline: formatarTimeline(eventos, papel) };
   }, { isolationLevel: "Serializable" });
 }
 
@@ -449,6 +474,21 @@ function ocultarValoresFinanceiros(descricao) {
 }
 
 // Converte uma obra com relações para os nomes de campo usados no mock.
+function formatarTimeline(eventos, tipo) {
+  return eventos
+    .filter((evento) => tipo === "CLIENTE" ? evento.visivelParaCliente : tipo === "COLABORADOR" ? !["PAGAMENTO", "ORCAMENTO_APROVADO", "CONTRATACAO"].includes(evento.tipo) : true)
+    .map((evento) => ({
+      id: evento.id,
+      data: formatarData(evento.criadoEm),
+      hora: new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }).format(evento.criadoEm),
+      autor: evento.usuario.nome,
+      tipo: evento.tipo.toLowerCase(),
+      descricao: tipo === "COLABORADOR" ? ocultarValoresFinanceiros(evento.descricao) : evento.descricao,
+      fotoUrl: evento.fotoUrl,
+      visivelParaCliente: evento.visivelParaCliente,
+    }));
+}
+
 function formatarObra(obra, tipo) {
   // Ordena as parcelas já consultadas pelo número sequencial.
   const parcelas = [...obra.parcelas].sort((a, b) => a.numero - b.numero);
@@ -469,7 +509,7 @@ function formatarObra(obra, tipo) {
     // Converte o prazo para o padrão de data do mock.
     prazo: formatarData(obra.prazoFinal),
     // Adapta os eventos ao formato da linha do tempo do mock.
-    timeline: obra.eventos.filter((evento) => tipo === "CLIENTE" ? evento.visivelParaCliente : tipo === "COLABORADOR" ? !["PAGAMENTO", "ORCAMENTO_APROVADO", "CONTRATACAO"].includes(evento.tipo) : true).map((evento) => ({ id: evento.id, data: formatarData(evento.criadoEm), hora: new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }).format(evento.criadoEm), autor: evento.usuario.nome, tipo: evento.tipo.toLowerCase(), descricao: tipo === "COLABORADOR" ? ocultarValoresFinanceiros(evento.descricao) : evento.descricao, visivelParaCliente: evento.visivelParaCliente })),
+    timeline: formatarTimeline(obra.eventos, tipo),
   };
   // Inclui dados financeiros apenas para clientes e administradores.
   if (tipo !== "COLABORADOR") {
@@ -528,6 +568,7 @@ async function criarObra({ empresaId, nome, descricao, endereco }) {
 module.exports = {
   listarObras,
   buscarObraPorId,
+  validarPermissaoAndamento,
   criarObra,
   listarAlocacoesDaObra,
   alocarFuncionario,

@@ -19,7 +19,7 @@ Os papéis válidos são `ADMIN`, `CLIENTE` e `COLABORADOR`.
 | `PATCH /obras/:id/agendamento` | ADMIN da empresa | Confirma novo intervalo sem conflito e registra evento de agenda visível ao cliente. |
 | `POST /obras/:id/conclusao/solicitar` | ADMIN da empresa | Envia obra em andamento para conferência; status, data e evento de timeline são persistidos em transação. |
 | `POST /obras/:id/conclusao/confirmar` | CLIENTE proprietário | Confirma obra aguardando conferência; status, data e evento são persistidos em transação. |
-| `POST /obras/:id/andamento` | COLABORADOR alocado | Registra anotação/update/ocorrência na timeline. Upload de foto retorna 501 enquanto não houver armazenamento configurado. |
+| `POST /obras/:id/andamento` | COLABORADOR alocado ou ADMIN da empresa | Registra anotação/update/ocorrência e foto opcional na timeline; o ADMIN pode controlar a visibilidade ao cliente. |
 | `POST /obras/:id/pagamento` | CLIENTE proprietário | Cria uma tentativa pendente e retorna a URL do Checkout Pro sandbox. Requer `Idempotency-Key`; a criação do checkout não quita a parcela. |
 | `POST /obras/:id/pagamentos/:pagamentoId/retomar` | CLIENTE proprietário | Retoma tentativa persistida `PENDENTE` sem chave idempotente no cliente; retorna checkout existente ou repete a criação pela referência estável. |
 | `POST /webhooks/mercado-pago` | Webhook público com assinatura HMAC | Valida a notificação de Order, consulta a Order na API Mercado Pago e só então persiste o estado confirmado. |
@@ -69,7 +69,7 @@ O enum atual `StatusObra` contém `CONCLUIDA`, mas não contém estado `CANCELAD
 
 ### Registro de andamento
 
-`POST /obras/:id/andamento` exige `Authorization: Bearer <token>` de um usuário `COLABORADOR` que tenha uma escala aberta na obra. Exemplo de entrada:
+`POST /obras/:id/andamento` aceita `COLABORADOR` com escala aberta na obra ou `ADMIN` da empresa. Retorna `{ "evento", "timeline" }` com a linha do tempo atualizada e filtrada conforme o perfil. Exemplo de entrada textual:
 
 ```json
 {
@@ -80,7 +80,7 @@ O enum atual `StatusObra` contém `CONCLUIDA`, mas não contém estado `CANCELAD
 
 `tipo` é opcional e assume `ATUALIZACAO`; os valores aceitos são `ANOTACAO`, `ATUALIZACAO` e `OCORRENCIA`. `descricao` é obrigatória e limitada a 2000 caracteres. Sucesso retorna HTTP 201 com `{ "evento": { ... } }`; o evento é persistido com autor, empresa, timestamp e `visivelParaCliente: true`. Usuário sem alocação aberta recebe 403, obra inexistente ou de outra empresa recebe 404 e payload inválido recebe 400.
 
-O backend não possui SDK, credenciais ou bucket de armazenamento. Enviar `foto`, `fotoUrl` ou `multipart/form-data` retorna HTTP 501 sem persistir evento parcial. Para completar foto, configurar armazenamento persistente (por exemplo, Supabase Storage) e definir bucket privado/público, política de acesso e estratégia de URL antes de implementar o upload.
+Para anexar foto, inclua `foto: { "data": "data:image/jpeg;base64,...", "mimeType": "image/jpeg" }`. São aceitos JPG, PNG e WebP até 5 MB. O servidor valida tipo e tamanho, assina o envio ao Cloudinary e persiste apenas a URL HTTPS retornada pelo provedor. URL enviada pelo navegador é rejeitada. Configure `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` e `CLOUDINARY_API_SECRET` fora do repositório; sem configuração, o endpoint retorna 503. O ADMIN pode definir `visivelParaCliente` booleano; para COLABORADOR o evento sempre fica visível ao cliente. Respostas incluem `fotoUrl` quando houver arquivo.
 
 ### Pagamento de parcela — Issue #18
 

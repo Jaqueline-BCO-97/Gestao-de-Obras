@@ -31,12 +31,14 @@ const prismaFalso = {
       eventos.push(evento);
       return evento;
     },
+    findMany: async ({ where }) => eventos.filter((evento) => evento.obraId === where.obraId && evento.empresaId === where.empresaId).map((evento) => ({ ...evento, usuario: localizar(perfis, { id: evento.usuarioId }) })),
   },
   $transaction: (callback) => callback(prismaFalso),
 };
 
 const dbPath = require.resolve("../src/config/db");
 const usuarioRepositoryPath = require.resolve("../src/repositories/usuarioRepository");
+const cloudinaryServicePath = require.resolve("../src/services/cloudinaryService");
 const perfis = [
   { id: "colaborador-a", email: "colaborador-a@teste.local", tipo: "COLABORADOR", empresaId: empresaA },
   { id: "colaborador-b", email: "colaborador-b@teste.local", tipo: "COLABORADOR", empresaId: empresaB },
@@ -62,6 +64,12 @@ require.cache[usuarioRepositoryPath] = {
     atualizarSenhaUsuario: async () => null,
     criarUsuarioColaborador: async () => null,
   },
+};
+require.cache[cloudinaryServicePath] = {
+  id: cloudinaryServicePath,
+  filename: cloudinaryServicePath,
+  loaded: true,
+  exports: { enviarFotoObra: async () => "https://res.cloudinary.com/teste/image/upload/foto.png" },
 };
 process.env.JWT_SECRET = "segredo-teste-andamento";
 const { registrarAndamento } = require("../src/repositories/obraRepository");
@@ -107,7 +115,7 @@ describe("Issue #17 — persistência do registro de andamento", () => {
   beforeEach(() => { eventos = []; });
 
   it("persiste anotação com empresa, autor e visibilidade para o cliente", async () => {
-    const evento = await registrarAndamento({
+    const resultado = await registrarAndamento({
       obraId: "obra-a",
       empresaId: empresaA,
       usuarioId: "colaborador-a",
@@ -115,11 +123,12 @@ describe("Issue #17 — persistência do registro de andamento", () => {
       descricao: "Alvenaria concluída.",
     });
 
-    assert.equal(evento.obraId, "obra-a");
-    assert.equal(evento.empresaId, empresaA);
-    assert.equal(evento.usuarioId, "colaborador-a");
-    assert.equal(evento.visivelParaCliente, true);
-    assert.equal(evento.fotoUrl, null);
+    assert.equal(resultado.evento.obraId, "obra-a");
+    assert.equal(resultado.evento.empresaId, empresaA);
+    assert.equal(resultado.evento.usuarioId, "colaborador-a");
+    assert.equal(resultado.evento.visivelParaCliente, true);
+    assert.equal(resultado.evento.fotoUrl, null);
+    assert.equal(resultado.timeline[0].id, resultado.evento.id);
     assert.equal(eventos.length, 1);
   });
 
@@ -152,7 +161,11 @@ describe("Issue #17 — persistência do registro de andamento", () => {
     const cliente = await chamarRotaAndamento({ usuarioId: "cliente-a", body: { descricao: "Nota" } });
     assert.equal(cliente.statusCode, 403);
     const admin = await chamarRotaAndamento({ usuarioId: "admin-a", body: { descricao: "Nota" } });
-    assert.equal(admin.statusCode, 403);
+    assert.equal(admin.statusCode, 201);
+    assert.equal(admin.body.evento.visivelParaCliente, true);
+    const adminInterno = await chamarRotaAndamento({ usuarioId: "admin-a", body: { descricao: "Nota interna", visivelParaCliente: false } });
+    assert.equal(adminInterno.statusCode, 201);
+    assert.equal(adminInterno.body.evento.visivelParaCliente, false);
 
     const semDescricao = await chamarRotaAndamento({ usuarioId: "colaborador-a", body: { descricao: " " } });
     assert.equal(semDescricao.statusCode, 400);
@@ -164,17 +177,30 @@ describe("Issue #17 — persistência do registro de andamento", () => {
     const valido = await chamarRotaAndamento({ usuarioId: "colaborador-a", body: { descricao: "Etapa concluída", tipo: "ANOTACAO" } });
     assert.equal(valido.statusCode, 201);
     assert.equal(valido.body.evento.visivelParaCliente, true);
+    assert.ok(valido.body.timeline.some((evento) => evento.id === valido.body.evento.id));
   });
 
-  it("rota retorna 403 sem alocação, 404 fora da empresa e 501 para foto sem armazenamento", async () => {
+  it("rota retorna 403 sem alocação e 404 fora da empresa", async () => {
     const semAlocacao = await chamarRotaAndamento({ usuarioId: "colaborador-a", obraId: "obra-a-sem-alocacao", body: { descricao: "Nota" } });
     assert.equal(semAlocacao.statusCode, 403);
 
     const cruzada = await chamarRotaAndamento({ usuarioId: "colaborador-b", body: { descricao: "Nota" } });
     assert.equal(cruzada.statusCode, 404);
 
-    const foto = await chamarRotaAndamento({ usuarioId: "colaborador-a", body: { descricao: "Nota", fotoUrl: "https://example.test/foto.jpg" } });
-    assert.equal(foto.statusCode, 501);
+    const urlArbitraria = await chamarRotaAndamento({ usuarioId: "colaborador-a", body: { descricao: "Nota", fotoUrl: "https://example.test/foto.jpg" } });
+    assert.equal(urlArbitraria.statusCode, 400);
+  });
+
+  it("colaborador alocado registra foto hospedada e ADMIN pode ocultar seu evento do cliente", async () => {
+    const comFoto = await chamarRotaAndamento({ usuarioId: "colaborador-a", body: { descricao: "Parede pronta", foto: { data: "data:image/png;base64,cG5n", mimeType: "image/png" } } });
+    assert.equal(comFoto.statusCode, 201);
+    assert.equal(comFoto.body.evento.fotoUrl, "https://res.cloudinary.com/teste/image/upload/foto.png");
+    assert.equal(comFoto.body.evento.visivelParaCliente, true);
+    assert.equal(comFoto.body.timeline[0].fotoUrl, comFoto.body.evento.fotoUrl);
+
+    const interno = await chamarRotaAndamento({ usuarioId: "admin-a", body: { descricao: "Nota interna", visivelParaCliente: false } });
+    assert.equal(interno.statusCode, 201);
+    assert.equal(interno.body.evento.visivelParaCliente, false);
   });
 });
 
@@ -182,4 +208,5 @@ describe("Issue #17 — persistência do registro de andamento", () => {
 process.on("exit", () => {
   delete require.cache[dbPath];
   delete require.cache[usuarioRepositoryPath];
+  delete require.cache[cloudinaryServicePath];
 });

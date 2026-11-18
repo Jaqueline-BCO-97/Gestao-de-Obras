@@ -26,17 +26,19 @@ const {
   alocarFuncionario,
   encerrarAlocacao,
   registrarAndamento,
+  validarPermissaoAndamento,
   reagendarObra,
   solicitarConferenciaObra,
   confirmarConclusaoObra,
 } = require("./src/repositories/obraRepository");
 const pagamentoService = require("./src/services/pagamentoService");
 const mercadoPagoService = require("./src/services/mercadoPagoService");
+const cloudinaryService = require("./src/services/cloudinaryService");
 const authMiddleware = require("./src/middlewares/authMiddleware");
 const exigirPapel = require("./src/middlewares/exigirPapel");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "8mb" }));
 
 function exigirEmpresaDoToken(req, res, next) {
   if (typeof req.usuario?.empresaId !== "string" || !req.usuario.empresaId) {
@@ -567,17 +569,11 @@ app.patch("/obras/:id/colaboradores/:alocacaoId", authMiddleware, exigirEmpresaD
   }
 });
 
-// Somente colaborador com escala aberta pode registrar progresso na obra.
-// A foto retorna 501 até o projeto configurar um armazenamento persistente.
-app.post("/obras/:id/andamento", authMiddleware, exigirEmpresaDoToken, exigirPapel("COLABORADOR"), async (req, res) => {
+// Colaborador alocado e ADMIN da empresa podem registrar progresso; a foto é
+// armazenada antes do evento para nunca publicar uma referência sem arquivo.
+app.post("/obras/:id/andamento", authMiddleware, exigirEmpresaDoToken, exigirPapel("COLABORADOR", "ADMIN"), async (req, res) => {
   try {
     const corpo = req.body || {};
-    if (req.is("multipart/form-data") || corpo.foto != null || corpo.fotoUrl != null) {
-      return res.status(501).json({
-        erro: "Upload de fotos indisponível: o backend ainda não possui armazenamento de arquivos configurado",
-      });
-    }
-
     const descricao = corpo.descricao;
     const tiposPermitidos = ["ANOTACAO", "ATUALIZACAO", "OCORRENCIA"];
     const tipo = corpo.tipo === undefined ? "ATUALIZACAO" : corpo.tipo;
@@ -590,18 +586,42 @@ app.post("/obras/:id/andamento", authMiddleware, exigirEmpresaDoToken, exigirPap
     if (typeof tipo !== "string" || !tiposPermitidos.includes(tipo)) {
       return res.status(400).json({ erro: `tipo deve ser um destes valores: ${tiposPermitidos.join(", ")}` });
     }
+    if (corpo.fotoUrl != null) {
+      return res.status(400).json({ erro: "fotoUrl não pode ser enviado pelo cliente; envie a foto em foto.data" });
+    }
+    if (corpo.visivelParaCliente !== undefined && (req.usuario.tipo !== "ADMIN" || typeof corpo.visivelParaCliente !== "boolean")) {
+      return res.status(400).json({ erro: "visivelParaCliente deve ser booleano e só pode ser definido pelo ADMIN" });
+    }
 
-    const evento = await registrarAndamento({
+    let fotoUrl = null;
+    if (corpo.foto !== undefined) {
+      if (req.is("multipart/form-data")) return res.status(415).json({ erro: "Envie a foto como JSON em foto.data" });
+      const autorizada = await validarPermissaoAndamento({
+        obraId: req.params.id,
+        empresaId: req.usuario.empresaId,
+        usuarioId: req.usuario.id,
+        papel: req.usuario.tipo,
+      });
+      if (!autorizada) return res.status(404).json({ erro: "Obra não encontrada" });
+      fotoUrl = await cloudinaryService.enviarFotoObra({ foto: corpo.foto, obraId: req.params.id });
+    }
+
+    const resultado = await registrarAndamento({
       obraId: req.params.id,
       empresaId: req.usuario.empresaId,
       usuarioId: req.usuario.id,
       tipo,
       descricao: descricao.trim(),
+      fotoUrl,
+      papel: req.usuario.tipo,
+      visivelParaCliente: corpo.visivelParaCliente ?? true,
     });
-    if (!evento) return res.status(404).json({ erro: "Obra não encontrada" });
-    return res.status(201).json({ evento });
+    if (!resultado) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.status(201).json(resultado);
   } catch (erro) {
     if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "FOTO_INVALIDA") return res.status(400).json({ erro: erro.message });
+    if (erro.code?.startsWith("CLOUDINARY")) return res.status(503).json({ erro: erro.message });
     if (erro.code === "COLABORADOR_SEM_VINCULO" || erro.code === "COLABORADOR_SEM_ALOCACAO") {
       return res.status(403).json({ erro: erro.message });
     }

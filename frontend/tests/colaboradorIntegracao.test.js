@@ -45,15 +45,32 @@ describe('integração textual do colaborador', () => {
     })
   })
 
-  it('usa API real nas telas e não mantém mock, ID fixo ou fluxo fictício de foto', async () => {
+  it('envia a foto selecionada no mesmo evento textual', async () => {
+    const foto = { data: 'data:image/png;base64,cG5n', mimeType: 'image/png' }
+    globalThis.fetch = async (url, opcoes) => {
+      requisicaoCapturada = { url, opcoes }
+      return { ok: true, status: 201, json: async () => ({ evento: { id: 'evento-foto' } }) }
+    }
+    await registrarAndamentoObra('obra-1', 'Etapa fotografada', 'ATUALIZACAO', foto)
+    assert.deepEqual(JSON.parse(requisicaoCapturada.opcoes.body), {
+      descricao: 'Etapa fotografada',
+      tipo: 'ATUALIZACAO',
+      foto,
+    })
+  })
+
+  it('usa API real nas telas, oferece foto real e não mantém mocks ou IDs fixos', async () => {
     const dashboard = await readFile(new URL('../src/pages/Colaborador.jsx', import.meta.url), 'utf8')
     const detalhes = await readFile(new URL('../src/pages/ColaboradorObra.jsx', import.meta.url), 'utf8')
     assert.match(dashboard, /listarObras\(\)/)
     assert.doesNotMatch(dashboard, /colaboradoresMock|obrasMock|idColaboradorLogado|Carlos Eduardo/)
     assert.match(detalhes, /buscarObra\(id\)/)
-    assert.match(detalhes, /registrarAndamentoObra\(id, descricao, tipoRegistro\)/)
+    assert.match(detalhes, /registrarAndamentoObra\(id, descricao, tipoRegistro, foto\)/)
     assert.match(detalhes, /envioAtivo\.current/)
     assert.match(detalhes, /<HistoricoObra eventos=\{obra\.timeline/)
-    assert.doesNotMatch(detalhes, /colaboradoresMock|obrasMock|URL\.createObjectURL|type="file"|fotoUrl|multipart/i)
+    assert.match(detalhes, /type="file"/)
+    assert.match(detalhes, /image\/jpeg,image\/png,image\/webp/)
+    assert.match(detalhes, /fotoSelecionada/)
+    assert.doesNotMatch(detalhes, /colaboradoresMock|obrasMock|URL\.createObjectURL|multipart/i)
   })
 })
