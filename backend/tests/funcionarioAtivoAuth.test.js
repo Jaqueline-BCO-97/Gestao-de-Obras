@@ -222,7 +222,7 @@ describe("Bloqueio centralizado de funcionários desativados", () => {
   });
 
   it("rotas de usuário usam authMiddleware e webhook tem proteção própria", () => {
-    const publicas = new Set(["/", "/health", "/auth/login"]);
+    const publicas = new Set(["/", "/health", "/auth/login", "/auth/registro-empreiteira", "/convites/:token", "/convites/:token/aceitar"]);
     const webhookProtegidoPorAssinatura = "/webhooks/mercado-pago";
     const privadas = app.router.stack.filter((item) => item.route && !publicas.has(item.route.path) && item.route.path !== webhookProtegidoPorAssinatura);
     assert.ok(privadas.length > 0);

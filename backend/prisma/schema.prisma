@@ -32,6 +32,7 @@ model Empresa {
   contratos    Contrato[]
   // Preços de serviços cadastrados pela empresa.
   tabelasPreco TabelaPreco[]
+  convites     Convite[]
 }
 
 // Representa uma pessoa que acessa o sistema.
@@ -66,6 +67,7 @@ model Usuario {
   contratosAceitos ContratoAceite[]
   // Pagamentos iniciados por este usuário.
   pagamentos       Pagamento[]
+  convitesCriados  Convite[]        @relation("ConviteCriadoPor")
 }
 
 // Representa uma obra pertencente a uma empresa.
@@ -110,6 +112,7 @@ model Obra {
   pagamentos            Pagamento[]
   // Contrato opcional da obra.
   contrato              Contrato?
+  convites              Convite[]
 }
 
 // Representa um profissional associado a uma empresa.
@@ -141,6 +144,27 @@ model Funcionario {
 
   // Acelera consultas de funcionários por empresa.
   @@index([empresaId])
+}
+
+// Convite de uso único para vincular clientes e gerentes a uma obra.
+model Convite {
+  id          String      @id @default(uuid())
+  empresaId   String
+  empresa     Empresa     @relation(fields: [empresaId], references: [id])
+  obraId      String
+  obra        Obra        @relation(fields: [obraId], references: [id])
+  criadoPorId String
+  criadoPor   Usuario     @relation("ConviteCriadoPor", fields: [criadoPorId], references: [id])
+  tipo        TipoConvite
+  nome        String
+  email       String
+  funcao      String?
+  tokenHash   String      @unique
+  expiraEm    DateTime
+  usadoEm     DateTime?
+  criadoEm    DateTime    @default(now())
+
+  @@index([empresaId, email])
 }
 
 // Registra cada período de alocação de um funcionário numa obra.
@@ -335,6 +359,11 @@ enum TipoUsuario {
   COLABORADOR
   // Conta de administrador.
   ADMIN
+}
+
+enum TipoConvite {
+  CLIENTE
+  GERENTE
 }
 
 // Define o nível de atuação de cada funcionário.

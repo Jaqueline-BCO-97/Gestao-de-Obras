@@ -8,7 +8,8 @@ require("dotenv").config();
 const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const { isDbConfigured } = require("./src/config/db");
+const crypto = require("node:crypto");
+const { getPrisma, isDbConfigured } = require("./src/config/db");
 const {
   listarUsuarios,
   buscarUsuarioPorEmail,
@@ -71,6 +72,124 @@ function converterDataHoraISO(valor) {
 }
 
 const PORT = process.env.PORT || 3000;
+
+function hashConvite(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function sessao(usuario) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw Object.assign(new Error("JWT_SECRET não configurado"), { code: "JWT_NOT_CONFIGURED" });
+  const token = jwt.sign({ id: usuario.id, email: usuario.email, tipo: usuario.tipo, empresaId: usuario.empresaId }, secret, { expiresIn: "8h" });
+  return { token, usuario: { id: usuario.id, nome: usuario.nome, email: usuario.email, tipo: usuario.tipo, empresaId: usuario.empresaId } };
+}
+
+// Cadastro da empreiteira e da primeira conta administradora.
+app.post("/auth/registro-empreiteira", async (req, res) => {
+  try {
+    const { empresa, nome, email, senha } = req.body || {};
+    if (![empresa, nome, email, senha].every((v) => typeof v === "string" && v.trim())) return res.status(400).json({ erro: "Empresa, nome, e-mail e senha são obrigatórios" });
+    if (senha.length < 8) return res.status(400).json({ erro: "A senha deve ter pelo menos 8 caracteres" });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return res.status(400).json({ erro: "E-mail inválido" });
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const senhaHash = await bcrypt.hash(senha, 10);
+    const usuario = await prisma.$transaction(async (tx) => {
+      const criada = await tx.empresa.create({ data: { nome: empresa.trim() } });
+      return tx.usuario.create({ data: { empresaId: criada.id, nome: nome.trim(), email: email.trim().toLowerCase(), senhaHash, tipo: "ADMIN" } });
+    });
+    return res.status(201).json(sessao(usuario));
+  } catch (erro) {
+    if (erro.code === "P2002") return res.status(409).json({ erro: "E-mail já cadastrado" });
+    if (erro.code === "JWT_NOT_CONFIGURED") return res.status(503).json({ erro: "Autenticação não configurada" });
+    console.error("Erro ao cadastrar empreiteira:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível cadastrar a empreiteira" });
+  }
+});
+
+app.get("/convites/:token", async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const convite = await prisma.convite.findUnique({ where: { tokenHash: hashConvite(req.params.token) }, include: { empresa: { select: { nome: true } }, obra: { select: { nome: true } } } });
+    if (!convite) return res.status(404).json({ erro: "Convite não encontrado" });
+    return res.json({ tipo: convite.tipo, nome: convite.nome, email: convite.email, empresa: convite.empresa.nome, obra: convite.obra.nome, expirado: convite.expiraEm <= new Date(), usado: Boolean(convite.usadoEm) });
+  } catch (erro) { return res.status(503).json({ erro: "Não foi possível consultar o convite" }); }
+});
+
+app.post("/convites/:token/aceitar", async (req, res) => {
+  try {
+    const { senha } = req.body || {};
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const tokenHash = hashConvite(req.params.token);
+    const conviteAtual = await prisma.convite.findUnique({ where: { tokenHash } });
+    if (!conviteAtual || conviteAtual.usadoEm || conviteAtual.expiraEm <= new Date()) return res.status(410).json({ erro: "Convite inválido, expirado ou já utilizado" });
+    let usuarioSessao = null;
+    const cabecalho = req.headers.authorization;
+    if (cabecalho?.startsWith("Bearer ")) {
+      try {
+        const decoded = jwt.verify(cabecalho.slice(7), process.env.JWT_SECRET, { algorithms: ["HS256"] });
+        usuarioSessao = await prisma.usuario.findUnique({ where: { id: decoded.id } });
+        if (!usuarioSessao || usuarioSessao.email !== decoded.email || usuarioSessao.empresaId !== decoded.empresaId || usuarioSessao.tipo !== decoded.tipo) usuarioSessao = null;
+      } catch { usuarioSessao = null; }
+    }
+    if (!usuarioSessao && (typeof senha !== "string" || senha.length < 8)) return res.status(400).json({ erro: "A senha deve ter pelo menos 8 caracteres" });
+    const senhaHash = usuarioSessao ? null : await bcrypt.hash(senha, 10);
+    const usuario = await prisma.$transaction(async (tx) => {
+      const convite = await tx.convite.findFirst({ where: { id: conviteAtual.id, usadoEm: null, expiraEm: { gt: new Date() } } });
+      if (!convite) throw Object.assign(new Error("Convite já utilizado"), { code: "INVITE_USED" });
+      const tipoUsuario = convite.tipo === "CLIENTE" ? "CLIENTE" : "COLABORADOR";
+      let novo = await tx.usuario.findUnique({ where: { email: convite.email } });
+      if (novo) {
+        if (!usuarioSessao || usuarioSessao.id !== novo.id || novo.empresaId !== convite.empresaId || novo.tipo !== tipoUsuario) throw Object.assign(new Error("Entre com a conta deste e-mail antes de aceitar o convite."), { code: "EMAIL_EXISTS" });
+      } else {
+        if (usuarioSessao) throw Object.assign(new Error("O convite foi enviado para outro e-mail. Saia da conta atual e use o e-mail convidado."), { code: "ACCOUNT_MISMATCH" });
+        novo = await tx.usuario.create({ data: { empresaId: convite.empresaId, nome: convite.nome, email: convite.email, senhaHash, tipo: tipoUsuario } });
+      }
+      if (convite.tipo === "CLIENTE") {
+        const vinculada = await tx.obra.updateMany({ where: { id: convite.obraId, empresaId: convite.empresaId, clienteId: null }, data: { clienteId: novo.id } });
+        const obra = await tx.obra.findFirst({ where: { id: convite.obraId, empresaId: convite.empresaId }, select: { clienteId: true } });
+        if (!obra || (obra.clienteId !== novo.id && vinculada.count === 0)) throw Object.assign(new Error("A obra já está vinculada a outro cliente."), { code: "WORK_ALREADY_LINKED" });
+      } else {
+        let funcionario = await tx.funcionario.findUnique({ where: { usuarioId: novo.id } });
+        if (!funcionario) funcionario = await tx.funcionario.create({ data: { empresaId: convite.empresaId, nome: convite.nome, funcao: convite.funcao || "Gerente de obras", nivel: "RESPONSAVEL", usuarioId: novo.id } });
+        if (funcionario.empresaId !== convite.empresaId || !funcionario.ativo || funcionario.nivel !== "RESPONSAVEL") throw Object.assign(new Error("A conta existente não pode receber acesso de gerente."), { code: "MANAGER_PROFILE_INVALID" });
+        const escalaAberta = await tx.obraEscala.findFirst({ where: { obraId: convite.obraId, funcionarioId: funcionario.id, dataFim: null } });
+        if (!escalaAberta) await tx.obraEscala.create({ data: { obraId: convite.obraId, funcionarioId: funcionario.id, alteradoPorId: convite.criadoPorId, motivo: "Convite de gerente aceito" } });
+      }
+      await tx.convite.update({ where: { id: convite.id }, data: { usadoEm: new Date() } });
+      return novo;
+    });
+    return res.json(sessao(usuario));
+  } catch (erro) {
+    if (erro.code === "EMAIL_EXISTS") return res.status(409).json({ erro: erro.message });
+    if (["ACCOUNT_MISMATCH", "WORK_ALREADY_LINKED", "MANAGER_PROFILE_INVALID"].includes(erro.code)) return res.status(409).json({ erro: erro.message });
+    if (erro.code === "INVITE_USED") return res.status(410).json({ erro: "Convite já utilizado" });
+    console.error("Erro ao aceitar convite:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível aceitar o convite" });
+  }
+});
+
+async function criarConvite(req, res, tipo) {
+  try {
+    const { obraId, nome, email, funcao } = req.body || {};
+    if (![obraId, nome, email].every((v) => typeof v === "string" && v.trim()) || (tipo === "GERENTE" && (typeof funcao !== "string" || !funcao.trim()))) return res.status(400).json({ erro: "Obra, nome e e-mail são obrigatórios" });
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const obra = await prisma.obra.findFirst({ where: { id: obraId, empresaId: req.usuario.empresaId } });
+    if (!obra) return res.status(404).json({ erro: "Obra não encontrada" });
+    if (tipo === "CLIENTE" && obra.clienteId) return res.status(409).json({ erro: "Esta obra já está vinculada a um cliente" });
+    const normalizedEmail = email.trim().toLowerCase();
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const convite = await prisma.convite.create({ data: { empresaId: req.usuario.empresaId, obraId, criadoPorId: req.usuario.id, tipo, nome: nome.trim(), email: normalizedEmail, funcao: tipo === "GERENTE" ? funcao.trim() : null, tokenHash: hashConvite(rawToken), expiraEm: new Date(Date.now() + 48 * 60 * 60 * 1000) } });
+    const base = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
+    return res.status(201).json({ convite: { id: convite.id, email: convite.email, expiraEm: convite.expiraEm, link: `${base.replace(/\/$/, "")}/convite/${rawToken}` } });
+  } catch (erro) { console.error("Erro ao criar convite:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível criar o convite" }); }
+}
+
+app.post("/convites/cliente", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), (req, res) => criarConvite(req, res, "CLIENTE"));
+app.post("/convites/gerente", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), (req, res) => criarConvite(req, res, "GERENTE"));
 
 // Rota raiz — hello world do backend
 app.get("/", (req, res) => {

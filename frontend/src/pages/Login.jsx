@@ -1,7 +1,7 @@
 // Importa o hook useState do React para gerenciar o estado dos campos e telas
 import { useState } from 'react'
 // Importa o hook useNavigate do react-router-dom para navegação entre páginas
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 // Importa as funções de autenticação do serviço de autenticação
 import { entrar, salvarSessao, salvarSessaoMock } from '../services/auth.js'
 // Importa a função que retorna a rota de destino conforme o perfil do usuário
@@ -349,13 +349,7 @@ export default function Login() {
           {/* Opção para novos clientes se cadastrarem */}
           <p className="mt-7 text-center text-sm text-slate-600">
             Não tem uma conta?{' '}
-            <button
-              type="button"
-              onClick={() => informarRecursoIndisponivel('O cadastro de cliente')}
-              className="font-semibold text-[#087eae] hover:text-[#0c2d43]"
-            >
-              Cadastre sua empresa
-            </button>
+            <Link to="/registro-empreiteira" className="font-semibold text-[#087eae] hover:text-[#0c2d43]">Cadastre sua empreiteira</Link>
           </p>
 
           {/* Seção com botões de atalho para demonstração e testes rápidos */}
@@ -370,7 +364,7 @@ export default function Login() {
                 // Botão de acesso rápido para o perfil Administrador
                 { tipo: 'ADMIN', texto: 'Entrar como Admin' },
                 // Botão de acesso rápido para o perfil Colaborador
-                { tipo: 'COLABORADOR', texto: 'Entrar como Colaborador' },
+                { tipo: 'COLABORADOR', texto: 'Entrar como Gerente de Obra' },
               ].map(({ tipo, texto }) => (
                 // Renderiza o botão para cada perfil de demonstração
                 <button
@@ -392,7 +386,7 @@ export default function Login() {
             </div>
             {/* Descrição informativa atualizada mencionando cliente, administrador e colaborador */}
             <p className="mt-3 text-[11px] leading-4 text-slate-500">
-              Contas públicas para testar o acesso como cliente, administrador e colaborador.
+              Contas de demonstração para empreiteira, cliente e gerente de obra.
             </p>
           </section>
         </div>

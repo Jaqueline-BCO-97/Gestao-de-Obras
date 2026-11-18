@@ -14,7 +14,7 @@ import Button from '../components/Button.jsx'
 import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a lista de colaboradores mockados para exibir os membros da equipe alocada
-import { listarObras, solicitarConferenciaObra } from '../services/auth.js'
+import { listarObras, solicitarConferenciaObra, convidarPessoa, criarObra } from '../services/auth.js'
 
 // Importa a função de logout para permitir ao administrador encerrar a sessão
 import { encerrarSessao } from '../services/auth.js'
@@ -33,6 +33,9 @@ export default function AdminObras() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
   const [solicitando, setSolicitando] = useState('')
+  const [convite, setConvite] = useState({ tipo: 'cliente', obraId: '', nome: '', email: '', funcao: '' })
+  const [linkConvite, setLinkConvite] = useState('')
+  const [novaObra, setNovaObra] = useState({ nome: '', descricao: '', endereco: '' })
 
   const atualizarObras = useCallback(async () => setObras(await listarObras()), [])
 
@@ -90,6 +93,21 @@ export default function AdminObras() {
     } finally {
       setSolicitando('')
     }
+  }
+
+  async function handleConvidar(event) {
+    event.preventDefault(); setErro(''); setLinkConvite('')
+    try {
+      const resultado = await convidarPessoa(convite.tipo, { obraId: convite.obraId, nome: convite.nome, email: convite.email, ...(convite.tipo === 'gerente' ? { funcao: convite.funcao } : {}) })
+      setLinkConvite(resultado.convite.link)
+      setConvite({ ...convite, nome: '', email: '', funcao: '' })
+    } catch (falha) { setErro(falha.message) }
+  }
+
+  async function handleCriarObra(event) {
+    event.preventDefault(); setErro('')
+    try { await criarObra(novaObra); setNovaObra({ nome: '', descricao: '', endereco: '' }); await atualizarObras() }
+    catch (falha) { setErro(falha.message) }
   }
 
   // Função disparada ao clicar no botão visual "Ver" de uma obra
@@ -418,6 +436,32 @@ export default function AdminObras() {
           </div>
 
         </div>
+
+        {/* Cartão de resumo rápido reutilizando Card.jsx */}
+        <section className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-bold text-navy">Cadastrar obra</h2>
+          <p className="mt-1 text-sm text-slate-600">Cadastre os dados do projeto da sua empreiteira. Depois convide o cliente e atribua um gerente.</p>
+          <form onSubmit={handleCriarObra} className="mt-4 grid gap-3 sm:grid-cols-3">
+            <label className="text-sm">Nome da obra<input required value={novaObra.nome} onChange={(e) => setNovaObra({ ...novaObra, nome: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Endereço<input value={novaObra.endereco} onChange={(e) => setNovaObra({ ...novaObra, endereco: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Descrição<input value={novaObra.descricao} onChange={(e) => setNovaObra({ ...novaObra, descricao: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <Button type="submit" className="sm:col-span-3">Criar obra</Button>
+          </form>
+        </section>
+
+        <section className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-bold text-navy">Convidar cliente ou gerente</h2>
+          <p className="mt-1 text-sm text-slate-600">O cliente acompanha a obra no dashboard. O gerente pode atualizar somente as obras para as quais recebeu acesso. Copie o link gerado e envie à pessoa.</p>
+          <form onSubmit={handleConvidar} className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="text-sm">Perfil<select value={convite.tipo} onChange={(e) => setConvite({ ...convite, tipo: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="cliente">Cliente</option><option value="gerente">Gerente de obra</option></select></label>
+            <label className="text-sm">Obra<select required value={convite.obraId} onChange={(e) => setConvite({ ...convite, obraId: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="">Selecione uma obra</option>{obras.map((obra) => <option key={obra.id} value={obra.id}>{obra.titulo}</option>)}</select></label>
+            <label className="text-sm">Nome<input required value={convite.nome} onChange={(e) => setConvite({ ...convite, nome: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">E-mail<input required type="email" value={convite.email} onChange={(e) => setConvite({ ...convite, email: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            {convite.tipo === 'gerente' && <label className="text-sm sm:col-span-2">Função<input required value={convite.funcao} onChange={(e) => setConvite({ ...convite, funcao: e.target.value })} placeholder="Ex.: Gerente de obras" className="mt-1 w-full rounded border border-slate-300 p-2" /></label>}
+            <Button type="submit" className="sm:col-span-2">Gerar convite</Button>
+          </form>
+          {linkConvite && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900"><p>Convite válido por 48 horas. Copie e envie:</p><input readOnly value={linkConvite} onFocus={(e) => e.target.select()} className="mt-2 w-full rounded border border-emerald-200 bg-white p-2" /></div>}
+        </section>
 
         {/* Cartão de resumo rápido reutilizando Card.jsx */}
         <div className="mt-8">

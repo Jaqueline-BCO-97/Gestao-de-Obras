@@ -64,6 +64,27 @@ export async function entrar(email, senha) {
   })
 }
 
+export async function registrarEmpreiteira(dados) {
+  return requisicao('/auth/registro-empreiteira', { method: 'POST', body: JSON.stringify(dados) })
+}
+
+export async function consultarConvite(token) {
+  return requisicao(`/convites/${encodeURIComponent(token)}`)
+}
+
+export async function aceitarConvite(token, senha) {
+  const sessao = obterToken()
+  return requisicao(`/convites/${encodeURIComponent(token)}/aceitar`, { method: 'POST', body: JSON.stringify({ senha }), ...(sessao ? { headers: { Authorization: `Bearer ${sessao}` } } : {}) })
+}
+
+export async function convidarPessoa(tipo, dados) {
+  return requisicaoAutenticada(`/convites/${tipo}`, { method: 'POST', body: JSON.stringify(dados) })
+}
+
+export async function criarObra(dados) {
+  return requisicaoAutenticada('/obras', { method: 'POST', body: JSON.stringify(dados) })
+}
+
 // Função para salvar os dados da sessão (token e dados do usuário) no navegador
 export function salvarSessao({ token, usuario }, lembrarDeMim) {
   // Limpa qualquer sessão anterior para garantir que não haja lixo de logins passados

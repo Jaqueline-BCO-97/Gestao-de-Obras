@@ -4,6 +4,9 @@ Este documento descreve o estado do projeto nesta branch de revisão do PR #78. 
 
 ## Implementado no código
 
+- ObraMaster é apresentado como sistema de gestão de obras da empreiteira; o cadastro inicial cria a empresa e sua conta administradora, sem intermediar contratação de empreiteiras ou profissionais.
+- A empreiteira pode cadastrar uma obra e emitir convite individual, válido por 48 horas, para cliente (dashboard de acompanhamento) ou gerente (perfil colaborador responsável com acesso àquela obra).
+- O token do convite é armazenado como hash e aceito uma única vez; o gerente só recebe escala na obra convidada. Como não há serviço de e-mail configurado, a empreiteira copia e envia o link manualmente.
 - Autenticação por perfil e isolamento de obras por empresa; colaborador inativo ou sem vínculo válido é bloqueado.
 - Alocação e encerramento de escalas com histórico, autor da mudança e consulta restrita a ADMIN.
 - Reagendamento com checagem transacional de conflito; o evento visível aparece como aviso no painel e no detalhe do cliente.
@@ -17,9 +20,10 @@ Este documento descreve o estado do projeto nesta branch de revisão do PR #78. 
 - Aprovação real no Mercado Pago requer Access Token de teste, segredo do webhook, URL HTTPS pública e migration aplicada em banco de teste.
 - As suítes automatizadas usam mocks; não substituem esses dois testes de integração.
 
-## Fora desta entrega
+## Ainda não integrado ou dependente de decisão de produto
 
-- Cadastro/convite de clientes, tabela de preços e calendário administrativo integrados.
+- Envio automático de convites por e-mail; nesta versão a empreiteira copia e envia o link.
+- Tabela de preços e calendário administrativo integrados.
 - Telas dedicadas de funcionário, gestão detalhada de obra, contratos PDF e auditoria/notificações para todos os eventos.
 - Publicação, teste em múltiplos dispositivos e fechamento de issues dependentes dessas funcionalidades.
 

@@ -30,6 +30,8 @@ import ColaboradorObra from './pages/ColaboradorObra.jsx'
 
 // Importa a página de Perfil para manter a funcionalidade já existente no sistema
 import Perfil from './pages/Perfil/Perfil.jsx'
+import RegistroEmpreiteira from './pages/RegistroEmpreiteira.jsx'
+import AceitarConvite from './pages/AceitarConvite.jsx'
 
 // Componente raiz da aplicação (App) que define a estrutura de rotas do frontend
 export default function App() {
@@ -44,6 +46,8 @@ export default function App() {
 
         {/* Rota pública de login (/login): Não requer autenticação */}
         <Route path="/login" element={<Login />} />
+        <Route path="/registro-empreiteira" element={<RegistroEmpreiteira />} />
+        <Route path="/convite/:token" element={<AceitarConvite />} />
 
         {/* Rota protegida do painel do cliente (/cliente): Exige perfil CLIENTE */}
         <Route

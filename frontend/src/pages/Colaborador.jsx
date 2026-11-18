@@ -75,7 +75,7 @@ export default function Colaborador() {
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-emerald-600 text-white text-lg font-bold" aria-hidden="true">🔨</span>
             <div>
               <strong className="block text-base leading-tight font-bold text-navy">Obra<span className="text-primary">Master</span></strong>
-              <small className="block text-[10px] tracking-wider text-emerald-700 uppercase font-bold">Painel do Colaborador</small>
+              <small className="block text-[10px] tracking-wider text-emerald-700 uppercase font-bold">Painel do Gerente de Obra</small>
             </div>
           </div>
           <nav className="flex items-center flex-wrap gap-2 text-xs font-semibold" aria-label="Navegação do colaborador">
@@ -93,7 +93,7 @@ export default function Colaborador() {
               {usuario?.nome?.split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase() || '…'}
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-navy">{usuario?.nome || 'Colaborador autenticado'}</h2>
+              <h2 className="text-base sm:text-lg font-bold text-navy">{usuario?.nome || 'Gerente de obra'}</h2>
               <p className="text-xs text-slate-500 mt-0.5">{usuario?.email || 'Dados carregados da sua sessão autenticada'}</p>
             </div>
           </div>
@@ -109,7 +109,7 @@ export default function Colaborador() {
           <p className="mt-1 text-sm text-slate-500">Acompanhe localização, cronograma e status das obras em que você está alocado.</p>
         </div>
 
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8" aria-label="Métricas do colaborador">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8" aria-label="Métricas do gerente de obra">
           <Card label="Obras Atribuídas" value={obras.length} accent="border-emerald-600" />
           <Card label="Em Andamento" value={obrasEmAndamento} accent="border-amber-500" />
           <Card label="Agendadas" value={obrasAgendadas} accent="border-sky-500" />
@@ -145,7 +145,7 @@ export default function Colaborador() {
         )}
 
         {!carregando && !erro && obras.length > 0 && (
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6" aria-label="Lista de obras do colaborador">
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6" aria-label="Obras do gerente de obra">
             {obras.map((obra) => {
               const cores = coresStatus(obra.status)
               const eventos = obra.timeline || []
