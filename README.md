@@ -66,12 +66,13 @@ As contas abaixo pertencem à empresa **Empresa Demo** e usam a senha `Demo@1234
 
 A tela de Login tem atalhos para ADMIN, CLIENTE e COLABORADOR. O seed cria esses três usuários de demonstração e seus dados de exemplo.
 
-> **Aviso:** crie essas contas somente em banco de desenvolvimento ou demonstração. As credenciais são públicas e não devem ser usadas em produção. O seed se recusa a rodar quando `NODE_ENV=production`.
+> **Aviso:** crie essas contas somente em um banco isolado de demonstração. As credenciais são públicas e não devem ser usadas em produção. O seed exige `OBRAMASTER_DEMO_SEED=true` e se recusa a rodar quando `NODE_ENV=production`.
 
 Para criar ou redefinir as contas:
 ```
-cd backend && npx prisma db seed
+cd backend && OBRAMASTER_DEMO_SEED=true npx prisma db seed
 ```
+Use esse comando somente com `DATABASE_URL` apontando para um banco descartável de demonstração, nunca para o banco compartilhado ou de produção.
 
 **Frontend** (Vite + React):
 ```

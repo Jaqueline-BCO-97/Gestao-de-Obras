@@ -15,7 +15,7 @@ function configurarCloudinary() {
   const apiKey = process.env.CLOUDINARY_API_KEY;
   const apiSecret = process.env.CLOUDINARY_API_SECRET;
   if (!cloudName || !apiKey || !apiSecret) {
-    throw erroUpload("CLOUDINARY_NAO_CONFIGURADO", "Upload de fotos não configurado");
+    throw erroUpload("CLOUDINARY_NAO_CONFIGURADO", "Upload indisponível: configure CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET no ambiente do backend.");
   }
   return { cloudName, apiKey, apiSecret };
 }

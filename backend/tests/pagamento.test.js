@@ -77,6 +77,7 @@ const prismaFalso = {
       return { ...obra };
     },
   },
+  convite: { findFirst: async () => null },
   pagamento: {
     findUnique: async ({ where }) => {
       const found = where.id

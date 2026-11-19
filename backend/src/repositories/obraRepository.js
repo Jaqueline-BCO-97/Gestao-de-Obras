@@ -40,15 +40,19 @@ function erroConclusao(code, message) {
   return erro;
 }
 
-async function notificarEventoObra(tx, { obraId, empresaId, evento, visivelParaCliente = true, autorId = null }) {
-  const [obra, administradores] = await Promise.all([
+async function notificarEventoObra(tx, { obraId, empresaId, evento, visivelParaCliente = true, autorId = null, incluirGerentes = true }) {
+  const [obra, administradores, escalasAtivas] = await Promise.all([
     tx.obra.findFirst({ where: { id: obraId, empresaId }, select: { clienteId: true } }),
     tx.usuario.findMany({ where: { empresaId, tipo: "ADMIN", ...(autorId ? { id: { not: autorId } } : {}) }, select: { id: true } }),
+    incluirGerentes && tx.obraEscala?.findMany
+      ? tx.obraEscala.findMany({ where: { obraId, dataFim: null, funcionario: { ativo: true } }, select: { funcionario: { select: { usuarioId: true } } } })
+      : [],
   ]);
   const destinatarios = [
     ...administradores.map(({ id }) => id),
+    ...escalasAtivas.map(({ funcionario }) => funcionario?.usuarioId).filter(Boolean),
     ...(visivelParaCliente && obra?.clienteId && obra.clienteId !== autorId ? [obra.clienteId] : []),
-  ];
+  ].filter((usuarioId) => usuarioId !== autorId);
   if (!destinatarios.length) return;
   await tx.notificacao.createMany({ data: destinatarios.map((usuarioId) => ({
     empresaId, usuarioId, obraId, eventoId: evento.id, tipo: evento.tipo,
@@ -108,6 +112,8 @@ async function iniciarExecucaoObra({ obraId, empresaId, administradorId }) {
     const obra = await tx.obra.findFirst({ where: { id: obraId, empresaId, excluidaEm: null }, select: { id: true, status: true } });
     if (!obra) throw erroConclusao("OBRA_NAO_ENCONTRADA", "Obra não encontrada");
     if (obra.status !== "AGENDADA") throw erroConclusao("STATUS_INVALIDO", "Somente uma obra agendada pode iniciar execução");
+    const convitePendente = await tx.convite.findFirst({ where: { obraId, tipo: "CLIENTE", usadoEm: null, expiraEm: { gt: new Date() } }, select: { id: true } });
+    if (convitePendente) throw erroConclusao("CONVITE_CLIENTE_PENDENTE", "Aguarde o cliente aceitar o convite antes de iniciar a execução");
     const primeiraParcela = await tx.parcela.findFirst({ where: { obraId, numero: 1 }, select: { situacao: true } });
     if (!primeiraParcela || primeiraParcela.situacao !== "PAGA") throw erroConclusao("PRIMEIRA_PARCELA_PENDENTE", "A primeira parcela precisa estar confirmada como paga para iniciar a execução");
     const atualizada = await tx.obra.update({ where: { id: obraId }, data: { status: "EM_ANDAMENTO" } });
@@ -240,9 +246,11 @@ async function alocarFuncionario({ obraId, empresaId, funcionarioId, administrad
         alteradoPor: { select: { id: true, nome: true } },
       },
     });
-    await tx.obraEvento.create({
+    const evento = await tx.obraEvento.create({
       data: { obraId, empresaId, usuarioId: administradorId, tipo: "EQUIPE", descricao: `${funcionario.nome} (${funcionario.funcao}) recebeu acesso à obra.`, visivelParaCliente: false },
     });
+    await notificarEventoObra(tx, { obraId, empresaId, evento, visivelParaCliente: false, autorId: administradorId, incluirGerentes: false });
+    if (funcionario.usuarioId) await tx.notificacao.create({ data: { empresaId, usuarioId: funcionario.usuarioId, obraId, eventoId: evento.id, tipo: "EQUIPE", titulo: "Você recebeu acesso a uma obra", descricao: `A empreiteira atribuiu acesso à obra ${obra.nome || "selecionada"}.` } });
     return alocacao;
   });
 }
@@ -257,7 +265,7 @@ async function encerrarAlocacao({ obraId, empresaId, alocacaoId, administradorId
 
     const alocacao = await tx.obraEscala.findFirst({
       where: { id: alocacaoId, obraId, obra: { empresaId } },
-      select: { id: true, dataFim: true },
+      select: { id: true, dataFim: true, funcionario: { select: { nome: true, usuarioId: true } } },
     });
     if (!alocacao) throw erroAlocacao("ALOCACAO_NAO_ENCONTRADA", "Alocação não encontrada nesta obra");
     if (alocacao.dataFim) throw erroAlocacao("ALOCACAO_JA_ENCERRADA", "Esta alocação já foi encerrada");
@@ -279,13 +287,15 @@ async function encerrarAlocacao({ obraId, empresaId, alocacaoId, administradorId
     const encerrada = await tx.obraEscala.findUnique({
       where: { id: alocacaoId },
       include: {
-        funcionario: { select: { id: true, nome: true, funcao: true, nivel: true } },
+        funcionario: { select: { id: true, nome: true, funcao: true, nivel: true, usuarioId: true } },
         alteradoPor: { select: { id: true, nome: true } },
       },
     });
-    await tx.obraEvento.create({
+    const evento = await tx.obraEvento.create({
       data: { obraId, empresaId, usuarioId: administradorId, tipo: "EQUIPE", descricao: `Acesso de ${encerrada.funcionario.nome} encerrado${motivo ? `: ${motivo}` : "."}`, visivelParaCliente: false },
     });
+    await notificarEventoObra(tx, { obraId, empresaId, evento, visivelParaCliente: false, autorId: administradorId });
+    if (encerrada.funcionario.usuarioId) await tx.notificacao.create({ data: { empresaId, usuarioId: encerrada.funcionario.usuarioId, obraId, eventoId: evento.id, tipo: "EQUIPE", titulo: "Acesso à obra encerrado", descricao: "A empreiteira encerrou seu acesso a esta obra." } });
     return encerrada;
   });
 }
@@ -302,14 +312,13 @@ async function moverAlocacao({ obraId, novaObraId, empresaId, alocacaoId, admini
     if (obraId === novaObraId) throw erroAlocacao("OBRA_DESTINO_INVALIDA", "Selecione uma obra diferente da atual");
     const repetida = await tx.obraEscala.findFirst({ where: { obraId: novaObraId, funcionarioId: escala.funcionarioId, dataFim: null } });
     if (repetida) throw erroAlocacao("ALOCACAO_DUPLICADA", "O gerente já tem acesso à obra selecionada");
-    const escalasAtivas = await tx.obraEscala.findMany({ where: { funcionarioId: escala.funcionarioId, dataFim: null, obra: { empresaId } }, include: { obra: { select: { id: true, nome: true } } } });
-    await tx.obraEscala.updateMany({ where: { funcionarioId: escala.funcionarioId, dataFim: null, obra: { empresaId } }, data: { dataFim: new Date(), alteradoPorId: administradorId, motivo: "Acesso transferido para outra obra" } });
+    await tx.obraEscala.updateMany({ where: { id: escala.id, obraId, funcionarioId: escala.funcionarioId, dataFim: null }, data: { dataFim: new Date(), alteradoPorId: administradorId, motivo: "Acesso transferido para outra obra" } });
     const novaEscala = await tx.obraEscala.create({ data: { obraId: novaObraId, funcionarioId: escala.funcionarioId, alteradoPorId: administradorId, motivo: `Transferido de ${origem.nome}` }, include: { funcionario: { select: { id: true, nome: true, funcao: true, usuarioId: true } } } });
-    await tx.obraEvento.createMany({ data: [
-      ...escalasAtivas.map((item) => ({ obraId: item.obraId, empresaId, usuarioId: administradorId, tipo: "EQUIPE", descricao: `Acesso de ${escala.funcionario.nome} transferido para outra obra.`, visivelParaCliente: false })),
-      { obraId: novaObraId, empresaId, usuarioId: administradorId, tipo: "EQUIPE", descricao: `${escala.funcionario.nome} recebeu acesso de gerente à obra.`, visivelParaCliente: false },
-    ] });
-    if (escala.funcionario.usuarioId) await tx.notificacao.create({ data: { empresaId, usuarioId: escala.funcionario.usuarioId, obraId: novaObraId, tipo: "EQUIPE", titulo: "Seu acesso foi transferido", descricao: `Seu acesso foi transferido de ${origem.nome} para ${destino.nome}.` } });
+    const eventoOrigem = await tx.obraEvento.create({ data: { obraId, empresaId, usuarioId: administradorId, tipo: "EQUIPE", descricao: `Acesso de ${escala.funcionario.nome} transferido para outra obra.`, visivelParaCliente: false } });
+    await notificarEventoObra(tx, { obraId, empresaId, evento: eventoOrigem, visivelParaCliente: false, autorId: administradorId });
+    const eventoDestino = await tx.obraEvento.create({ data: { obraId: novaObraId, empresaId, usuarioId: administradorId, tipo: "EQUIPE", descricao: `${escala.funcionario.nome} recebeu acesso de gerente à obra.`, visivelParaCliente: false } });
+    await notificarEventoObra(tx, { obraId: novaObraId, empresaId, evento: eventoDestino, visivelParaCliente: false, autorId: administradorId, incluirGerentes: false });
+    if (escala.funcionario.usuarioId) await tx.notificacao.create({ data: { empresaId, usuarioId: escala.funcionario.usuarioId, obraId: novaObraId, eventoId: eventoDestino.id, tipo: "EQUIPE", titulo: "Você foi movido para outra obra", descricao: `Seu acesso foi transferido de ${origem.nome} para ${destino.nome}.` } });
     return { alocacao: novaEscala, funcionarioId: escala.funcionarioId, usuarioId: escala.funcionario.usuarioId, obraDestino: destino.nome };
   });
 }
@@ -317,6 +326,8 @@ async function moverAlocacao({ obraId, novaObraId, empresaId, alocacaoId, admini
 async function confirmarPrimeiraParcela({ obraId, empresaId, administradorId }) {
   exigirBancoConfigurado();
   return getPrisma().$transaction(async (tx) => {
+    const convitePendente = await tx.convite.findFirst({ where: { obraId, tipo: "CLIENTE", usadoEm: null, expiraEm: { gt: new Date() } }, select: { id: true } });
+    if (convitePendente) throw erroConclusao("CONVITE_CLIENTE_PENDENTE", "Aguarde o cliente aceitar o convite antes de confirmar a primeira parcela");
     const parcela = await tx.parcela.findFirst({ where: { obraId, numero: 1, obra: { empresaId, excluidaEm: null } } });
     if (!parcela) throw erroConclusao("PARCELA_NAO_ENCONTRADA", "Primeira parcela não encontrada");
     if (parcela.situacao === "PAGA") return parcela;
@@ -523,14 +534,51 @@ function incluirDadosDaObra(empresaId) {
     escalas: {
       where: { dataFim: null, funcionario: { empresaId } },
       include: { funcionario: { select: { id: true, nome: true, funcao: true, telefone: true } } },
+      orderBy: [{ dataInicio: "asc" }, { id: "asc" }],
     },
     disponibilidades: {
       where: { empresaId, funcionario: { empresaId, ativo: true } },
       include: { funcionario: { select: { id: true, nome: true, funcao: true, telefone: true, fotoUrl: true, usuarioId: true } } },
       orderBy: [{ funcionario: { nome: "asc" } }, { diaSemana: "asc" }],
     },
+    convites: {
+      where: { tipo: "CLIENTE", usadoEm: null, expiraEm: { gt: new Date() } },
+      select: { id: true },
+    },
     contrato: { select: { id: true, termos: true, arquivoUrl: true, criadoEm: true } },
   };
+}
+
+// Listas dos painéis precisam apenas do resumo; o detalhe carrega o histórico completo.
+function incluirDadosDaLista(empresaId, tipo) {
+  const include = {
+    cliente: { select: { id: true, nome: true, empresaId: true } },
+    parcelas: {
+      where: { numero: { lte: 2 } },
+      orderBy: { numero: "asc" },
+      take: 2,
+      include: { pagamentos: { where: { status: { in: ["APROVADO", "PENDENTE"] } }, select: { id: true, valor: true, status: true } } },
+    },
+    eventos: {
+      where: { empresaId, usuario: { empresaId } },
+      include: { usuario: { select: { nome: true } } },
+      orderBy: { criadoEm: "desc" },
+      take: 10,
+    },
+    escalas: {
+      where: { dataFim: null, funcionario: { empresaId } },
+      include: { funcionario: { select: { id: true, nome: true, funcao: true, telefone: true } } },
+      orderBy: [{ dataInicio: "asc" }, { id: "asc" }],
+    },
+  };
+  if (tipo === "ADMIN") {
+    include.convites = {
+      where: { tipo: "CLIENTE", usadoEm: null, expiraEm: { gt: new Date() } },
+      select: { id: true },
+    };
+  }
+  if (tipo === "CLIENTE") include.contrato = { select: { id: true, termos: true, arquivoUrl: true, criadoEm: true } };
+  return include;
 }
 
 // Converte datas do banco para o formato dia/mês/ano usado no mock.
@@ -580,6 +628,7 @@ function ocultarValoresFinanceiros(descricao) {
 function formatarTimeline(eventos, tipo) {
   return eventos
     .filter((evento) => tipo === "CLIENTE" ? evento.visivelParaCliente : tipo === "COLABORADOR" ? !["PAGAMENTO", "ORCAMENTO_APROVADO", "CONTRATACAO"].includes(evento.tipo) : true)
+    .sort((a, b) => new Date(a.criadoEm) - new Date(b.criadoEm))
     .map((evento) => ({
       id: evento.id,
       data: formatarData(evento.criadoEm),
@@ -594,7 +643,7 @@ function formatarTimeline(eventos, tipo) {
 
 function formatarObra(obra, tipo) {
   // Ordena as parcelas já consultadas pelo número sequencial.
-  const parcelas = [...obra.parcelas].sort((a, b) => a.numero - b.numero);
+  const parcelas = [...(obra.parcelas || [])].sort((a, b) => a.numero - b.numero);
   // Prepara os campos gerais da resposta da obra.
   const resposta = {
     // Preserva o identificador da obra no banco.
@@ -606,7 +655,7 @@ function formatarObra(obra, tipo) {
     // Inclui o nome do cliente ou nulo se não houver associação.
     cliente: obra.cliente?.empresaId === obra.empresaId ? obra.cliente.nome : null,
     // Apresenta os nomes dos funcionários atualmente escalados.
-    colaboradores: obra.escalas.map((escala) => ({ id: escala.funcionario.id, nome: escala.funcionario.nome, funcao: escala.funcionario.funcao, ...(tipo === "ADMIN" ? { telefone: escala.funcionario.telefone } : {}) })),
+    colaboradores: (obra.escalas || []).map((escala) => ({ id: escala.funcionario.id, nome: escala.funcionario.nome, funcao: escala.funcionario.funcao, ...(tipo === "ADMIN" ? { telefone: escala.funcionario.telefone } : {}) })),
     funcionariosProgramados: [...new Map((obra.disponibilidades || []).map((item) => [item.funcionario.id, { id: item.funcionario.id, nome: item.funcionario.nome, funcao: item.funcionario.funcao, telefone: tipo === "ADMIN" ? item.funcionario.telefone : undefined, fotoUrl: item.funcionario.fotoUrl, diasSemana: obra.disponibilidades.filter((dia) => dia.funcionarioId === item.funcionarioId).map((dia) => dia.diaSemana) }])).values()],
     // Preserva o endereço cadastrado.
     endereco: [obra.endereco, obra.numero, obra.semApartamento ? null : obra.apartamento ? `Apto ${obra.apartamento}` : null, obra.semBloco ? null : obra.bloco ? `Bloco ${obra.bloco}` : null, obra.bairro, obra.cidade, obra.estado].filter(Boolean).join(" - ") || obra.endereco,
@@ -629,9 +678,10 @@ function formatarObra(obra, tipo) {
     agendadaParaISO: obra.agendadaPara ? new Date(obra.agendadaPara).toISOString().slice(0, 10) : "",
     conclusaoConfirmadaEm: obra.conclusaoConfirmadaEm ? new Date(obra.conclusaoConfirmadaEm).toISOString() : null,
     // Adapta os eventos ao formato da linha do tempo do mock.
-    timeline: formatarTimeline(obra.eventos, tipo),
+    timeline: formatarTimeline(obra.eventos || [], tipo),
   };
   if (tipo !== "CLIENTE") resposta.informacoesAdicionais = obra.informacoesAdicionais;
+  if (tipo === "ADMIN") resposta.conviteClientePendente = Boolean(obra.convites?.length);
   if (tipo !== "COLABORADOR") resposta.contrato = obra.contrato;
   // Inclui dados financeiros apenas para clientes e administradores.
   if (tipo !== "COLABORADOR") {
@@ -641,7 +691,7 @@ function formatarObra(obra, tipo) {
     resposta.taxaJurosMensal = Number(obra.taxaJurosMensal || 0);
     resposta.valorBase = Number(obra.valorBase || obra.valorTotal);
     resposta.parcelas = parcelas.map(formatarParcela);
-    resposta.resumoFinanceiro = `Contrato fechado com divisão em (${parcelas.length}) etapas`;
+    resposta.resumoFinanceiro = `Contrato fechado com divisão em (${obra.quantidadeParcelas || parcelas.length}) etapas`;
     // Converte a primeira parcela para o campo usado pelo mock.
     resposta.parcela1 = formatarParcela(parcelas[0]);
     // Converte a segunda parcela para o campo usado pelo mock.
@@ -662,8 +712,12 @@ async function listarObras(empresaId, usuarioId, tipo) {
   // Limita colaboradores às obras com escala aberta para seu funcionário.
   if (tipo === "COLABORADOR") where.escalas = { some: { dataFim: null, funcionario: { usuarioId, empresaId } } };
   // Consulta as obras e suas relações para montar a resposta completa.
-  const obras = await getPrisma().obra.findMany({ where, include: incluirDadosDaObra(empresaId), orderBy: { criadoEm: "desc" } });
+  const obras = await getPrisma().obra.findMany({ where, include: incluirDadosDaLista(empresaId, tipo), orderBy: { criadoEm: "desc" } });
   // Devolve cada obra no formato do frontend e com a timeline filtrada.
+  if (tipo === "COLABORADOR") {
+    obras.sort((a, b) => new Date(a.escalas?.[0]?.dataInicio || 0) - new Date(b.escalas?.[0]?.dataInicio || 0) || a.id.localeCompare(b.id));
+    return obras.map((obra, indice) => ({ ...formatarObra(obra, tipo), numeroObra: indice + 1 }));
+  }
   return obras.map((obra) => formatarObra(obra, tipo));
 }
 
@@ -684,7 +738,7 @@ async function buscarObraPorId(id, empresaId, usuarioId, tipo) {
 }
 
 // Cria uma obra com os dados aceitos atualmente pela rota POST.
-async function criarObra({ empresaId, nome, descricao, endereco, estado, cidade, bairro, numero, apartamento, bloco, semApartamento, semBloco, informacoesAdicionais, valorTotal, prazoFinal, clienteId = null, quantidadeParcelas = 2, vencimentoInicial = null, fotos = [] }) {
+async function criarObra({ empresaId, administradorId, nome, descricao, endereco, estado, cidade, bairro, numero, apartamento, bloco, semApartamento, semBloco, informacoesAdicionais, valorTotal, prazoFinal, clienteId = null, quantidadeParcelas = 2, vencimentoInicial = null, fotos = [] }) {
   // Confirma que o banco pode receber gravações.
   exigirBancoConfigurado();
   const quantidade = Math.min(36, Math.max(1, Number(quantidadeParcelas) || 2));
@@ -693,26 +747,34 @@ async function criarObra({ empresaId, nome, descricao, endereco, estado, cidade,
   const primeiraData = vencimentoInicial ? new Date(`${vencimentoInicial}T12:00:00.000Z`) : new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() + 1, 10, 12));
   const valoresParcelas = Array.from({ length: quantidade }, () => Math.round((valor / quantidade) * 100) / 100);
   valoresParcelas[valoresParcelas.length - 1] = Math.round((valor - valoresParcelas.slice(0, -1).reduce((soma, n) => soma + n, 0)) * 100) / 100;
-  return getPrisma().$transaction(async (tx) => tx.obra.create({ data: {
-    empresaId, nome, descricao, endereco, estado, cidade, bairro, numero, apartamento, bloco,
-    semApartamento: Boolean(semApartamento), semBloco: Boolean(semBloco), informacoesAdicionais,
-    valorTotal, valorBase: valorTotal, quantidadeParcelas: quantidade, taxaJurosMensal: quantidade > 12 ? 1 : 0, prazoFinal, clienteId, fotos,
-    parcelas: { create: valoresParcelas.map((valorParcela, indice) => ({ numero: indice + 1, valor: valorParcela.toFixed(2), vencimento: somarMesesPreservandoDia(primeiraData, indice) })) },
-  } }));
+  return getPrisma().$transaction(async (tx) => {
+    const obra = await tx.obra.create({ data: {
+      empresaId, nome, descricao, endereco, estado, cidade, bairro, numero, apartamento, bloco,
+      semApartamento: Boolean(semApartamento), semBloco: Boolean(semBloco), informacoesAdicionais,
+      valorTotal, valorBase: valorTotal, quantidadeParcelas: quantidade, taxaJurosMensal: quantidade > 12 ? 1 : 0, prazoFinal, clienteId, fotos,
+      parcelas: { create: valoresParcelas.map((valorParcela, indice) => ({ numero: indice + 1, valor: valorParcela.toFixed(2), vencimento: somarMesesPreservandoDia(primeiraData, indice) })) },
+    } });
+    const evento = await tx.obraEvento.create({ data: { obraId: obra.id, empresaId, usuarioId: administradorId, tipo: "STATUS", descricao: "Obra criada pela empreiteira.", visivelParaCliente: true } });
+    await notificarEventoObra(tx, { obraId: obra.id, empresaId, evento, autorId: administradorId });
+    return obra;
+  });
 }
 
-async function arquivarObra({ obraId, empresaId, motivo }) {
+async function arquivarObra({ obraId, empresaId, administradorId, motivo }) {
   exigirBancoConfigurado();
   const prisma = getPrisma();
   return prisma.$transaction(async (tx) => {
-    const obra = await tx.obra.findFirst({ where: { id: obraId, empresaId, excluidaEm: null }, select: { id: true, status: true, conclusaoConfirmadaEm: true } });
+    const obra = await tx.obra.findFirst({ where: { id: obraId, empresaId, excluidaEm: null }, select: { id: true, status: true } });
     if (!obra) return null;
     if (obra.status === "EM_ANDAMENTO") throw erroConclusao("OBRA_EM_EXECUCAO", "Não é permitido excluir uma obra em andamento");
+    if (obra.status !== "AGENDADA") throw erroConclusao("OBRA_NAO_AGENDADA", "Somente obras agendadas podem ser arquivadas; solicite a conferência e aguarde o aceite do cliente para encerrar a execução");
     const parcelas = await tx.parcela.findMany({ where: { obraId }, include: { pagamentos: { select: { id: true, status: true } } } });
     if (parcelas.some((parcela) => parcela.situacao === "PAGA" || parcela.pagamentos.some((pagamento) => ["APROVADO", "PENDENTE"].includes(pagamento.status)))) throw erroConclusao("PAGAMENTO_RECEBIDO", "Não é permitido excluir uma obra que já recebeu ou tem pagamento em processamento");
-    if ((obra.status === "AGUARDANDO_CONFERENCIA" || parcelas.length > 1) && !obra.conclusaoConfirmadaEm) throw erroConclusao("ACEITE_CLIENTE_NECESSARIO", "Para encerrar este contrato, solicite e aguarde o aceite de conclusão do cliente");
     const agora = new Date();
-    return tx.obra.update({ where: { id: obraId }, data: { excluidaEm: agora, exclusaoExpiraEm: new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000), exclusaoMotivo: motivo } });
+    const arquivada = await tx.obra.update({ where: { id: obraId }, data: { excluidaEm: agora, exclusaoExpiraEm: new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000), exclusaoMotivo: motivo } });
+    const evento = await tx.obraEvento.create({ data: { obraId, empresaId, usuarioId: administradorId, tipo: "STATUS", descricao: "Obra agendada arquivada pela empreiteira.", visivelParaCliente: true } });
+    await notificarEventoObra(tx, { obraId, empresaId, evento, autorId: administradorId });
+    return arquivada;
   }, { isolationLevel: "Serializable" });
 }
 
@@ -744,12 +806,17 @@ async function anexarFotoObra({ obraId, empresaId, administradorId, fotoUrl }) {
   });
 }
 
-async function salvarContratoObra({ obraId, empresaId, termos, arquivoUrl }) {
+async function salvarContratoObra({ obraId, empresaId, administradorId, termos, arquivoUrl }) {
   exigirBancoConfigurado();
   const prisma = getPrisma();
   const obra = await prisma.obra.findFirst({ where: { id: obraId, empresaId }, select: { id: true } });
   if (!obra) return null;
-  return prisma.contrato.upsert({ where: { obraId }, create: { obraId, empresaId, termos, arquivoUrl }, update: { termos, arquivoUrl } });
+  return prisma.$transaction(async (tx) => {
+    const contrato = await tx.contrato.upsert({ where: { obraId }, create: { obraId, empresaId, termos, arquivoUrl }, update: { termos, arquivoUrl } });
+    const evento = await tx.obraEvento.create({ data: { obraId, empresaId, usuarioId: administradorId, tipo: "CONTRATO", descricao: "Contrato da obra adicionado ou atualizado.", visivelParaCliente: true } });
+    await notificarEventoObra(tx, { obraId, empresaId, evento, autorId: administradorId });
+    return contrato;
+  });
 }
 
 async function atualizarDadosObra({ obraId, empresaId, administradorId, dados }) {
@@ -779,6 +846,7 @@ async function atualizarDadosObra({ obraId, empresaId, administradorId, dados })
     const evento = await tx.obraEvento.create({
       data: { obraId, empresaId, usuarioId: administradorId, tipo: "ANOTACAO", descricao: "Dados básicos da obra atualizados pela empreiteira.", visivelParaCliente: false },
     });
+    await notificarEventoObra(tx, { obraId, empresaId, evento, visivelParaCliente: false, autorId: administradorId });
     return { obra: atualizada, evento };
   });
 }

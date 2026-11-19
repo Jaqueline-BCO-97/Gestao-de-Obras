@@ -103,6 +103,7 @@ async function buscarPerfilUsuarioPorId(id) {
       telefoneSecundario: true,
       fotoUrl: true,
       endereco: true,
+      cpf: true,
       funcionario: { select: { funcao: true, telefone: true, fotoUrl: true } },
     },
   });

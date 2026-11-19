@@ -45,6 +45,7 @@ const mercadoPagoService = require("./src/services/mercadoPagoService");
 const cloudinaryService = require("./src/services/cloudinaryService");
 const authMiddleware = require("./src/middlewares/authMiddleware");
 const exigirPapel = require("./src/middlewares/exigirPapel");
+const { cpfValido, somenteDigitosCpf } = require("./src/utils/cpf");
 
 const app = express();
 app.use(express.json({ limit: "40mb" }));
@@ -182,6 +183,7 @@ app.post("/convites/:token/aceitar", async (req, res) => {
             const parcelasAtuais = await tx.parcela.findMany({ where: { obraId: convite.obraId }, include: { pagamentos: { select: { id: true } } }, orderBy: { numero: "asc" } });
             if (parcelasAtuais.some((parcela) => parcela.situacao === "PAGA" || parcela.pagamentos.length)) throw Object.assign(new Error("Não é possível alterar parcelas depois de iniciar pagamentos."), { code: "INSTALLMENTS_LOCKED" });
             const quantidade = convite.quantidadeParcelas;
+            if (parcelasAtuais.length > quantidade) throw Object.assign(new Error("Não é possível reduzir a quantidade de parcelas já cadastradas."), { code: "INSTALLMENTS_LOCKED" });
             const taxa = quantidade > 12 ? 1 : 0;
             const base = Number(obra.valorBase || obra.valorTotal);
             const total = Math.round(base * (1 + (taxa / 100) * Math.max(0, quantidade - 12)) * 100) / 100;
@@ -194,7 +196,6 @@ app.post("/convites/:token/aceitar", async (req, res) => {
               if (parcela) await tx.parcela.update({ where: { id: parcela.id }, data: { numero: indice + 101, valor: valores[indice].toFixed(2), vencimento } });
               else await tx.parcela.create({ data: { obraId: obra.id, numero: indice + 101, valor: valores[indice].toFixed(2), vencimento } });
             }
-            for (const parcela of parcelasAtuais.slice(quantidade)) await tx.parcela.delete({ where: { id: parcela.id } });
             for (let indice = 0; indice < quantidade; indice += 1) {
               await tx.parcela.updateMany({ where: { obraId: obra.id, numero: indice + 101 }, data: { numero: indice + 1 } });
             }
@@ -311,6 +312,15 @@ app.get("/tabela-precos", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADM
     const precos = await prisma.tabelaPreco.findMany({ where: { empresaId: req.usuario.empresaId }, orderBy: [{ ativo: "desc" }, { servico: "asc" }] });
     return res.json(precos.map((item) => ({ ...item, valor: Number(item.valor) })));
   } catch (erro) { console.error("Erro ao consultar tabela de preços:", erro.code || erro.message); return res.status(500).json({ erro: "Erro ao consultar tabela de preços" }); }
+});
+
+app.get("/tabela-precos/cliente", authMiddleware, exigirEmpresaDoToken, exigirPapel("CLIENTE"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const precos = await prisma.tabelaPreco.findMany({ where: { empresaId: req.usuario.empresaId, ativo: true }, select: { id: true, servico: true, unidade: true, valor: true }, orderBy: { servico: "asc" } });
+    return res.json(precos.map((item) => ({ ...item, valor: Number(item.valor) })));
+  } catch (erro) { console.error("Erro ao consultar preços do cliente:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível consultar a tabela de preços" }); }
 });
 
 app.post("/tabela-precos", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
@@ -511,15 +521,20 @@ app.patch("/usuarios/me", authMiddleware, async (req, res) => {
       if (typeof corpo.email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(corpo.email.trim())) return res.status(400).json({ erro: "Informe um e-mail válido" });
       dados.email = corpo.email.trim().toLowerCase();
     }
-    for (const campo of ["telefone", "telefoneSecundario"]) {
+    for (const campo of ["telefone", "telefoneSecundario", "endereco"]) {
       if (corpo[campo] !== undefined) {
-        if (typeof corpo[campo] !== "string" || corpo[campo].trim().length > 40) return res.status(400).json({ erro: "Telefone inválido" });
+        const limite = campo === "endereco" ? 240 : 40;
+        if (typeof corpo[campo] !== "string" || corpo[campo].trim().length > limite) return res.status(400).json({ erro: campo === "endereco" ? "Endereço inválido (até 240 caracteres)" : "Telefone inválido" });
         dados[campo] = corpo[campo].trim() || null;
       }
     }
+    if (corpo.cpf !== undefined) {
+      if (typeof corpo.cpf !== "string" || (corpo.cpf.trim() && !cpfValido(corpo.cpf))) return res.status(400).json({ erro: "Informe um CPF válido" });
+      dados.cpf = corpo.cpf.trim() ? somenteDigitosCpf(corpo.cpf) : null;
+    }
     if (corpo.foto !== undefined) dados.fotoUrl = await cloudinaryService.enviarFotoObra({ foto: corpo.foto, obraId: req.usuario.id });
-    if (!Object.keys(dados).length) return res.status(400).json({ erro: "Informe e-mail, telefone ou foto para atualizar" });
-    const usuario = await getPrisma().usuario.update({ where: { id: req.usuario.id }, data: dados, select: { id: true, empresaId: true, nome: true, email: true, tipo: true, telefone: true, telefoneSecundario: true, fotoUrl: true, funcionario: { select: { funcao: true, telefone: true, fotoUrl: true } } } });
+    if (!Object.keys(dados).length) return res.status(400).json({ erro: "Informe e-mail, contato, endereço, CPF ou foto para atualizar" });
+    const usuario = await getPrisma().usuario.update({ where: { id: req.usuario.id }, data: dados, select: { id: true, empresaId: true, nome: true, email: true, tipo: true, telefone: true, telefoneSecundario: true, fotoUrl: true, endereco: true, cpf: true, funcionario: { select: { funcao: true, telefone: true, fotoUrl: true } } } });
     return res.json({ ...sessao(usuario), usuario, mensagem: "Perfil atualizado" });
   } catch (erro) {
     if (erro.code === "P2002") return res.status(409).json({ erro: "Este e-mail já está cadastrado" });
@@ -533,7 +548,7 @@ app.patch("/usuarios/me", authMiddleware, async (req, res) => {
 app.get("/notificacoes", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
   try {
     const notificacoes = await getPrisma().notificacao.findMany({
-      where: { empresaId: req.usuario.empresaId, usuarioId: req.usuario.id },
+      where: { empresaId: req.usuario.empresaId, usuarioId: req.usuario.id, ...(typeof req.query.obraId === "string" && req.query.obraId ? { obraId: req.query.obraId } : {}) },
       include: { obra: { select: { id: true, nome: true } } },
       orderBy: [{ lidaEm: "asc" }, { criadoEm: "desc" }],
     });
@@ -562,8 +577,8 @@ app.get("/pagamentos", authMiddleware, exigirEmpresaDoToken, async (req, res) =>
     const prisma = getPrisma();
     const whereObra = { empresaId: req.usuario.empresaId, excluidaEm: null, ...(req.usuario.tipo === "CLIENTE" ? { clienteId: req.usuario.id } : {}) };
     if (req.usuario.tipo === "COLABORADOR") return res.status(403).json({ erro: "Acesso a pagamentos não permitido" });
-    const obras = await prisma.obra.findMany({ where: whereObra, select: { id: true, nome: true, valorTotal: true, parcelas: { orderBy: { numero: "asc" }, include: { pagamentos: { select: { id: true, valor: true, status: true } } } } }, orderBy: { criadoEm: "desc" } });
-    return res.json(obras.map((obra) => ({ id: obra.id, nome: obra.nome, valorTotal: Number(obra.valorTotal), parcelas: obra.parcelas.map((parcela) => ({ id: parcela.id, numero: parcela.numero, valor: Number(parcela.valor), situacao: parcela.situacao, vencimento: parcela.vencimento, comprovanteUrl: parcela.comprovanteUrl, comprovanteEnviadoEm: parcela.comprovanteEnviadoEm, pagamentos: parcela.pagamentos })) })));
+    const obras = await prisma.obra.findMany({ where: whereObra, select: { id: true, nome: true, valorTotal: true, convites: { where: { tipo: "CLIENTE", usadoEm: null, expiraEm: { gt: new Date() } }, select: { id: true } }, parcelas: { orderBy: { numero: "asc" }, include: { pagamentos: { select: { id: true, valor: true, status: true } } } } }, orderBy: { criadoEm: "desc" } });
+    return res.json(obras.map((obra) => ({ id: obra.id, nome: obra.nome, valorTotal: Number(obra.valorTotal), conviteClientePendente: Boolean(obra.convites?.length), parcelas: obra.parcelas.map((parcela) => ({ id: parcela.id, numero: parcela.numero, valor: Number(parcela.valor), situacao: parcela.situacao, vencimento: parcela.vencimento, comprovanteUrl: parcela.comprovanteUrl, comprovanteEnviadoEm: parcela.comprovanteEnviadoEm, pagamentos: parcela.pagamentos })) })));
   } catch (erro) { console.error("Erro ao listar pagamentos:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível carregar os pagamentos" }); }
 });
 
@@ -664,14 +679,14 @@ function validarDisponibilidades(disponibilidades) {
 app.post("/funcionarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
   try {
     const { nome, telefone, funcao, foto, disponibilidades } = req.body || {};
-    if (![nome, telefone, funcao].every((valor) => typeof valor === "string" && valor.trim()) || typeof foto?.data !== "string") return res.status(400).json({ erro: "Nome, telefone, função e foto 3x4 são obrigatórios" });
+    if (![nome, telefone, funcao].every((valor) => typeof valor === "string" && valor.trim())) return res.status(400).json({ erro: "Nome, telefone e função são obrigatórios" });
     const erroEscala = validarDisponibilidades(disponibilidades);
     if (erroEscala) return res.status(400).json({ erro: erroEscala });
     const prisma = getPrisma();
     const obras = await prisma.obra.findMany({ where: { id: { in: disponibilidades.map((item) => item.obraId) }, empresaId: req.usuario.empresaId, excluidaEm: null }, select: { id: true } });
     if (obras.length !== new Set(disponibilidades.map((item) => item.obraId)).size) return res.status(400).json({ erro: "Uma ou mais obras não pertencem à empresa" });
     const id = crypto.randomUUID();
-    const fotoUrl = await cloudinaryService.enviarFotoObra({ foto, obraId: id });
+    const fotoUrl = foto ? await cloudinaryService.enviarFotoObra({ foto, obraId: id }) : null;
     const funcionario = await prisma.$transaction(async (tx) => {
       const novo = await tx.funcionario.create({ data: { id, empresaId: req.usuario.empresaId, nome: nome.trim(), telefone: telefone.trim(), funcao: funcao.trim(), nivel: "APOIO", fotoUrl } });
       await tx.disponibilidadeFuncionario.createMany({ data: disponibilidades.flatMap((item) => [...new Set(item.diasSemana)].map((diaSemana) => ({ empresaId: req.usuario.empresaId, funcionarioId: id, obraId: item.obraId, diaSemana }))) });
@@ -791,7 +806,7 @@ app.post("/obras", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), a
       cliente = await prisma.usuario.findFirst({ where: { id: corpo.clienteId, empresaId: req.usuario.empresaId, tipo: "CLIENTE" }, select: { id: true } });
       if (!cliente) return res.status(400).json({ erro: "Selecione um cliente cadastrado nesta empreiteira" });
     }
-    const obra = await criarObra({ empresaId: req.usuario.empresaId, nome: corpo.nome.trim(), descricao: corpo.descricao.trim(), endereco: corpo.endereco.trim(), estado: corpo.estado.trim(), cidade: corpo.cidade.trim(), bairro: corpo.bairro.trim(), numero: corpo.numero.trim(), apartamento: corpo.semApartamento ? null : corpo.apartamento.trim(), bloco: corpo.semBloco ? null : corpo.bloco.trim(), semApartamento: corpo.semApartamento, semBloco: corpo.semBloco, informacoesAdicionais: corpo.informacoesAdicionais.trim(), valorTotal, prazoFinal: new Date(`${corpo.prazoFinal}T12:00:00.000Z`), clienteId: cliente?.id || null });
+    const obra = await criarObra({ empresaId: req.usuario.empresaId, administradorId: req.usuario.id, nome: corpo.nome.trim(), descricao: corpo.descricao.trim(), endereco: corpo.endereco.trim(), estado: corpo.estado.trim(), cidade: corpo.cidade.trim(), bairro: corpo.bairro.trim(), numero: corpo.numero.trim(), apartamento: corpo.semApartamento ? null : corpo.apartamento.trim(), bloco: corpo.semBloco ? null : corpo.bloco.trim(), semApartamento: corpo.semApartamento, semBloco: corpo.semBloco, informacoesAdicionais: corpo.informacoesAdicionais.trim(), valorTotal, prazoFinal: new Date(`${corpo.prazoFinal}T12:00:00.000Z`), clienteId: cliente?.id || null });
     const avisos = [];
     for (const foto of corpo.fotos || []) {
       try {
@@ -893,7 +908,19 @@ app.patch("/obras/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN
 });
 
 app.post("/obras/:id/contrato", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
-  return res.status(409).json({ erro: "Anexe o contrato ao cadastrar o cliente, na tela Clientes." });
+  try {
+    const { arquivo, termos = "" } = req.body || {};
+    if (typeof termos !== "string" || termos.length > 20000) return res.status(400).json({ erro: "Os termos do contrato devem ter até 20.000 caracteres" });
+    const arquivoUrl = arquivo ? await cloudinaryService.enviarContratoObra({ arquivo, obraId: req.params.id }) : null;
+    const contrato = await salvarContratoObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id, termos: termos.trim(), arquivoUrl });
+    if (!contrato) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.status(201).json({ contrato });
+  } catch (erro) {
+    if (erro.code === "CONTRATO_INVALIDO") return res.status(400).json({ erro: erro.message });
+    if (erro.code?.startsWith("CLOUDINARY")) return res.status(503).json({ erro: erro.message });
+    console.error("Erro ao anexar contrato:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível anexar o contrato" });
+  }
 });
 
 app.post("/obras/:id/fotos", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
@@ -969,6 +996,7 @@ app.post("/obras/:id/status/iniciar", authMiddleware, exigirEmpresaDoToken, exig
     if (erro.code === "OBRA_NAO_ENCONTRADA") return res.status(404).json({ erro: erro.message });
     if (erro.code === "STATUS_INVALIDO") return res.status(409).json({ erro: erro.message });
     if (erro.code === "PRIMEIRA_PARCELA_PENDENTE") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "CONVITE_CLIENTE_PENDENTE") return res.status(409).json({ erro: erro.message });
     if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada por outra operação; atualize e tente novamente" });
     console.error("Erro ao iniciar execução da obra:", erro.code || erro.message);
     return res.status(500).json({ erro: "Erro ao iniciar execução da obra" });
@@ -983,6 +1011,7 @@ app.post("/obras/:id/parcelas/primeira/confirmar", authMiddleware, exigirEmpresa
     if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
     if (erro.code === "PARCELA_NAO_ENCONTRADA") return res.status(404).json({ erro: erro.message });
     if (erro.code === "PAGAMENTO_ONLINE_PENDENTE") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "CONVITE_CLIENTE_PENDENTE") return res.status(409).json({ erro: erro.message });
     if (erro.code === "P2034") return res.status(409).json({ erro: "O pagamento mudou durante a confirmação. Atualize os dados antes de tentar novamente" });
     console.error("Erro ao confirmar primeira parcela:", erro.code || erro.message);
     return res.status(500).json({ erro: "Não foi possível confirmar o recebimento" });
@@ -995,11 +1024,11 @@ app.post("/obras/:id/arquivar", authMiddleware, exigirEmpresaDoToken, exigirPape
     if (typeof senha !== "string" || !senha || typeof motivo !== "string" || motivo.trim().length < 10 || motivo.trim().length > 500) return res.status(400).json({ erro: "Confirme sua senha e informe o motivo da exclusão (10 a 500 caracteres)" });
     const administrador = await buscarUsuarioPorId(req.usuario.id);
     if (!administrador || !(await bcrypt.compare(senha, administrador.senhaHash))) return res.status(401).json({ erro: "Senha de confirmação incorreta" });
-    const obra = await arquivarObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, motivo: motivo.trim() });
+    const obra = await arquivarObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id, motivo: motivo.trim() });
     if (!obra) return res.status(404).json({ erro: "Obra não encontrada" });
     return res.json({ mensagem: "Obra arquivada por sete dias", exclusaoExpiraEm: obra.exclusaoExpiraEm });
   } catch (erro) {
-    const respostas = { OBRA_EM_EXECUCAO: 409, PAGAMENTO_RECEBIDO: 409, ACEITE_CLIENTE_NECESSARIO: 409 };
+    const respostas = { OBRA_EM_EXECUCAO: 409, OBRA_NAO_AGENDADA: 409, PAGAMENTO_RECEBIDO: 409, ACEITE_CLIENTE_NECESSARIO: 409 };
     if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
     if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada durante a exclusão. Atualize e tente novamente" });
     if (respostas[erro.code]) return res.status(respostas[erro.code]).json({ erro: erro.message });

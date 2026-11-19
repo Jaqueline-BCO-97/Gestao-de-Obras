@@ -66,6 +66,7 @@ model Usuario {
   telefoneSecundario String?
   fotoUrl          String?
   endereco         String?
+  cpf              String?
   // Data de criação automática do registro.
   criadoEm         DateTime         @default(now())
   // Obras em que este usuário é cliente.
