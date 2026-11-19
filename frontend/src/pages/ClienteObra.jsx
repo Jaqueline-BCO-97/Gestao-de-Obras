@@ -17,6 +17,7 @@ import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 import { buscarObra, confirmarConclusaoObra } from '../services/auth.js'
 import { consultaAindaPertenceAObra, criarRastreadorObra, detectarNovosAgendamentos, registrarEventosConhecidos, registrarListenerOnline } from '../utils/eventosAgendamento.js'
 import { textoDataParcela } from '../utils/formatacaoParcela.js'
+import useConfirmacao from '../components/useConfirmacao.jsx'
 
 // Componente da página de Detalhes da Obra do Cliente (/cliente/obra/:id)
 export default function ClienteObra() {
@@ -28,6 +29,7 @@ export default function ClienteObra() {
 function ClienteObraConteudo({ id }) {
   // Inicializa o hook de navegação para permitir retornar ao painel via código
   const navigate = useNavigate()
+  const { pedirConfirmacao, modal: modalConfirmacao } = useConfirmacao()
   const [obra, setObra] = useState(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
@@ -129,7 +131,7 @@ function ClienteObraConteudo({ id }) {
   const cores = obterCoresStatus(obra.status)
 
   async function handleConfirmarConclusao() {
-    if (!window.confirm('Confirma que a obra foi concluída? Esta ação libera a segunda parcela.')) return
+    if (!await pedirConfirmacao('Confirma que a obra foi concluída? Esta ação libera a segunda parcela.')) return
     setConfirmandoConclusao(true)
     setErroConclusao('')
     setSucessoConclusao('')
@@ -148,6 +150,7 @@ function ClienteObraConteudo({ id }) {
   return (
     // Contêiner principal com fundo suave padrão e altura mínima de 100vh
     <div className="min-h-screen bg-background text-ink">
+      {modalConfirmacao}
 
       {/* Cabeçalho fixo no topo com navegação e botão para voltar */}
       <header className="border-b border-slate-200 bg-white sticky top-0 z-10 shadow-sm">

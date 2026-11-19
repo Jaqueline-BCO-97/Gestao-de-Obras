@@ -42,6 +42,7 @@ import AdminFuncionario from './pages/AdminFuncionario.jsx'
 import Notificacoes from './pages/Notificacoes.jsx'
 import Pagamentos from './pages/Pagamentos.jsx'
 import ClienteContratos from './pages/ClienteContratos.jsx'
+import ClientePrecos from './pages/ClientePrecos.jsx'
 
 // Componente raiz da aplicação (App) que define a estrutura de rotas do frontend
 export default function App() {
@@ -101,6 +102,7 @@ export default function App() {
         <Route path="/cliente/pagamentos" element={<ProtectedRoute perfisPermitidos={['CLIENTE']}><Pagamentos /></ProtectedRoute>} />
         <Route path="/cliente/notificacoes" element={<ProtectedRoute perfisPermitidos={['CLIENTE']}><Notificacoes /></ProtectedRoute>} />
         <Route path="/cliente/contratos" element={<ProtectedRoute perfisPermitidos={['CLIENTE']}><ClienteContratos /></ProtectedRoute>} />
+        <Route path="/cliente/precos" element={<ProtectedRoute perfisPermitidos={['CLIENTE']}><ClientePrecos /></ProtectedRoute>} />
 
         {/* Rota protegida do painel administrativo (/admin): Exige perfil ADMIN */}
         <Route

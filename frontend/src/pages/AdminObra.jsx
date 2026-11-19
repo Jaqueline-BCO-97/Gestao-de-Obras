@@ -1,8 +1,9 @@
 import AdminMenu from '../components/AdminMenu.jsx'
 import Button from '../components/Button.jsx'
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { anexarFotoNovaObra, arquivarObra, atualizarObra, buscarObra, confirmarPrimeiraParcela, encerrarAlocacaoObra, iniciarExecucaoObra, listarAlocacoesObra, registrarAndamentoObra, solicitarConferenciaObra } from '../services/auth.js'
+import useConfirmacao from '../components/useConfirmacao.jsx'
 
 function moeda(valor) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor || 0)) }
 function moedaEntrada(valor) { const digitos = String(valor).replace(/\D/g, ''); return digitos ? (Number(digitos) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '' }
@@ -10,7 +11,9 @@ function moedaNormalizada(valor) { return String(valor).replace(/\./g, '').repla
 function arquivoEmDataURL(arquivo) { return new Promise((resolve, reject) => { const leitor = new FileReader(); leitor.onload = () => resolve({ data: leitor.result, mimeType: arquivo.type }); leitor.onerror = () => reject(new Error('Não foi possível ler o arquivo selecionado.')); leitor.readAsDataURL(arquivo) }) }
 
 export default function AdminObra() {
+  const { pedirConfirmacao, modal: modalConfirmacao } = useConfirmacao()
   const { id } = useParams()
+  const navigate = useNavigate()
   const [obra, setObra] = useState(null)
   const [escalas, setEscalas] = useState({ alocacoesAbertas: [], historico: [] })
   const [form, setForm] = useState(null)
@@ -22,8 +25,9 @@ export default function AdminObra() {
   const [motivo, setMotivo] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
+  const [feedback, setFeedback] = useState({})
   const [erroFoto, setErroFoto] = useState('')
-  const [sucesso, setSucesso] = useState('')
+  const [erroArquivar, setErroArquivar] = useState('')
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
 
@@ -36,25 +40,28 @@ export default function AdminObra() {
     setObra(dados); setEscalas(dadosEscalas); preencherForm(dados)
   }
 
+  function informarFeedback(area, tipo, texto) { setFeedback((atual) => ({ ...atual, [area]: { tipo, texto } })) }
+  function limparFeedback(area) { setFeedback((atual) => ({ ...atual, [area]: null })) }
+
   useEffect(() => {
     let ativo = true
     Promise.all([buscarObra(id), listarAlocacoesObra(id)]).then(([dados, dadosEscalas]) => { if (ativo) { setObra(dados); setEscalas(dadosEscalas); preencherForm(dados) } }).catch((falha) => { if (ativo) setErro(falha.message) }).finally(() => { if (ativo) setCarregando(false) })
     return () => { ativo = false }
   }, [id])
 
-  async function executar(acao, mensagem) {
-    setErro(''); setSucesso(''); setSalvando(true)
-    try { await acao(); await recarregar(); setSucesso(mensagem) }
-    catch (falha) { setErro(falha.message) }
+  async function executar(acao, mensagem, area = 'operacao') {
+    limparFeedback(area); setSalvando(true)
+    try { await acao(); await recarregar(); informarFeedback(area, 'sucesso', mensagem) }
+    catch (falha) { informarFeedback(area, 'erro', falha.message) }
     finally { setSalvando(false) }
   }
 
   async function salvarDados(event) {
-    event.preventDefault(); setErro(''); setSucesso('')
-    if (!/^\d+$/.test(form.numero) || (!form.semApartamento && !/^\d+$/.test(form.apartamento)) || (!form.semBloco && !/^[a-z\d]+$/i.test(form.bloco))) { setErro('Número e apartamento aceitam apenas números; bloco aceita letras e números.'); return }
+    event.preventDefault(); limparFeedback('dados')
+    if (!/^\d+$/.test(form.numero) || (!form.semApartamento && !/^\d+$/.test(form.apartamento)) || (!form.semBloco && !/^[a-z\d]+$/i.test(form.bloco))) { informarFeedback('dados', 'erro', 'Número e apartamento aceitam apenas números; bloco aceita letras e números.'); return }
     const valor = moedaNormalizada(form.valorTotal)
-    if (!/^\d+(?:\.\d{1,2})?$/.test(valor) || Number(valor) <= 0) { setErro('Informe um valor positivo com até duas casas decimais.'); return }
-    await executar(() => atualizarObra(id, { ...form, valorTotal: valor }), 'Dados da obra atualizados.')
+    if (!/^\d+(?:\.\d{1,2})?$/.test(valor) || Number(valor) <= 0) { informarFeedback('dados', 'erro', 'Informe um valor positivo com até duas casas decimais.'); return }
+    await executar(() => atualizarObra(id, { ...form, valorTotal: valor }), 'Dados da obra atualizados.', 'dados')
   }
 
   async function salvarFotoObra(event) {
@@ -62,37 +69,37 @@ export default function AdminObra() {
     if (!fotoObra) { setErroFoto('Selecione a foto da obra.'); return }
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(fotoObra.type) || fotoObra.size > 5 * 1024 * 1024) { setErroFoto('Use JPG, PNG ou WebP de até 5 MB.'); return }
     setSalvando(true)
-    try { await anexarFotoNovaObra(id, await arquivoEmDataURL(fotoObra)); setFotoObra(null); await recarregar(); setSucesso('Foto adicionada à obra.') }
+    try { await anexarFotoNovaObra(id, await arquivoEmDataURL(fotoObra)); setFotoObra(null); await recarregar(); setErroFoto(''); informarFeedback('foto', 'sucesso', 'Foto adicionada à obra.') }
     catch (falha) { setErroFoto(falha.message) }
     finally { setSalvando(false) }
   }
 
   async function registrarNota(event) {
-    event.preventDefault(); setErro(''); setSucesso('')
-    if (!descricao.trim()) { setErro('Escreva uma atualização antes de salvar.'); return }
-    if (fotoRegistro && (!['image/jpeg', 'image/png', 'image/webp'].includes(fotoRegistro.type) || fotoRegistro.size > 5 * 1024 * 1024)) { setErro('Escolha uma foto JPG, PNG ou WebP de até 5 MB.'); return }
+    event.preventDefault(); limparFeedback('andamento')
+    if (!descricao.trim()) { informarFeedback('andamento', 'erro', 'Escreva uma atualização antes de salvar.'); return }
+    if (fotoRegistro && (!['image/jpeg', 'image/png', 'image/webp'].includes(fotoRegistro.type) || fotoRegistro.size > 5 * 1024 * 1024)) { informarFeedback('andamento', 'erro', 'Escolha uma foto JPG, PNG ou WebP de até 5 MB.'); return }
     setSalvando(true)
-    try { await registrarAndamentoObra(id, descricao.trim(), tipoRegistro, fotoRegistro ? await arquivoEmDataURL(fotoRegistro) : null, visivel); setDescricao(''); setFotoRegistro(null); await recarregar(); setSucesso('Atualização registrada no histórico.') }
-    catch (falha) { setErro(falha.message) }
+    try { await registrarAndamentoObra(id, descricao.trim(), tipoRegistro, fotoRegistro ? await arquivoEmDataURL(fotoRegistro) : null, visivel); setDescricao(''); setFotoRegistro(null); await recarregar(); informarFeedback('andamento', 'sucesso', 'Atualização registrada no histórico.') }
+    catch (falha) { informarFeedback('andamento', 'erro', falha.message) }
     finally { setSalvando(false) }
   }
 
   async function removerAcesso(alocacao) {
-    if (!window.confirm(`Encerrar o acesso de ${alocacao.funcionario?.nome || 'este gerente'} a esta obra?`)) return
-    await executar(() => encerrarAlocacaoObra(id, alocacao.id, 'Acesso encerrado pela empreiteira'), 'Acesso encerrado. O histórico foi mantido.')
+    if (!await pedirConfirmacao(`Encerrar o acesso de ${alocacao.funcionario?.nome || 'este gerente'} a esta obra?`)) return
+    await executar(() => encerrarAlocacaoObra(id, alocacao.id, 'Acesso encerrado pela empreiteira'), 'Acesso encerrado. O histórico foi mantido.', 'equipe')
   }
 
   async function confirmarRecebimento() {
-    if (!window.confirm('Confirma que a empreiteira recebeu a primeira parcela?')) return
+    if (!await pedirConfirmacao('Confirma que a empreiteira recebeu a primeira parcela?')) return
     await executar(() => confirmarPrimeiraParcela(id), 'Recebimento da primeira parcela confirmado.')
   }
 
   async function arquivar(event) {
-    event.preventDefault(); setErro(''); setSucesso('')
-    if (!window.confirm('A obra ficará recuperável por sete dias. Deseja arquivar?')) return
+    event.preventDefault(); setErroArquivar('')
+    if (!await pedirConfirmacao('A obra ficará recuperável por sete dias. Deseja arquivar?')) return
     setSalvando(true)
-    try { await arquivarObra(id, senha, motivo); window.location.assign('/admin/obras') }
-    catch (falha) { setErro(falha.message) }
+    try { await arquivarObra(id, senha, motivo); navigate('/admin/obras', { replace: true }) }
+    catch (falha) { setErroArquivar(falha.message) }
     finally { setSalvando(false) }
   }
 
@@ -101,10 +108,13 @@ export default function AdminObra() {
 
   const primeiraPaga = obra.parcelas?.[0]?.situacao === 'paga' || obra.parcela1?.situacao === 'paga'
   const parcelas = obra.parcelas || [obra.parcela1, obra.parcela2].filter(Boolean)
-  return <div className="min-h-screen bg-background text-ink"><header className="sticky top-0 z-10 border-b border-slate-200 bg-white shadow-sm"><div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3"><div><strong className="text-lg text-navy">Obra<span className="text-primary">Master</span></strong><p className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Empreiteira · Detalhe da obra</p></div><AdminMenu /></div></header>
+  const conviteClientePendente = Boolean(obra.conviteClientePendente)
+  const parcelaPaga = parcelas.some((parcela) => parcela.situacao === 'paga')
+  const pagamentoEmProcessamento = parcelas.some((parcela) => parcela.tentativasPendentes?.length)
+  const bloqueioArquivamento = obra.status !== 'Agendada' ? 'Somente obras agendadas podem ser arquivadas; obras em execução devem seguir o fluxo de conferência e aceite do cliente.' : parcelaPaga ? 'Esta obra tem parcela paga e não pode ser arquivada.' : pagamentoEmProcessamento ? 'Esta obra tem pagamento em processamento e não pode ser arquivada.' : ''
+  return <div className="min-h-screen bg-background text-ink">{modalConfirmacao}<header className="sticky top-0 z-10 border-b border-slate-200 bg-white shadow-sm"><div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3"><div><strong className="text-lg text-navy">Obra<span className="text-primary">Master</span></strong><p className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Empreiteira · Detalhe da obra</p></div><AdminMenu /></div></header>
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-8"><Link to="/admin/obras" className="text-sm font-semibold text-sky-700">← Voltar para Gestão de Obras</Link>
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-bold text-navy">{obra.titulo}</h1><p className="mt-1 text-sm text-slate-600">Cliente: {obra.cliente || 'Ainda não vinculado'} · Status: <strong>{obra.status}</strong></p></div><div className="flex flex-wrap gap-2">{obra.status === 'Agendada' && (primeiraPaga ? <Button disabled={salvando} onClick={() => executar(() => iniciarExecucaoObra(id), 'Execução iniciada.')}>Iniciar execução da obra</Button> : <Button variant="outline" disabled={salvando} onClick={confirmarRecebimento}>Confirmar primeira parcela recebida</Button>)}{obra.status === 'Em andamento' && <Button disabled={salvando} onClick={() => executar(() => solicitarConferenciaObra(id), 'Obra enviada para conferência do cliente.')}>Solicitar conferência</Button>}</div></div><div className="mt-5 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4"><p><strong>Endereço</strong><br />{obra.endereco || 'Não informado'}</p><p><strong>Prazo</strong><br />{obra.prazo || 'Não informado'}</p><p><strong>Valor total</strong><br />{moeda(obra.valorTotal)}</p><p><strong>Parcelas</strong><br />{parcelas.map((parcela) => `${parcela.numero}ª ${parcela.situacao}: ${moeda(parcela.valor)}`).join(' · ') || 'Não cadastradas'}</p></div></section>
-      {erro && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{erro}</p>}{sucesso && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{sucesso}</p>}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-bold text-navy">{obra.titulo}</h1><p className="mt-1 text-sm text-slate-600">Cliente: {obra.cliente || 'Ainda não vinculado'} · Status: <strong>{obra.status}</strong></p></div><div className="flex flex-wrap gap-2">{obra.status === 'Agendada' && (primeiraPaga ? <Button disabled={salvando || conviteClientePendente} onClick={() => executar(() => iniciarExecucaoObra(id), 'Execução iniciada.')}>Iniciar execução da obra</Button> : <Button variant="outline" disabled={salvando || conviteClientePendente} onClick={confirmarRecebimento}>Confirmar primeira parcela recebida</Button>)}{obra.status === 'Em andamento' && <Button disabled={salvando} onClick={() => executar(() => solicitarConferenciaObra(id), 'Obra enviada para conferência do cliente.')}>Solicitar conferência</Button>}</div>{feedback.operacao && <p role={feedback.operacao.tipo === 'erro' ? 'alert' : 'status'} className={`w-full rounded-lg p-3 text-sm font-semibold ${feedback.operacao.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{feedback.operacao.texto}</p>}{obra.status === 'Agendada' && conviteClientePendente && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">O cliente ainda não aceitou o convite. A primeira parcela não pode ser confirmada e a execução não pode começar.</p>}</div><div className="mt-5 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4"><p><strong>Endereço</strong><br />{obra.endereco || 'Não informado'}</p><p><strong>Prazo</strong><br />{obra.prazo || 'Não informado'}</p><p><strong>Valor total</strong><br />{moeda(obra.valorTotal)}</p><p><strong>Parcelas</strong><br />{parcelas.map((parcela) => `${parcela.numero}ª ${parcela.situacao}: ${moeda(parcela.valor)}`).join(' · ') || 'Não cadastradas'}</p></div></section>
 
       <div className="grid gap-6 lg:grid-cols-2"><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Dados da obra</h2><form onSubmit={salvarDados} className="mt-4 grid gap-3 sm:grid-cols-2">
         <label className="text-sm sm:col-span-2">Nome da obra<input required value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
@@ -115,18 +125,18 @@ export default function AdminObra() {
         <label className="text-sm">Apartamento<input disabled={form.semApartamento} required={!form.semApartamento} inputMode="numeric" pattern="[0-9]+" value={form.apartamento} onChange={(e) => setForm({ ...form, apartamento: e.target.value.replace(/\D/g, '') })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /><span className="mt-1 flex items-center gap-2 text-xs"><input type="checkbox" checked={form.semApartamento} onChange={(e) => setForm({ ...form, semApartamento: e.target.checked, apartamento: '' })} />Não existe apartamento</span></label>
         <label className="text-sm">Bloco<input disabled={form.semBloco} required={!form.semBloco} pattern="[A-Za-z0-9]+" value={form.bloco} onChange={(e) => setForm({ ...form, bloco: e.target.value.replace(/[^a-z\d]/gi, '') })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /><span className="mt-1 flex items-center gap-2 text-xs"><input type="checkbox" checked={form.semBloco} onChange={(e) => setForm({ ...form, semBloco: e.target.checked, bloco: '' })} />Não existe bloco</span></label>
         <label className="text-sm">Prazo final<input required type="date" value={form.prazoFinal} onChange={(e) => setForm({ ...form, prazoFinal: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><label className="text-sm">Valor base (R$)<input required inputMode="decimal" placeholder="40.000,25" value={form.valorTotal} onChange={(e) => setForm({ ...form, valorTotal: moedaEntrada(e.target.value) })} className="mt-1 w-full rounded border border-slate-300 p-2" /><span className="mt-1 block text-xs text-slate-500">As parcelas serão recalculadas mantendo a quantidade e a taxa do contrato.</span></label>
-        <label className="text-sm sm:col-span-2">Serviços, materiais e medidas previstos<textarea required rows="4" value={form.informacoesAdicionais} onChange={(e) => setForm({ ...form, informacoesAdicionais: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><Button type="submit" disabled={salvando} className="sm:col-span-2">Salvar alterações</Button>
+        <label className="text-sm sm:col-span-2">Serviços, materiais e medidas previstos<textarea required rows="4" value={form.informacoesAdicionais} onChange={(e) => setForm({ ...form, informacoesAdicionais: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>{feedback.dados && <p role={feedback.dados.tipo === 'erro' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm font-semibold sm:col-span-2 ${feedback.dados.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{feedback.dados.texto}</p>}<Button type="submit" disabled={salvando} className="sm:col-span-2">Salvar alterações</Button>
       </form></section>
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Equipe com acesso</h2><p className="mt-1 text-xs text-slate-500">Somente gerentes com acesso podem registrar o andamento.</p><Link className="mt-2 inline-block text-sm font-semibold text-sky-700" to="/admin/funcionarios/gerentes">Gerenciar gerentes →</Link><div className="mt-4 space-y-2">{escalas.alocacoesAbertas.map((alocacao) => <div key={alocacao.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm"><span><strong>{alocacao.funcionario.nome}</strong> · {alocacao.funcionario.funcao} · desde {new Date(alocacao.dataInicio).toLocaleDateString('pt-BR')}</span><Button variant="outline" disabled={salvando} onClick={() => removerAcesso(alocacao)} className="px-3 py-1.5 text-xs">Remover acesso</Button></div>)}{escalas.alocacoesAbertas.length === 0 && <p className="text-sm text-slate-500">Nenhum gerente tem acesso ativo nesta obra.</p>}</div></section></div>
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Equipe com acesso</h2><p className="mt-1 text-xs text-slate-500">Somente gerentes com acesso podem registrar o andamento.</p><Link className="mt-2 inline-block text-sm font-semibold text-sky-700" to="/admin/funcionarios/gerentes">Gerenciar gerentes →</Link>{feedback.equipe && <p role={feedback.equipe.tipo === 'erro' ? 'alert' : 'status'} className={`mt-3 rounded-lg p-3 text-sm font-semibold ${feedback.equipe.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{feedback.equipe.texto}</p>}<div className="mt-4 space-y-2">{escalas.alocacoesAbertas.map((alocacao) => <div key={alocacao.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm"><span><strong>{alocacao.funcionario.nome}</strong> · {alocacao.funcionario.funcao} · desde {new Date(alocacao.dataInicio).toLocaleDateString('pt-BR')}</span><Button variant="outline" disabled={salvando} onClick={() => removerAcesso(alocacao)} className="px-3 py-1.5 text-xs">Remover acesso</Button></div>)}{escalas.alocacoesAbertas.length === 0 && <p className="text-sm text-slate-500">Nenhum gerente tem acesso ativo nesta obra.</p>}</div></section></div>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Contrato</h2>{obra.contrato?.arquivoUrl ? <div className="mt-2"><a href={obra.contrato.arquivoUrl} target="_blank" rel="noreferrer" className="text-sm font-semibold text-sky-700 underline">Abrir contrato PDF</a>{obra.contrato.termos && <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{obra.contrato.termos}</p>}</div> : <p className="mt-2 text-sm text-slate-500">O contrato será anexado no cadastro do cliente, na tela Clientes.</p>}</section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Fotos da obra</h2>{(obra.fotos || []).length > 0 && <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{obra.fotos.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer"><img src={url} alt={`Foto da obra ${obra.titulo}`} loading="lazy" className="h-48 w-full rounded-lg object-cover" /></a>)}</div>}<form onSubmit={salvarFotoObra} className="mt-4 flex flex-wrap items-end gap-3"><label className="min-w-64 flex-1 text-sm">Adicionar foto (JPG, PNG ou WebP; até 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => { setFotoObra(e.target.files?.[0] || null); setErroFoto('') }} className="mt-1 block w-full rounded border border-slate-300 p-2" />{erroFoto && <span role="alert" className="mt-1 block text-xs text-red-700">{erroFoto}</span>}</label><Button type="submit" disabled={salvando || !fotoObra}>{salvando ? 'Enviando…' : 'Adicionar foto'}</Button></form></section>
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Fotos da obra</h2>{(obra.fotos || []).length > 0 && <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{obra.fotos.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer"><img src={url} alt={`Foto da obra ${obra.titulo}`} loading="lazy" className="h-48 w-full rounded-lg object-cover" /></a>)}</div>}<form onSubmit={salvarFotoObra} className="mt-4 flex flex-wrap items-end gap-3"><label className="min-w-64 flex-1 text-sm">Adicionar foto (JPG, PNG ou WebP; até 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => { setFotoObra(e.target.files?.[0] || null); setErroFoto(''); limparFeedback('foto') }} className="mt-1 block w-full rounded border border-slate-300 p-2" />{erroFoto && <span role="alert" className="mt-1 block text-xs font-semibold text-red-800">{erroFoto}</span>}</label><Button type="submit" disabled={salvando || !fotoObra}>{salvando ? 'Enviando…' : 'Adicionar foto'}</Button>{feedback.foto && <p role="status" className="w-full rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{feedback.foto.texto}</p>}</form></section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Registrar atualização</h2><form onSubmit={registrarNota} className="mt-4 space-y-3"><label className="block text-sm">Tipo<select value={tipoRegistro} onChange={(e) => setTipoRegistro(e.target.value)} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="ATUALIZACAO">Atualização de andamento</option><option value="ANOTACAO">Anotação</option><option value="OCORRENCIA">Ocorrência</option></select></label><label className="block text-sm">Descrição<textarea required rows="3" value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={2000} placeholder="Descreva a atualização da obra…" className="mt-1 w-full rounded border border-slate-300 p-3" /></label><label className="block text-sm">Foto opcional<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setFotoRegistro(e.target.files?.[0] || null)} className="mt-1 block w-full text-sm" /></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={visivel} onChange={(e) => setVisivel(e.target.checked)} />Visível para o cliente</label><Button type="submit" disabled={salvando}>Registrar atualização</Button></form></section>
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Registrar atualização</h2><form onSubmit={registrarNota} className="mt-4 space-y-3"><label className="block text-sm">Tipo<select value={tipoRegistro} onChange={(e) => setTipoRegistro(e.target.value)} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="ATUALIZACAO">Atualização de andamento</option><option value="ANOTACAO">Anotação</option><option value="OCORRENCIA">Ocorrência</option></select></label><label className="block text-sm">Descrição<textarea required rows="3" value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={2000} placeholder="Descreva a atualização da obra…" className="mt-1 w-full rounded border border-slate-300 p-3" /></label><label className="block text-sm">Foto opcional<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => { setFotoRegistro(e.target.files?.[0] || null); limparFeedback('andamento') }} className="mt-1 block w-full text-sm" /></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={visivel} onChange={(e) => setVisivel(e.target.checked)} />Visível para o cliente</label>{feedback.andamento && <p role={feedback.andamento.tipo === 'erro' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm font-semibold ${feedback.andamento.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{feedback.andamento.texto}</p>}<Button type="submit" disabled={salvando}>Registrar atualização</Button></form></section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Histórico da obra</h2><ol className="mt-4 space-y-3">{(obra.timeline || []).map((item) => <li key={item.id} className="border-l-2 border-sky-200 pl-3"><details><summary className="cursor-pointer text-xs font-semibold text-slate-600">{item.data} {item.hora} · {item.autor || 'Sistema'} · {item.tipo}</summary><p className="mt-2 text-sm text-slate-800">{item.descricao}</p>{item.fotoUrl && <a className="text-xs text-sky-700 underline" href={item.fotoUrl} target="_blank" rel="noreferrer">Abrir foto</a>}</details></li>)}</ol>{!obra.timeline?.length && <p className="mt-3 text-sm text-slate-500">Nenhuma atualização registrada.</p>}</section>
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-bold text-navy">Histórico da obra</h2><Link to={`/admin/notificacoes?obraId=${encodeURIComponent(id)}`} className="text-sm font-semibold text-sky-700 underline">Notificações desta obra</Link></div><ol className="mt-4 space-y-3">{(obra.timeline || []).map((item) => <li key={item.id} className="border-l-2 border-sky-200 pl-3"><details><summary className="cursor-pointer text-xs font-semibold text-slate-600">{item.data} {item.hora} · {item.autor || 'Sistema'} · {item.tipo}</summary><p className="mt-2 text-sm text-slate-800">{item.descricao}</p>{item.fotoUrl && <a className="text-xs text-sky-700 underline" href={item.fotoUrl} target="_blank" rel="noreferrer">Abrir foto</a>}</details></li>)}</ol>{!obra.timeline?.length && <p className="mt-3 text-sm text-slate-500">Nenhuma atualização registrada.</p>}</section>
 
-      <section className="rounded-xl border border-red-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-red-800">Arquivar obra</h2><p className="mt-1 text-sm text-slate-600">A obra poderá ser restaurada por sete dias. Obras em execução, com pagamento recebido ou com contrato parcelado sem aceite do cliente não podem ser arquivadas.</p><form onSubmit={arquivar} className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-sm sm:col-span-2">Motivo (10 a 500 caracteres)<textarea required minLength={10} maxLength={500} value={motivo} onChange={(e) => setMotivo(e.target.value)} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><label className="text-sm">Senha do administrador<input required type="password" autoComplete="current-password" value={senha} onChange={(e) => setSenha(e.target.value)} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><Button variant="outline" type="submit" disabled={salvando} className="self-end border-red-300 text-red-800">Arquivar obra</Button></form></section>
+      <section className="rounded-xl border border-red-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-red-800">Arquivar obra</h2><p className="mt-1 text-sm text-slate-600">A obra poderá ser restaurada por sete dias. Só obras agendadas sem parcela paga e sem pagamento em processamento podem ser arquivadas.</p>{bloqueioArquivamento && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">{bloqueioArquivamento}</p>}{erroArquivar && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">{erroArquivar}</p>}<form onSubmit={arquivar} className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-sm sm:col-span-2">Motivo (10 a 500 caracteres)<textarea required minLength={10} maxLength={500} value={motivo} onChange={(e) => setMotivo(e.target.value)} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><label className="text-sm">Senha do administrador<input required type="password" autoComplete="current-password" value={senha} onChange={(e) => setSenha(e.target.value)} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><Button variant="outline" type="submit" disabled={salvando || Boolean(bloqueioArquivamento)} className="self-end border-red-300 text-red-800">Arquivar obra</Button></form></section>
     </main></div>
 }

@@ -6,6 +6,7 @@ import Avatar from '../../components/Avatar.jsx'
 import { atualizarPerfil, buscarUsuarioAtual, alterarSenha, encerrarSessao, salvarSessao } from '../../services/auth.js'
 import { obterRotaDashboard } from '../../routes/dashboardRoutes.js'
 import { obterFotoPerfil } from '../../utils/fotoPerfil.js'
+import { cpfValido, formatarCpf } from '../../utils/cpf.js'
 
 // Função auxiliar para recuperar dados do usuário mock/local quando a API estiver offline
 function obterUsuarioLocal() {
@@ -51,7 +52,8 @@ export default function Perfil() {
   // true enquanto a requisição de troca de senha está em andamento
   // (usado pra desabilitar o botão e mostrar "Salvando…").
   const [salvando, setSalvando] = useState(false)
-  const [dadosContato, setDadosContato] = useState({ email: '', telefone: '', telefoneSecundario: '' })
+  const [dadosContato, setDadosContato] = useState({ email: '', telefone: '', telefoneSecundario: '', endereco: '', cpf: '' })
+  const [mostrarTelefoneAdicional, setMostrarTelefoneAdicional] = useState(false)
   const [fotoSelecionada, setFotoSelecionada] = useState(null)
   const [erroFoto, setErroFoto] = useState('')
 
@@ -64,7 +66,7 @@ export default function Perfil() {
 
     buscarUsuarioAtual()
       .then((dados) => {
-        if (ativo) { setUsuario(dados); setDadosContato({ email: dados.email || '', telefone: dados.telefone || '', telefoneSecundario: dados.telefoneSecundario || '' }) }
+        if (ativo) { setUsuario(dados); setDadosContato({ email: dados.email || '', telefone: dados.telefone || '', telefoneSecundario: dados.telefoneSecundario || '', endereco: dados.endereco || '', cpf: formatarCpf(dados.cpf || '') }); setMostrarTelefoneAdicional(Boolean(dados.telefoneSecundario)) }
       })
       .catch((erro) => {
         if (ativo) {
@@ -129,6 +131,7 @@ export default function Perfil() {
   async function salvarContato(event) {
     event.preventDefault()
     setMensagemContato(null)
+    if (dadosContato.cpf && !cpfValido(dadosContato.cpf)) { setMensagemContato({ tipo: 'erro', texto: 'Informe um CPF válido.' }); return }
     setSalvando(true)
     try {
       const dados = { ...dadosContato }
@@ -140,7 +143,8 @@ export default function Perfil() {
       const lembrar = Boolean(localStorage.getItem('token'))
       salvarSessao(resposta, lembrar)
       setUsuario(resposta.usuario)
-      setDadosContato({ email: resposta.usuario.email || '', telefone: resposta.usuario.telefone || '', telefoneSecundario: resposta.usuario.telefoneSecundario || '' })
+      setDadosContato({ email: resposta.usuario.email || '', telefone: resposta.usuario.telefone || '', telefoneSecundario: resposta.usuario.telefoneSecundario || '', endereco: resposta.usuario.endereco || '', cpf: formatarCpf(resposta.usuario.cpf || '') })
+      setMostrarTelefoneAdicional(Boolean(resposta.usuario.telefoneSecundario))
       setFotoSelecionada(null)
       setMensagemContato({ tipo: 'sucesso', texto: resposta.mensagem || 'Perfil atualizado.' })
     } catch (erro) {
@@ -166,7 +170,7 @@ export default function Perfil() {
   const itensMenu = tipoPerfil === 'ADMIN'
     ? [{ to: '/admin/notificacoes', label: 'Notificações', icon: '♧' }, { to: '/admin/pagamentos', label: 'Pagamentos', icon: '◉' }, { to: '/perfil', label: 'Perfil', icon: '◎' }]
     : tipoPerfil === 'CLIENTE'
-      ? [{ to: '/cliente', label: 'Minhas Obras', icon: '▣' }, { to: '/cliente/pagamentos', label: 'Pagamentos', icon: '◉' }, { to: '/cliente/notificacoes', label: 'Notificações', icon: '♧' }, { to: '/cliente/contratos', label: 'Contrato', icon: '▤' }, { to: '/perfil', label: 'Perfil', icon: '◎' }]
+      ? [{ to: '/cliente', label: 'Minhas Obras', icon: '▣' }, { to: '/cliente/pagamentos', label: 'Pagamentos', icon: '◉' }, { to: '/cliente/precos', label: 'Preços', icon: '$' }, { to: '/cliente/notificacoes', label: 'Notificações', icon: '♧' }, { to: '/cliente/contratos', label: 'Contrato', icon: '▤' }, { to: '/perfil', label: 'Perfil', icon: '◎' }]
       : [{ to: '/colaborador', label: 'Minhas Obras', icon: '▣' }, { to: '/colaborador/notificacoes', label: 'Notificações', icon: '♧' }, { to: '/perfil', label: 'Perfil', icon: '◎' }]
 
   return (
@@ -243,7 +247,9 @@ export default function Perfil() {
                   <label className="block text-[11px] font-semibold text-slate-700">Foto de perfil (JPG, PNG ou WebP)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={selecionarFoto} aria-describedby={erroFoto ? 'erro-foto-perfil' : undefined} className="mt-1 block w-full rounded border border-slate-300 p-2 text-xs font-normal" />{erroFoto && <span id="erro-foto-perfil" role="alert" className="mt-2 block rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-800">{erroFoto}</span>}</label>
                   <label className="block text-[11px] font-semibold text-slate-700">E-mail<input required type="email" value={dadosContato.email} onChange={(event) => setDadosContato({ ...dadosContato, email: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label>
                   <label className="block text-[11px] font-semibold text-slate-700">Telefone<input type="tel" value={dadosContato.telefone} onChange={(event) => setDadosContato({ ...dadosContato, telefone: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label>
-                  <label className="block text-[11px] font-semibold text-slate-700">Telefone adicional<input type="tel" value={dadosContato.telefoneSecundario} onChange={(event) => setDadosContato({ ...dadosContato, telefoneSecundario: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label>
+                  {mostrarTelefoneAdicional ? <label className="block text-[11px] font-semibold text-slate-700">Telefone adicional<input type="tel" value={dadosContato.telefoneSecundario} onChange={(event) => setDadosContato({ ...dadosContato, telefoneSecundario: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label> : <Button type="button" variant="outline" className="text-xs" onClick={() => setMostrarTelefoneAdicional(true)}>Adicionar telefone</Button>}
+                  <label className="block text-[11px] font-semibold text-slate-700">Endereço<input type="text" maxLength={240} value={dadosContato.endereco} onChange={(event) => setDadosContato({ ...dadosContato, endereco: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label>
+                  <label className="block text-[11px] font-semibold text-slate-700">CPF<input type="text" inputMode="numeric" autoComplete="off" maxLength={14} value={dadosContato.cpf} onChange={(event) => setDadosContato({ ...dadosContato, cpf: formatarCpf(event.target.value) })} placeholder="000.000.000-00" className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label>
                   {usuario.tipo === 'COLABORADOR' && usuario.funcionario?.funcao && <p className="text-xs text-slate-600">Função: <strong>{usuario.funcionario.funcao}</strong></p>}
                   {mensagemContato && <p className={`rounded-[7px] px-[10px] py-[9px] text-sm font-semibold ${mensagemContato.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`} role={mensagemContato.tipo === 'erro' ? 'alert' : 'status'}>{mensagemContato.texto}</p>}
                   <Button type="submit" variant="compact" disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar dados de contato'}</Button>

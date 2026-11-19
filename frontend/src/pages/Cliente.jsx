@@ -121,6 +121,7 @@ export default function Cliente() {
             {/* Link direto para a página de perfil do usuário logado */}
             <Link to="/cliente" className="rounded-md bg-navy px-2.5 py-2 text-xs font-semibold text-white">Minhas Obras</Link>
             <Link to="/cliente/pagamentos" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Pagamentos</Link>
+            <Link to="/cliente/precos" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Preços</Link>
             <Link to="/cliente/notificacoes" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Notificações</Link>
             <Link to="/cliente/contratos" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Contrato</Link>
             <Link to="/perfil" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Perfil</Link>
@@ -166,7 +167,6 @@ export default function Cliente() {
           </span>
         </div>
 
-        {erro && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{erro}</p>}
         {carregando && <p className="mb-4 text-sm text-slate-500" role="status">Carregando suas obras…</p>}
         {avisoAgendamento && (
           <aside className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950" role="status" aria-live="polite">
@@ -179,6 +179,7 @@ export default function Cliente() {
 
         {/* Grade responsiva de cartões de obras (mobile-first: 1 coluna no mobile, 2 em tablets e desktops) */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6" aria-label="Lista de obras">
+          {erro && <p className="md:col-span-2 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800" role="alert">{erro}</p>}
           {/* Itera sobre o array de obras fake para gerar cada card */}
           {obras.map((obra) => {
             // Obtém as cores personalizadas do status para aplicar na borda e badge

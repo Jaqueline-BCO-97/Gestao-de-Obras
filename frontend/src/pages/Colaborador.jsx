@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Card from '../components/Card.jsx'
 import Button from '../components/Button.jsx'
+import Avatar from '../components/Avatar.jsx'
 import { buscarUsuarioAtual, encerrarSessao, listarObras } from '../services/auth.js'
+import { obterFotoPerfil } from '../utils/fotoPerfil.js'
 
 function mensagemErroObras(erro) {
   if (erro.status === 401) return 'Sua sessão expirou. Entre novamente para consultar suas obras.'
@@ -58,12 +60,7 @@ export default function Colaborador() {
 
   function handleVerCanteiro(obra) {
     setAvisoCanteiro({
-      id: obra.id,
       titulo: obra.titulo,
-      endereco: obra.endereco,
-      status: obra.status,
-      prazo: obra.prazo,
-      ultimaEtapa: obra.timeline?.[obra.timeline.length - 1]?.descricao || 'Nenhuma etapa registrada ainda.',
     })
   }
 
@@ -90,17 +87,11 @@ export default function Colaborador() {
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="bg-white border border-slate-200 rounded-xl p-5 mb-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-base border border-emerald-200 shrink-0" aria-hidden="true">
-              {usuario?.nome?.split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase() || '…'}
-            </div>
+            <Avatar nome={usuario?.nome} src={obterFotoPerfil(usuario)} className="h-20 w-20 shrink-0 border-slate-200" fallbackClassName="bg-emerald-100 text-emerald-800" />
             <div>
               <h2 className="text-base sm:text-lg font-bold text-navy">{usuario?.nome || 'Gerente de obra'}</h2>
               <p className="text-xs text-slate-500 mt-0.5">{usuario?.funcionario?.funcao && <>Função: <strong className="text-emerald-700">{usuario.funcionario.funcao}</strong> · </>}{usuario?.telefone || usuario?.funcionario?.telefone ? `Telefone: ${usuario.telefone || usuario.funcionario.telefone} · ` : ''}{usuario?.email || 'Dados carregados da sua sessão autenticada'}</p>
             </div>
-          </div>
-          <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 self-start sm:self-auto">
-            <span className="block font-semibold text-slate-700">🔒 Acesso Operacional</span>
-            <span className="text-[11px] text-slate-500">A API libera somente obras com alocação ativa.</span>
           </div>
         </div>
 
@@ -120,10 +111,7 @@ export default function Colaborador() {
         {avisoCanteiro && (
           <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-900 shadow-xs">
             <div className="text-xs sm:text-sm">
-              <p className="font-bold">📍 Obra #{avisoCanteiro.id}: {avisoCanteiro.titulo}</p>
-              <p className="mt-1">Local: <strong>{avisoCanteiro.endereco || 'Endereço não informado'}</strong></p>
-              <p className="mt-0.5">Status: <strong>{avisoCanteiro.status}</strong> • Prazo: <strong>{avisoCanteiro.prazo || 'Não informado'}</strong></p>
-              <p className="mt-1 text-slate-600">Último registro: {avisoCanteiro.ultimaEtapa}</p>
+              <p className="font-bold">Obra: {avisoCanteiro.titulo}</p>
             </div>
             <Button variant="outline" onClick={() => setAvisoCanteiro(null)} className="text-xs py-1 px-3 self-end sm:self-auto">Fechar detalhes</Button>
           </div>
@@ -156,7 +144,7 @@ export default function Colaborador() {
                   <div>
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div>
-                        <h3 className="text-base sm:text-lg font-bold text-navy leading-snug">{obra.titulo}</h3>
+                <h3 className="text-base sm:text-lg font-bold text-navy leading-snug">Obra {obra.numeroObra || obras.indexOf(obra) + 1}: {obra.titulo}</h3>
                         <p className="text-xs text-slate-500 mt-0.5">Cliente: <strong className="text-slate-700">{obra.cliente || 'Não informado'}</strong></p>
                       </div>
                       <span className={`inline-flex shrink-0 items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${cores.badge}`}>

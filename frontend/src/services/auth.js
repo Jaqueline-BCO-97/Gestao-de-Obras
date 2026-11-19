@@ -6,9 +6,23 @@ const TOKEN_KEY = 'token'
 
 // Nome da chave usada para guardar os dados do usuário no localStorage ou sessionStorage
 const USER_KEY = 'usuario'
+const GETS_EM_ANDAMENTO = new Map()
 
 // Função auxiliar assíncrona para realizar requisições HTTP usando o fetch da Web API
-async function requisicao(caminho, opcoes = {}) {
+function requisicao(caminho, opcoes = {}) {
+  const metodo = (opcoes.method || 'GET').toUpperCase()
+  const token = opcoes.headers?.Authorization || ''
+  const chave = metodo === 'GET' ? `${API_BASE_URL}${caminho}:${token}` : null
+  if (chave && GETS_EM_ANDAMENTO.has(chave)) return GETS_EM_ANDAMENTO.get(chave)
+  const promessa = executarRequisicao(caminho, opcoes)
+  if (chave) {
+    GETS_EM_ANDAMENTO.set(chave, promessa)
+    promessa.then(() => GETS_EM_ANDAMENTO.delete(chave), () => GETS_EM_ANDAMENTO.delete(chave))
+  }
+  return promessa
+}
+
+async function executarRequisicao(caminho, opcoes = {}) {
   // Variável que irá armazenar a resposta da requisição fetch
   let resposta
 
@@ -102,6 +116,7 @@ export async function reenviarConvite(id) {
 }
 
 export async function listarTabelaPrecos() { return requisicaoAutenticada('/tabela-precos') }
+export async function listarTabelaPrecosCliente() { return requisicaoAutenticada('/tabela-precos/cliente') }
 export async function criarPreco(dados) { return requisicaoAutenticada('/tabela-precos', { method: 'POST', body: JSON.stringify(dados) }) }
 export async function atualizarPreco(id, dados) { return requisicaoAutenticada(`/tabela-precos/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) }) }
 export async function listarCalendario() { return requisicaoAutenticada('/calendario') }
@@ -122,7 +137,7 @@ export async function moverGerente(obraId, alocacaoId, novaObraId) {
 export async function criarFuncionario(dados) { return requisicaoAutenticada('/funcionarios', { method: 'POST', body: JSON.stringify(dados) }) }
 export async function atualizarFuncionario(id, dados) { return requisicaoAutenticada(`/funcionarios/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) }) }
 export async function atualizarPerfil(dados) { return requisicaoAutenticada('/usuarios/me', { method: 'PATCH', body: JSON.stringify(dados) }) }
-export async function listarNotificacoes() { return requisicaoAutenticada('/notificacoes') }
+export async function listarNotificacoes(obraId) { return requisicaoAutenticada(`/notificacoes${obraId ? `?obraId=${encodeURIComponent(obraId)}` : ''}`) }
 export async function marcarNotificacaoLida(id) { return requisicaoAutenticada(`/notificacoes/${encodeURIComponent(id)}/lida`, { method: 'PATCH' }) }
 export async function excluirNotificacao(id) { return requisicaoAutenticada(`/notificacoes/${encodeURIComponent(id)}`, { method: 'DELETE' }) }
 export async function listarPagamentos() { return requisicaoAutenticada('/pagamentos') }

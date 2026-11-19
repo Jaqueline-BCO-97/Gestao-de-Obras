@@ -40,8 +40,10 @@ export default function AdminObras() {
   const [arquivadas, setArquivadas] = useState([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
+  const [erroAcao, setErroAcao] = useState({})
   const [solicitando, setSolicitando] = useState('')
   const [feedbackForm, setFeedbackForm] = useState('')
+  const [feedbackFormErro, setFeedbackFormErro] = useState(false)
   const [fotosObra, setFotosObra] = useState([])
   const [novaObra, setNovaObra] = useState({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', valorTotal: '', informacoesAdicionais: '' })
 
@@ -86,12 +88,12 @@ export default function AdminObras() {
 
   async function handleSolicitarConferencia(obra) {
     setSolicitando(obra.id)
-    setErro('')
+    setErroAcao((atuais) => ({ ...atuais, [obra.id]: '' }))
     try {
       await solicitarConferenciaObra(obra.id)
       await atualizarObras()
     } catch (falha) {
-      setErro(falha.message)
+      setErroAcao((atuais) => ({ ...atuais, [obra.id]: falha.message }))
     } finally {
       setSolicitando('')
     }
@@ -99,20 +101,20 @@ export default function AdminObras() {
 
   async function handleRestaurar(obra) {
     if (!obra.restauravel) return
-    setErro('')
+    setErroAcao((atuais) => ({ ...atuais, [obra.id]: '' }))
     try { await restaurarObra(obra.id); await atualizarObras() }
-    catch (falha) { setErro(falha.message) }
+    catch (falha) { setErroAcao((atuais) => ({ ...atuais, [obra.id]: falha.message })) }
   }
 
   async function handleCriarObra(event) {
-    event.preventDefault(); setErro(''); setFeedbackForm('')
+    event.preventDefault(); setFeedbackForm(''); setFeedbackFormErro(false)
     const erros = []
     if (!/^\d+$/.test(novaObra.numero)) erros.push('Número do endereço: use apenas números.')
     if (!novaObra.semApartamento && !/^\d+$/.test(novaObra.apartamento)) erros.push('Apartamento: use apenas números.')
     if (!novaObra.semBloco && !/^[a-z\d]+$/i.test(novaObra.bloco)) erros.push('Bloco: use apenas letras e números.')
     const valorNormalizado = moedaNumero(novaObra.valorTotal)
     if (!/^\d+(?:\.\d{1,2})?$/.test(valorNormalizado) || Number(valorNormalizado) <= 0) erros.push('Valor final: informe um valor maior que zero, com até duas casas decimais.')
-    if (erros.length) { setFeedbackForm(erros.join(' ')); return }
+    if (erros.length) { setFeedbackForm(erros.join(' ')); setFeedbackFormErro(true); return }
     try {
       const fotos = await Promise.all(fotosObra.map((arquivo) => new Promise((resolve, reject) => {
         const leitor = new FileReader(); leitor.onload = () => resolve({ data: leitor.result, mimeType: arquivo.type }); leitor.onerror = () => reject(new Error('Não foi possível ler uma das fotos.')); leitor.readAsDataURL(arquivo)
@@ -121,7 +123,7 @@ export default function AdminObras() {
       setNovaObra({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', valorTotal: '', informacoesAdicionais: '' }); setFotosObra([])
       setFeedbackForm(resposta.avisos?.length ? `Obra criada, mas as fotos não foram enviadas: ${resposta.avisos.join('; ')}` : 'Obra cadastrada. Cadastre o cliente na tela Clientes para anexar contrato e parcelas.')
       await atualizarObras()
-    } catch (falha) { setFeedbackForm(falha.message) }
+    } catch (falha) { setFeedbackForm(falha.message); setFeedbackFormErro(true) }
   }
 
   // Abre a página de gestão com dados, equipe e histórico da obra.
@@ -205,7 +207,6 @@ export default function AdminObras() {
           </div>
         </div>
 
-        {erro && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{erro}</p>}
         {carregando && <p className="mb-4 text-sm text-slate-500" role="status">Carregando obras…</p>}
         {/* Barra de filtros por status (mobile-first com rolagem ou quebra de linha suave) */}
         <div className="mb-6 bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
@@ -256,6 +257,7 @@ export default function AdminObras() {
 
         {/* Bloco da tabela: com overflow-x-auto restrito ao próprio bloco para rolagem em celulares */}
         <div className="w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          {erro && <p className="m-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800" role="alert">{erro} <button type="button" className="underline" onClick={() => atualizarObras().then(() => setErro('')).catch((falha) => setErro(falha.message))}>Tentar novamente</button></p>}
 
           {/* Contêiner de rolagem horizontal isolado para telas pequenas (mobile-first) */}
           <div className="overflow-x-auto w-full">
@@ -352,15 +354,11 @@ export default function AdminObras() {
 
                         {/* Célula: Botão de ação "Ver" */}
                         <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                          {/* Botão visual para acionar o aviso da obra */}
-                          <Button
-                            variant="compact"
-                            onClick={() => handleVerObra(obra)}
-                            className="text-xs py-1 px-3"
-                          >
-                            Gerenciar
-                          </Button>
-                          {obra.status === 'Em andamento' && <Button variant="compact" disabled={Boolean(solicitando)} onClick={() => handleSolicitarConferencia(obra)} className="ml-2 text-xs py-1 px-3">{solicitando === obra.id ? 'Enviando…' : 'Solicitar conferência'}</Button>}
+                          <div className="flex flex-col items-center gap-2">
+                            <Button variant="compact" onClick={() => handleVerObra(obra)} className="w-44 text-xs py-1 px-3">Gerenciar</Button>
+                            {obra.status === 'Em andamento' && <Button variant="compact" disabled={Boolean(solicitando)} onClick={() => handleSolicitarConferencia(obra)} className="w-44 text-xs py-1 px-3">{solicitando === obra.id ? 'Enviando…' : 'Solicitar conferência'}</Button>}
+                            {erroAcao[obra.id] && <p role="alert" className="max-w-44 whitespace-normal rounded bg-red-50 p-2 text-left text-xs font-semibold text-red-800">{erroAcao[obra.id]}</p>}
+                          </div>
                         </td>
 
                       </tr>
@@ -388,13 +386,12 @@ export default function AdminObras() {
 
         </div>
 
-        {arquivadas.length > 0 && <section className="mt-8 rounded-xl border border-amber-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Obras arquivadas</h2><p className="mt-1 text-xs text-slate-600">Cada obra fica recuperável até a data indicada. O registro é mantido no banco.</p><div className="mt-3 space-y-2">{arquivadas.map((obra) => <article key={obra.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-amber-50 p-3"><div><strong className="text-navy">{obra.titulo}</strong><p className="text-xs text-slate-600">Motivo: {obra.exclusaoMotivo} · {obra.restauravel ? `Restaurar até ${new Date(obra.exclusaoExpiraEm).toLocaleString('pt-BR')}` : 'Prazo de restauração expirado'}</p></div><Button variant="outline" disabled={!obra.restauravel} onClick={() => handleRestaurar(obra)} className="text-xs">Restaurar obra</Button></article>)}</div></section>}
+        {arquivadas.length > 0 && <section className="mt-8 rounded-xl border border-amber-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Obras arquivadas</h2><p className="mt-1 text-xs text-slate-600">Cada obra fica recuperável até a data indicada. O registro é mantido no banco.</p><div className="mt-3 space-y-2">{arquivadas.map((obra) => <article key={obra.id} className="rounded-lg bg-amber-50 p-3"><div className="flex flex-wrap items-center justify-between gap-3"><div><strong className="text-navy">{obra.titulo}</strong><p className="text-xs text-slate-600">Motivo: {obra.exclusaoMotivo} · {obra.restauravel ? `Restaurar até ${new Date(obra.exclusaoExpiraEm).toLocaleString('pt-BR')}` : 'Prazo de restauração expirado'}</p></div><Button variant="outline" disabled={!obra.restauravel} onClick={() => handleRestaurar(obra)} className="text-xs">Restaurar obra</Button></div>{erroAcao[obra.id] && <p role="alert" className="mt-2 rounded bg-red-50 p-2 text-sm font-semibold text-red-800">{erroAcao[obra.id]}</p>}</article>)}</div></section>}
 
         {/* Cartão de resumo rápido reutilizando Card.jsx */}
         <section className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-bold text-navy">Cadastrar obra</h2>
           <p className="mt-1 text-sm text-slate-600">Cadastre os dados da obra. O cliente, contrato e plano de parcelas são vinculados na tela Clientes. O valor base pode receber juros quando o cliente escolher mais de 12 parcelas.</p>
-          {feedbackForm && <p role="status" className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">{feedbackForm}</p>}
           <form onSubmit={handleCriarObra} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="text-sm">Nome da obra<input required value={novaObra.nome} onChange={(e) => setNovaObra({ ...novaObra, nome: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm">Descrição da obra<input required value={novaObra.descricao} onChange={(e) => setNovaObra({ ...novaObra, descricao: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
@@ -409,7 +406,7 @@ export default function AdminObras() {
             <label className="text-sm">Valor base (R$)<input required inputMode="decimal" placeholder="40.000,25" value={novaObra.valorTotal} onChange={(e) => setNovaObra({ ...novaObra, valorTotal: moedaEntrada(e.target.value) })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm sm:col-span-2 lg:col-span-3">Informações de execução: serviços, materiais e medidas previstos no contrato<textarea required rows="4" value={novaObra.informacoesAdicionais} onChange={(e) => setNovaObra({ ...novaObra, informacoesAdicionais: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm sm:col-span-2 lg:col-span-3">Fotos iniciais (JPG, PNG ou WebP; até 5 arquivos de 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(e) => setFotosObra(Array.from(e.target.files || []).slice(0, 5))} className="mt-1 block w-full rounded border border-slate-300 p-2" /></label>
-            <Button type="submit" className="sm:col-span-2 lg:col-span-3">Criar obra</Button>
+            {feedbackForm && <p role={feedbackFormErro ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm font-semibold sm:col-span-2 lg:col-span-3 ${feedbackFormErro ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{feedbackForm}</p>}<Button type="submit" className="sm:col-span-2 lg:col-span-3">Criar obra</Button>
           </form>
         </section>
 

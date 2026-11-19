@@ -35,8 +35,8 @@ export default function RegistroEmpreiteira() {
     <Link to="/login" className="text-sm text-sky-700">← Voltar ao login</Link>
     <h1 className="text-2xl font-bold text-[#0c2d43]">Cadastrar Empresa</h1>
     <p className="text-sm text-slate-600">Informe os dados da empresa e do responsável pela conta.</p>
-    {erro && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{erro}</p>}
     <div className="grid gap-3 sm:grid-cols-2">{campos.map(([name, label, type]) => <label key={name} className={`block text-sm font-medium ${['empresa', 'enderecoResponsavel', 'endereco'].includes(name) ? 'sm:col-span-2' : ''}`}>{label}<input required={name !== 'telefoneSecundario'} maxLength={name === 'cnpj' ? 14 : name === 'cpfResponsavel' ? 11 : undefined} minLength={name === 'cnpj' ? 14 : name === 'cpfResponsavel' ? 11 : name === 'senha' ? 8 : undefined} inputMode={['cnpj', 'cpfResponsavel'].includes(name) ? 'numeric' : undefined} type={type} name={name} autoComplete={name === 'senha' ? 'new-password' : undefined} value={dados[name]} onChange={alterar} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>)}</div>
+    {erro && <p role="alert" className="rounded bg-red-50 p-3 text-sm font-semibold text-red-800">{erro}</p>}
     <button disabled={carregando} className="w-full rounded-lg bg-[#0c2d43] p-3 font-semibold text-white">{carregando ? 'Cadastrando…' : 'Cadastrar empresa'}</button>
   </form></main>
 }
