@@ -21,7 +21,7 @@ Pré-requisitos:
 ```
 cd backend
 npm install
-cp .env.example .env     # depois preencha DATABASE_URL e JWT_SECRET
+cp .env.example .env     # depois preencha DATABASE_URL, DIRECT_URL e JWT_SECRET
 npm run dev              # desenvolvimento (reinicia ao salvar)
 ```
 Para rodar sem reinício automático, use `npm start`. Por padrão, a API sobe em `http://localhost:3000` (ou na porta definida em `PORT`). O `npm install` já executa `prisma generate` automaticamente.
@@ -39,7 +39,8 @@ O backend usa a string de conexão do banco (Supabase), o segredo do JWT e, quan
 | Variável | Para que serve |
 |---|---|
 | `PORT` | Porta da API (padrão: `3000`) |
-| `DATABASE_URL` | Connection string do PostgreSQL no Supabase (modo Pooler) |
+| `DATABASE_URL` | Connection string do PostgreSQL no Supabase (pooler transaction, porta `6543`) para a API |
+| `DIRECT_URL` | Connection string direta ou pooler session (porta `5432`) usada pelo Prisma Migrate |
 | `JWT_SECRET` | Segredo usado para assinar os tokens de login (validade de 8h) |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Upload de fotos da obra |
 | `MERCADO_PAGO_ACCESS_TOKEN_TEST`, `MERCADO_PAGO_WEBHOOK_SECRET` | Checkout e confirmação de pagamentos de teste |
@@ -49,9 +50,9 @@ O backend usa a string de conexão do banco (Supabase), o segredo do JWT e, quan
 **Banco de dados** (migrations):
 ```
 cd backend
-npx prisma migrate dev
+npx prisma migrate deploy
 ```
-Migrations existentes: `init_usuarios`, `add_obras` e `modelo_v2_1`.
+Configure `DIRECT_URL` com a conexão direta ou o pooler session do Supabase antes de executar. A API continua usando `DATABASE_URL`; o Prisma Migrate usa `DIRECT_URL` para evitar o pooler transaction. Migrations existentes estão em `backend/prisma/migrations/`.
 
 ### Acessos de demonstração
 

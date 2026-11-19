@@ -115,6 +115,23 @@ export async function encerrarEscala(obraId, alocacaoId, motivo = '') {
   })
 }
 
+export async function moverGerente(obraId, alocacaoId, novaObraId) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/colaboradores/${encodeURIComponent(alocacaoId)}/mover`, { method: 'POST', body: JSON.stringify({ novaObraId }) })
+}
+
+export async function criarFuncionario(dados) { return requisicaoAutenticada('/funcionarios', { method: 'POST', body: JSON.stringify(dados) }) }
+export async function atualizarFuncionario(id, dados) { return requisicaoAutenticada(`/funcionarios/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) }) }
+export async function atualizarPerfil(dados) { return requisicaoAutenticada('/usuarios/me', { method: 'PATCH', body: JSON.stringify(dados) }) }
+export async function listarNotificacoes() { return requisicaoAutenticada('/notificacoes') }
+export async function marcarNotificacaoLida(id) { return requisicaoAutenticada(`/notificacoes/${encodeURIComponent(id)}/lida`, { method: 'PATCH' }) }
+export async function excluirNotificacao(id) { return requisicaoAutenticada(`/notificacoes/${encodeURIComponent(id)}`, { method: 'DELETE' }) }
+export async function listarPagamentos() { return requisicaoAutenticada('/pagamentos') }
+export async function enviarComprovante(obraId, parcelaId, arquivo) { return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/parcelas/${encodeURIComponent(parcelaId)}/comprovante`, { method: 'POST', body: JSON.stringify({ arquivo }) }) }
+export async function confirmarPrimeiraParcela(obraId) { return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/parcelas/primeira/confirmar`, { method: 'POST' }) }
+export async function arquivarObra(obraId, senha, motivo) { return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/arquivar`, { method: 'POST', body: JSON.stringify({ senha, motivo }) }) }
+export async function restaurarObra(obraId) { return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/restaurar`, { method: 'POST' }) }
+export async function listarObrasArquivadas() { return requisicaoAutenticada('/obras/arquivadas') }
+
 // Função para salvar os dados da sessão (token e dados do usuário) no navegador
 export function salvarSessao({ token, usuario }, lembrarDeMim) {
   // Limpa qualquer sessão anterior para garantir que não haja lixo de logins passados
@@ -235,6 +252,7 @@ export async function atualizarObra(id, dados) {
 export async function anexarContratoObra(id, arquivo, termos = '') {
   return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/contrato`, { method: 'POST', body: JSON.stringify({ arquivo, termos }) })
 }
+export async function anexarFotoNovaObra(id, foto) { return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/fotos`, { method: 'POST', body: JSON.stringify({ foto }) }) }
 
 export async function iniciarExecucaoObra(id) {
   return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/status/iniciar`, { method: 'POST' })

@@ -256,12 +256,12 @@ function ClienteObraConteudo({ id }) {
               Informações Financeiras
             </h2>
             <p className="text-xs text-slate-500">
-              Detalhamento do investimento total e a situação de cada parcela (50% cada).
+              {obra.resumoFinanceiro || `Detalhamento do investimento total e das ${obra.parcelas?.length || 2} parcelas.`}
             </p>
           </div>
 
           {/* Grade com 3 cartões financeiros reutilizando o componente Card */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {((obra.parcelas || []).length === 0 || (obra.parcelas || []).length === 2) && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
             {/* Cartão 1: Valor Total Contratado */}
             <Card
@@ -277,13 +277,13 @@ function ClienteObraConteudo({ id }) {
             >
               {/* Informação adicional de rodapé do card */}
               <p className="mt-2 text-xs text-slate-500 border-t border-slate-100 pt-2">
-                Contrato fechado com divisão em 2 etapas
+                {obra.resumoFinanceiro || 'Contrato fechado com divisão em 2 etapas'}
               </p>
             </Card>
 
             {/* Cartão 2: 1ª Parcela (50%) */}
             <Card
-              label="1ª Parcela (50% - Entrada)"
+              label="1ª Parcela (Entrada)"
               value={formatarMoeda(obra.parcela1.valor)}
               accent={obra.parcela1.situacao === 'paga' ? 'border-emerald-500' : 'border-amber-500'}
               icon={
@@ -313,7 +313,7 @@ function ClienteObraConteudo({ id }) {
 
             {/* Cartão 3: 2ª Parcela (50%) */}
             <Card
-              label="2ª Parcela (50% - Final)"
+              label="2ª Parcela (Final)"
               value={formatarMoeda(obra.parcela2.valor)}
               accent={obra.parcela2.situacao === 'paga' ? 'border-emerald-500' : 'border-amber-500'}
               icon={
@@ -341,7 +341,11 @@ function ClienteObraConteudo({ id }) {
               </p>
             </Card>
 
-          </div>
+          </div>}
+          {(obra.parcelas || []).length > 0 && (obra.parcelas || []).length !== 2 && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{obra.parcelas.map((parcela) => {
+            const vencida = parcela.situacao !== 'paga' && parcela.vencimento && new Date(`${parcela.vencimento.split('/').reverse().join('-')}T23:59:59`) < new Date()
+            return <article key={parcela.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-2"><h3 className="font-bold text-navy">{parcela.numero}ª parcela</h3><span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${parcela.situacao === 'paga' ? 'bg-emerald-50 text-emerald-700' : vencida ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>{parcela.situacao === 'paga' ? 'Paga' : vencida ? 'Atrasada' : 'Pendente'}</span></div><p className="mt-2 text-lg font-bold">{formatarMoeda(parcela.valor)}</p><p className="mt-1 text-xs text-slate-500">Vencimento: {parcela.vencimento || 'A definir'}</p></article>
+          })}</div>}
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">

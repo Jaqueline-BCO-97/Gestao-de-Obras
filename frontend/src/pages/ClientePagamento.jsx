@@ -92,9 +92,9 @@ export default function ClientePagamento() {
   if (carregando) return <main className="min-h-screen p-8 text-center" role="status">Carregando dados de pagamento…</main>
   if (!obra) return <main className="min-h-screen p-8 text-center"><p role="alert">{erro || 'Obra não encontrada.'}</p><Button variant="outline" onClick={() => navigate('/cliente')}>Voltar</Button></main>
 
-  const parcelas = [obra.parcela1, obra.parcela2].filter(Boolean)
+  const parcelas = obra.parcelas?.length ? obra.parcelas : [obra.parcela1, obra.parcela2].filter(Boolean)
   const saldo = parcelas.reduce((total, parcela) => total + Number(parcela.saldoDevedor ?? (parcela.situacao === 'paga' ? 0 : parcela.valor || 0)), 0)
-  const conclusaoConfirmada = obra.status === 'Concluída'
+  const conclusaoConfirmada = Boolean(obra.conclusaoConfirmadaEm)
 
   return (
     <main className="min-h-screen bg-background p-6 text-ink">
@@ -104,10 +104,10 @@ export default function ClientePagamento() {
         {mensagem && <p className="rounded-lg bg-sky-50 p-3 text-sm text-sky-900" role="status">{mensagem}</p>}
         <div className="space-y-3" aria-label="Parcelas">
           {parcelas.map((parcela) => {
-            const segundaBloqueada = parcela.numero === 2 && !conclusaoConfirmada
-            const indisponivel = parcela.situacao === 'paga' || segundaBloqueada
+            const ultimaBloqueada = parcelas.length > 1 && parcela.numero === parcelas.length && !conclusaoConfirmada
+            const indisponivel = parcela.situacao === 'paga' || ultimaBloqueada
             return <article key={parcela.id || parcela.numero} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-4">
-              <div><h2 className="font-semibold">{parcela.numero}ª parcela</h2><p className="text-sm text-slate-600">Saldo: {moeda.format(parcela.saldoDevedor ?? (parcela.situacao === 'paga' ? 0 : parcela.valor))} · {parcela.situacao === 'paga' ? 'Paga' : 'Pendente'}</p>{Number(parcela.valorReservado || 0) > 0 && <p className="text-xs text-amber-800">{moeda.format(parcela.valorReservado)} reservado em uma tentativa ainda não confirmada.</p>}{segundaBloqueada && <p className="mt-1 text-xs text-amber-800">Disponível após a confirmação da conclusão da obra.</p>}</div>
+              <div><h2 className="font-semibold">{parcela.numero}ª parcela</h2><p className="text-sm text-slate-600">Saldo: {moeda.format(parcela.saldoDevedor ?? (parcela.situacao === 'paga' ? 0 : parcela.valor))} · {parcela.situacao === 'paga' ? 'Paga' : parcela.situacao === 'atrasada' ? 'Atrasada' : 'Pendente'}{parcela.vencimento ? ` · Vence em ${parcela.vencimento}` : ''}</p>{Number(parcela.valorReservado || 0) > 0 && <p className="text-xs text-amber-800">{moeda.format(parcela.valorReservado)} reservado em uma tentativa ainda não confirmada.</p>}{ultimaBloqueada && <p className="mt-1 text-xs text-amber-800">Última parcela disponível após o aceite da conclusão da obra.</p>}</div>
               <div className="flex flex-wrap gap-2">
                 {parcela.situacao === 'paga' ? <span className="font-semibold text-emerald-700">Confirmada</span> : <>
                   {(parcela.tentativasPendentes || []).map((tentativa) => <Button key={tentativa.id} variant="outline" disabled={indisponivel || Boolean(pagando)} onClick={() => retomar(parcela, tentativa)}>{pagando === parcela.id ? 'Retomando checkout…' : `Retomar tentativa · ${moeda.format(tentativa.valor)}`}</Button>)}

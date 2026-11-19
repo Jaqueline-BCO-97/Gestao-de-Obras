@@ -47,7 +47,7 @@ function expandirPagamento(pagamento) {
   const parcela = obra?.parcelas.find((item) => item.id === pagamento.parcelaId);
   return {
     ...pagamento,
-    obra: obra ? { id: obra.id, nome: obra.nome, empresaId: obra.empresaId, status: obra.status, conclusaoConfirmadaEm: obra.conclusaoConfirmadaEm } : null,
+    obra: obra ? { id: obra.id, nome: obra.nome, empresaId: obra.empresaId, status: obra.status, conclusaoConfirmadaEm: obra.conclusaoConfirmadaEm, quantidadeParcelas: obra.quantidadeParcelas, excluidaEm: obra.excluidaEm } : null,
     parcela: parcela ? { id: parcela.id, numero: parcela.numero, valor: parcela.valor, situacao: parcela.situacao } : null,
     usuario: localizar(usuarios, { id: pagamento.usuarioId }),
   };
@@ -86,7 +86,8 @@ const prismaFalso = {
     },
     findFirst: async ({ where }) => expandirPagamento(pagamentos.find((item) =>
       Object.entries(where).filter(([chave]) => chave !== "obra").every(([chave, valor]) => item[chave] === valor) &&
-      (!where.obra?.empresaId || localizar(obras, { id: item.obraId })?.empresaId === where.obra.empresaId)
+      (!where.obra?.empresaId || localizar(obras, { id: item.obraId })?.empresaId === where.obra.empresaId) &&
+      (where.obra?.excluidaEm === undefined || localizar(obras, { id: item.obraId })?.excluidaEm === where.obra.excluidaEm)
     ) || null),
     findMany: async ({ where }) => pagamentosDaConsulta(where).map((item) => ({ parcelaId: item.parcelaId, valor: item.valor, status: item.status })),
     create: async ({ data }) => {
@@ -117,6 +118,7 @@ const prismaFalso = {
     },
   },
   parcela: {
+    findFirst: async ({ where }) => obras.find((obra) => obra.id === where.obraId)?.parcelas.find((item) => item.numero === where.numero) || null,
     findMany: async ({ where }) => obras.find((obra) => obra.id === where.obraId)?.parcelas.map((item) => ({ situacao: item.situacao })) || [],
     update: async ({ where, data }) => {
       const parcela = obras.flatMap((obra) => obra.parcelas).find((item) => item.id === where.id);
@@ -132,6 +134,8 @@ const prismaFalso = {
       return evento;
     },
   },
+  usuario: { findMany: async ({ where }) => usuarios.filter((usuario) => usuario.empresaId === where.empresaId && usuario.tipo === where.tipo && (!where.id?.not || usuario.id !== where.id.not)).map(({ id }) => ({ id })) },
+  notificacao: { createMany: async () => ({ count: 0 }) },
 };
 prismaFalso.$transaction = async (callback) => {
   const anterior = filaTransacoes;
@@ -282,13 +286,13 @@ describe("Issue #18 — pagamento por checkout sandbox", () => {
   beforeEach(() => {
     obras = [
       {
-        id: "obra-a", nome: "Reforma A", empresaId: empresaA, clienteId: "cliente-a", valorTotal: "1500.00", status: "EM_ANDAMENTO", conclusaoSolicitadaEm: null, conclusaoConfirmadaEm: null,
+        id: "obra-a", nome: "Reforma A", empresaId: empresaA, clienteId: "cliente-a", valorTotal: "1500.00", valorBase: "1500.00", quantidadeParcelas: 2, excluidaEm: null, status: "EM_ANDAMENTO", conclusaoSolicitadaEm: null, conclusaoConfirmadaEm: null,
         parcelas: [
           { id: "parcela-1", numero: 1, valor: "1000.00", situacao: "PENDENTE", pagaEm: null, pagamentoExternoId: null },
           { id: "parcela-2", numero: 2, valor: "500.00", situacao: "PENDENTE", pagaEm: null, pagamentoExternoId: null },
         ],
       },
-      { id: "obra-b", nome: "Reforma B", empresaId: empresaB, clienteId: "cliente-b", valorTotal: "500.00", status: "EM_ANDAMENTO", conclusaoSolicitadaEm: null, conclusaoConfirmadaEm: null, parcelas: [{ id: "parcela-b", numero: 1, valor: "500.00", situacao: "PENDENTE", pagaEm: null, pagamentoExternoId: null }] },
+      { id: "obra-b", nome: "Reforma B", empresaId: empresaB, clienteId: "cliente-b", valorTotal: "500.00", valorBase: "500.00", quantidadeParcelas: 1, excluidaEm: null, status: "EM_ANDAMENTO", conclusaoSolicitadaEm: null, conclusaoConfirmadaEm: null, parcelas: [{ id: "parcela-b", numero: 1, valor: "500.00", situacao: "PENDENTE", pagaEm: null, pagamentoExternoId: null }] },
     ];
     pagamentos = [];
     eventos = [];
@@ -315,6 +319,10 @@ describe("Issue #18 — pagamento por checkout sandbox", () => {
     obras[0].status = "AGENDADA";
     const negada = await chamarRota("POST", "/obras/:id/status/iniciar", { usuarioId: "cliente-a", params: { id: "obra-a" } });
     assert.equal(negada.statusCode, 403);
+    const primeiraPendente = await chamarRota("POST", "/obras/:id/status/iniciar", { usuarioId: "admin-a", params: { id: "obra-a" } });
+    assert.equal(primeiraPendente.statusCode, 409);
+    assert.equal(eventos.length, 0);
+    obras[0].parcelas[0].situacao = "PAGA";
     const iniciada = await chamarRota("POST", "/obras/:id/status/iniciar", { usuarioId: "admin-a", params: { id: "obra-a" } });
     assert.equal(iniciada.statusCode, 200);
     assert.equal(obras[0].status, "EM_ANDAMENTO");
@@ -623,7 +631,7 @@ describe("Issue #18 — pagamento por checkout sandbox", () => {
     assert.equal(negadaOutroCliente.statusCode, 404);
 
     obras.push({
-      id: "obra-c", nome: "Reforma C", empresaId: empresaA, clienteId: "cliente-a", valorTotal: "300.00", status: "EM_ANDAMENTO",
+      id: "obra-c", nome: "Reforma C", empresaId: empresaA, clienteId: "cliente-a", valorTotal: "300.00", valorBase: "300.00", quantidadeParcelas: 1, excluidaEm: null, status: "EM_ANDAMENTO",
       parcelas: [{ id: "parcela-c", numero: 1, valor: "300.00", situacao: "PENDENTE", pagaEm: null, pagamentoExternoId: null }],
     });
     await criarPagamento("cliente-a", { valor: 100, chave: "retomar-outra-obra-01", parcelaId: "parcela-c", obraId: "obra-c" });

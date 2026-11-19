@@ -79,6 +79,12 @@ function criarPrismaFalso() {
     parcela: {
       findMany: async ({ where }) => (estado.obras.find((obra) => obra.id === where.obraId)?.parcelas || []).map((parcela) => ({ situacao: parcela.situacao })),
     },
+    usuario: {
+      findMany: async ({ where }) => perfis.filter((perfil) => perfil.empresaId === where.empresaId && perfil.tipo === where.tipo && (!where.id?.not || perfil.id !== where.id.not)).map(({ id }) => ({ id })),
+    },
+    notificacao: {
+      createMany: async ({ data }) => { estado.notificacoes.push(...data); return { count: data.length }; },
+    },
   };
 
   return {
@@ -190,6 +196,7 @@ describe("Issue #19 — reagendamento e conflitos entre obras", () => {
         { id: "obra-outra-empresa", empresaId: empresaB, clienteId: null, nome: "Obra Externa", status: "AGENDADA", agendadaPara: data("09:30"), prazoFinal: data("11:00"), valorTotal: 500, endereco: "Rua C" },
       ],
       eventos: [],
+      notificacoes: [],
     };
     falharCriacaoEvento = false;
     chamadasLock = [];

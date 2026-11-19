@@ -3,7 +3,7 @@ import AdminMenu from '../components/AdminMenu.jsx'
 import { useCallback, useEffect, useState } from 'react'
 
 // Importa os componentes de navegação do react-router-dom
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
 // Importa o componente reutilizável Card do sistema de design
 import Card from '../components/Card.jsx'
@@ -15,7 +15,15 @@ import Button from '../components/Button.jsx'
 import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a lista de colaboradores mockados para exibir os membros da equipe alocada
-import { listarObras, listarClientes, solicitarConferenciaObra, convidarPessoa, criarObra } from '../services/auth.js'
+import { listarObras, listarObrasArquivadas, restaurarObra, solicitarConferenciaObra, criarObra } from '../services/auth.js'
+
+function moedaEntrada(valor) {
+  const centavos = String(valor).replace(/\D/g, '')
+  if (!centavos) return ''
+  return (Number(centavos) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function moedaNumero(valor) { return String(valor).replace(/\./g, '').replace(',', '.') }
 
 // Importa a função de logout para permitir ao administrador encerrar a sessão
 
@@ -29,20 +37,19 @@ export default function AdminObras() {
 
   // Estado para armazenar o aviso de visualização ao clicar no botão "Ver"
   const [obras, setObras] = useState([])
+  const [arquivadas, setArquivadas] = useState([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
   const [solicitando, setSolicitando] = useState('')
-  const [convite, setConvite] = useState({ tipo: 'cliente', obraId: '', nome: '', email: '', telefone: '', endereco: '', funcao: '' })
-  const [linkConvite, setLinkConvite] = useState('')
-  const [clientes, setClientes] = useState([])
+  const [feedbackForm, setFeedbackForm] = useState('')
   const [fotosObra, setFotosObra] = useState([])
   const [novaObra, setNovaObra] = useState({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', valorTotal: '', informacoesAdicionais: '' })
 
-  const atualizarObras = useCallback(async () => { const [listaObras, listaClientes] = await Promise.all([listarObras(), listarClientes()]); setObras(listaObras); setClientes(listaClientes) }, [])
+  const atualizarObras = useCallback(async () => { const [ativas, arquivadasApi] = await Promise.all([listarObras(), listarObrasArquivadas()]); setObras(ativas); setArquivadas(arquivadasApi) }, [])
 
   useEffect(() => {
     let ativo = true
-    Promise.all([listarObras(), listarClientes()]).then(([resultado, listaClientes]) => { if (ativo) { setObras(resultado); setClientes(listaClientes); setErro('') } })
+    Promise.all([listarObras(), listarObrasArquivadas()]).then(([resultado, arquivadasApi]) => { if (ativo) { setObras(resultado); setArquivadas(arquivadasApi); setErro('') } })
       .catch((falha) => { if (ativo) setErro(falha.message) })
       .finally(() => { if (ativo) setCarregando(false) })
     return () => { ativo = false }
@@ -90,32 +97,41 @@ export default function AdminObras() {
     }
   }
 
-  async function handleConvidar(event) {
-    event.preventDefault(); setErro(''); setLinkConvite('')
-    try {
-      const resultado = await convidarPessoa(convite.tipo, { ...(convite.obraId ? { obraId: convite.obraId } : {}), nome: convite.nome, email: convite.email, telefone: convite.telefone, ...(convite.tipo === 'cliente' ? { endereco: convite.endereco } : { funcao: convite.funcao }) })
-      setLinkConvite(resultado.convite.link)
-      setConvite({ ...convite, nome: '', email: '', funcao: '' })
-    } catch (falha) { setErro(falha.message) }
+  async function handleRestaurar(obra) {
+    if (!obra.restauravel) return
+    setErro('')
+    try { await restaurarObra(obra.id); await atualizarObras() }
+    catch (falha) { setErro(falha.message) }
   }
 
   async function handleCriarObra(event) {
-    event.preventDefault(); setErro('')
+    event.preventDefault(); setErro(''); setFeedbackForm('')
+    const erros = []
+    if (!/^\d+$/.test(novaObra.numero)) erros.push('Número do endereço: use apenas números.')
+    if (!novaObra.semApartamento && !/^\d+$/.test(novaObra.apartamento)) erros.push('Apartamento: use apenas números.')
+    if (!novaObra.semBloco && !/^[a-z\d]+$/i.test(novaObra.bloco)) erros.push('Bloco: use apenas letras e números.')
+    const valorNormalizado = moedaNumero(novaObra.valorTotal)
+    if (!/^\d+(?:\.\d{1,2})?$/.test(valorNormalizado) || Number(valorNormalizado) <= 0) erros.push('Valor final: informe um valor maior que zero, com até duas casas decimais.')
+    if (erros.length) { setFeedbackForm(erros.join(' ')); return }
     try {
       const fotos = await Promise.all(fotosObra.map((arquivo) => new Promise((resolve, reject) => {
         const leitor = new FileReader(); leitor.onload = () => resolve({ data: leitor.result, mimeType: arquivo.type }); leitor.onerror = () => reject(new Error('Não foi possível ler uma das fotos.')); leitor.readAsDataURL(arquivo)
       })))
-      const resposta = await criarObra({ ...novaObra, fotos })
+      const resposta = await criarObra({ ...novaObra, valorTotal: valorNormalizado, fotos })
       setNovaObra({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', valorTotal: '', informacoesAdicionais: '' }); setFotosObra([])
-      setErro(resposta.avisos?.length ? `Obra criada, mas as fotos não foram enviadas: ${resposta.avisos.join('; ')}` : '')
+      setFeedbackForm(resposta.avisos?.length ? `Obra criada, mas as fotos não foram enviadas: ${resposta.avisos.join('; ')}` : 'Obra cadastrada. Cadastre o cliente na tela Clientes para anexar contrato e parcelas.')
       await atualizarObras()
-    } catch (falha) { setErro(falha.message) }
+    } catch (falha) { setFeedbackForm(falha.message) }
   }
 
   // Abre a página de gestão com dados, equipe e histórico da obra.
   function handleVerObra(obra) {
     navigate(`/admin/obra/${encodeURIComponent(obra.id)}`)
   }
+
+  const hoje = new Date()
+  const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`
+  const proximasObras = obras.filter((obra) => obra.status === 'Agendada' && obra.agendadaParaISO && obra.agendadaParaISO > hojeISO).sort((a, b) => a.agendadaParaISO.localeCompare(b.agendadaParaISO))
 
   // Renderiza a interface da página de Gestão de Obras
   return (
@@ -235,6 +251,8 @@ export default function AdminObras() {
             })}
           </div>
         </div>
+
+        {proximasObras.length > 0 && <section className="mb-6 rounded-xl border border-sky-200 bg-sky-50 p-4"><h2 className="font-bold text-navy">Obras nos próximos dias</h2><ul className="mt-2 grid gap-2 sm:grid-cols-2">{proximasObras.map((obra) => <li key={obra.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-sm"><span className="font-semibold text-navy">{obra.titulo}</span><span className="text-xs text-slate-600">{new Date(`${obra.agendadaParaISO}T12:00:00`).toLocaleDateString('pt-BR')}</span><Button variant="outline" onClick={() => handleVerObra(obra)} className="px-2 py-1 text-xs">Abrir</Button></li>)}</ul></section>}
 
         {/* Bloco da tabela: com overflow-x-auto restrito ao próprio bloco para rolagem em celulares */}
         <div className="w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -370,43 +388,29 @@ export default function AdminObras() {
 
         </div>
 
+        {arquivadas.length > 0 && <section className="mt-8 rounded-xl border border-amber-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Obras arquivadas</h2><p className="mt-1 text-xs text-slate-600">Cada obra fica recuperável até a data indicada. O registro é mantido no banco.</p><div className="mt-3 space-y-2">{arquivadas.map((obra) => <article key={obra.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-amber-50 p-3"><div><strong className="text-navy">{obra.titulo}</strong><p className="text-xs text-slate-600">Motivo: {obra.exclusaoMotivo} · {obra.restauravel ? `Restaurar até ${new Date(obra.exclusaoExpiraEm).toLocaleString('pt-BR')}` : 'Prazo de restauração expirado'}</p></div><Button variant="outline" disabled={!obra.restauravel} onClick={() => handleRestaurar(obra)} className="text-xs">Restaurar obra</Button></article>)}</div></section>}
+
         {/* Cartão de resumo rápido reutilizando Card.jsx */}
         <section className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-bold text-navy">Cadastrar obra</h2>
-          <p className="mt-1 text-sm text-slate-600">Cadastre os dados do projeto da sua empreiteira. Depois convide o cliente e atribua um gerente.</p>
+          <p className="mt-1 text-sm text-slate-600">Cadastre os dados da obra. O cliente, contrato e plano de parcelas são vinculados na tela Clientes. O valor base pode receber juros quando o cliente escolher mais de 12 parcelas.</p>
+          {feedbackForm && <p role="status" className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">{feedbackForm}</p>}
           <form onSubmit={handleCriarObra} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="text-sm">Nome da obra<input required value={novaObra.nome} onChange={(e) => setNovaObra({ ...novaObra, nome: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            <label className="text-sm">Cliente<select required value={novaObra.clienteId} onChange={(e) => setNovaObra({ ...novaObra, clienteId: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="">Selecione um cliente cadastrado</option>{clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome} · {cliente.email}</option>)}</select>{clientes.length === 0 && <Link to="/admin/clientes" className="mt-1 inline-block text-xs text-sky-700 underline">Cadastre e convide o cliente primeiro</Link>}</label>
             <label className="text-sm">Descrição da obra<input required value={novaObra.descricao} onChange={(e) => setNovaObra({ ...novaObra, descricao: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm">Estado<input required value={novaObra.estado} onChange={(e) => setNovaObra({ ...novaObra, estado: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm">Cidade<input required value={novaObra.cidade} onChange={(e) => setNovaObra({ ...novaObra, cidade: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm">Bairro<input required value={novaObra.bairro} onChange={(e) => setNovaObra({ ...novaObra, bairro: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm">Endereço (rua/avenida)<input required value={novaObra.endereco} onChange={(e) => setNovaObra({ ...novaObra, endereco: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            <label className="text-sm">Número<input required value={novaObra.numero} onChange={(e) => setNovaObra({ ...novaObra, numero: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            <div className="grid gap-2 sm:grid-cols-2"><label className="text-sm">Apartamento<input disabled={novaObra.semApartamento} required={!novaObra.semApartamento} value={novaObra.apartamento} onChange={(e) => setNovaObra({ ...novaObra, apartamento: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /></label><label className="mt-6 flex items-center gap-2 text-xs"><input type="checkbox" checked={novaObra.semApartamento} onChange={(e) => setNovaObra({ ...novaObra, semApartamento: e.target.checked, apartamento: '' })} /> Não existe apartamento</label></div>
-            <div className="grid gap-2 sm:grid-cols-2"><label className="text-sm">Bloco<input disabled={novaObra.semBloco} required={!novaObra.semBloco} value={novaObra.bloco} onChange={(e) => setNovaObra({ ...novaObra, bloco: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /></label><label className="mt-6 flex items-center gap-2 text-xs"><input type="checkbox" checked={novaObra.semBloco} onChange={(e) => setNovaObra({ ...novaObra, semBloco: e.target.checked, bloco: '' })} /> Não existe bloco</label></div>
+            <label className="text-sm">Número<input required inputMode="numeric" pattern="[0-9]+" title="Use apenas números" value={novaObra.numero} onChange={(e) => setNovaObra({ ...novaObra, numero: e.target.value.replace(/\D/g, '') })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <div className="grid gap-2 sm:grid-cols-2"><label className="text-sm">Apartamento<input disabled={novaObra.semApartamento} required={!novaObra.semApartamento} inputMode="numeric" pattern="[0-9]+" title="Use apenas números" value={novaObra.apartamento} onChange={(e) => setNovaObra({ ...novaObra, apartamento: e.target.value.replace(/\D/g, '') })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /></label><label className="mt-6 flex items-center gap-2 text-xs"><input type="checkbox" checked={novaObra.semApartamento} onChange={(e) => setNovaObra({ ...novaObra, semApartamento: e.target.checked, apartamento: '' })} /> Não existe apartamento</label></div>
+            <div className="grid gap-2 sm:grid-cols-2"><label className="text-sm">Bloco<input disabled={novaObra.semBloco} required={!novaObra.semBloco} pattern="[A-Za-z0-9]+" title="Use apenas letras e números" value={novaObra.bloco} onChange={(e) => setNovaObra({ ...novaObra, bloco: e.target.value.replace(/[^a-z\d]/gi, '') })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /></label><label className="mt-6 flex items-center gap-2 text-xs"><input type="checkbox" checked={novaObra.semBloco} onChange={(e) => setNovaObra({ ...novaObra, semBloco: e.target.checked, bloco: '' })} /> Não existe bloco</label></div>
             <label className="text-sm">Prazo final<input required type="date" value={novaObra.prazoFinal} onChange={(e) => setNovaObra({ ...novaObra, prazoFinal: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            <label className="text-sm">Valor final (R$)<input required type="number" min="0.01" step="0.01" value={novaObra.valorTotal} onChange={(e) => setNovaObra({ ...novaObra, valorTotal: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Valor base (R$)<input required inputMode="decimal" placeholder="40.000,25" value={novaObra.valorTotal} onChange={(e) => setNovaObra({ ...novaObra, valorTotal: moedaEntrada(e.target.value) })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm sm:col-span-2 lg:col-span-3">Informações de execução: serviços, materiais e medidas previstos no contrato<textarea required rows="4" value={novaObra.informacoesAdicionais} onChange={(e) => setNovaObra({ ...novaObra, informacoesAdicionais: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm sm:col-span-2 lg:col-span-3">Fotos iniciais (JPG, PNG ou WebP; até 5 arquivos de 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(e) => setFotosObra(Array.from(e.target.files || []).slice(0, 5))} className="mt-1 block w-full rounded border border-slate-300 p-2" /></label>
-            {clientes.length === 0 && <p className="sm:col-span-2 lg:col-span-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Para cadastrar a obra, primeiro convide o cliente em <Link className="font-semibold underline" to="/admin/clientes">Clientes</Link>.</p>}
-            <Button disabled={clientes.length === 0} type="submit" className="sm:col-span-2 lg:col-span-3">Criar obra</Button>
+            <Button type="submit" className="sm:col-span-2 lg:col-span-3">Criar obra</Button>
           </form>
-        </section>
-
-        <section className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-bold text-navy">Convidar cliente ou gerente</h2>
-          <p className="mt-1 text-sm text-slate-600">O cliente acompanha a obra no dashboard. O gerente pode atualizar somente as obras para as quais recebeu acesso. Copie o link gerado e envie à pessoa.</p>
-          <form onSubmit={handleConvidar} className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="text-sm">Quem deseja cadastrar?<select value={convite.tipo} onChange={(e) => setConvite({ ...convite, tipo: e.target.value, obraId: '' })} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="cliente">Cliente</option><option value="gerente">Gerente de obra</option></select></label>
-            {convite.tipo === 'gerente' ? <label className="text-sm">Obra vinculada<select required value={convite.obraId} onChange={(e) => setConvite({ ...convite, obraId: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="">Selecione uma obra</option>{obras.map((obra) => <option key={obra.id} value={obra.id}>{obra.titulo}</option>)}</select></label> : <label className="text-sm">Vincular a uma obra agora (opcional)<select value={convite.obraId} onChange={(e) => setConvite({ ...convite, obraId: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="">Ainda não; selecionar ao cadastrar a obra</option>{obras.filter((obra) => !obra.cliente).map((obra) => <option key={obra.id} value={obra.id}>{obra.titulo}</option>)}</select></label>}
-            <label className="text-sm">Nome<input required value={convite.nome} onChange={(e) => setConvite({ ...convite, nome: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            <label className="text-sm">E-mail<input required type="email" value={convite.email} onChange={(e) => setConvite({ ...convite, email: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            <label className="text-sm">Telefone<input type="tel" value={convite.telefone} onChange={(e) => setConvite({ ...convite, telefone: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            {convite.tipo === 'gerente' ? <label className="text-sm">Função<input required value={convite.funcao} onChange={(e) => setConvite({ ...convite, funcao: e.target.value })} placeholder="Ex.: Gerente de obras" className="mt-1 w-full rounded border border-slate-300 p-2" /></label> : <label className="text-sm">Endereço do cliente (opcional)<input value={convite.endereco} onChange={(e) => setConvite({ ...convite, endereco: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>}
-            <Button type="submit" className="sm:col-span-2">Gerar convite</Button>
-          </form>
-          {linkConvite && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900"><p>Convite válido por 48 horas. Copie e envie:</p><input readOnly value={linkConvite} onFocus={(e) => e.target.select()} className="mt-2 w-full rounded border border-emerald-200 bg-white p-2" /></div>}
         </section>
 
         {/* Cartão de resumo rápido reutilizando Card.jsx */}

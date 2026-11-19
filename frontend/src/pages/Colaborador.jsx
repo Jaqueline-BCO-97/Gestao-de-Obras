@@ -80,6 +80,7 @@ export default function Colaborador() {
           </div>
           <nav className="flex items-center flex-wrap gap-2 text-xs font-semibold" aria-label="Navegação do colaborador">
             <Link to="/colaborador" className="py-1.5 px-3 rounded-md bg-emerald-700 text-white">Minhas Obras</Link>
+            <Link to="/colaborador/notificacoes" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100">Notificações</Link>
             <Link to="/perfil" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100">Perfil</Link>
             <Button variant="outline" onClick={handleLogout} className="text-xs py-1.5 px-3">Sair</Button>
           </nav>

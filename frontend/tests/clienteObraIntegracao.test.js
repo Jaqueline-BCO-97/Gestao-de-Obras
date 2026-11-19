@@ -6,9 +6,11 @@ import { fileURLToPath } from 'node:url'
 const pagina = await readFile(fileURLToPath(new URL('../src/pages/ClienteObra.jsx', import.meta.url)), 'utf8')
 const painel = await readFile(fileURLToPath(new URL('../src/pages/Cliente.jsx', import.meta.url)), 'utf8')
 
-test('detalhe deixa claro que a API não fornece fotos e não monta registros fictícios', () => {
-  assert.match(pagina, /A API ainda não disponibiliza registros fotográficos para esta obra/)
-  assert.doesNotMatch(pagina, /obra\.fotos\.map|Registro #\{indice|>\s*Mock\s*</)
+test('detalhe exibe fotos reais da obra e do histórico sem montar registros fictícios', () => {
+  assert.match(pagina, /aria-label="Galeria de fotos"/)
+  assert.match(pagina, /\[\.\.\.\(obra\.fotos \|\| \[\]\)/)
+  assert.match(pagina, /evento\.fotoUrl/)
+  assert.doesNotMatch(pagina, /Registro #\{indice|>\s*Mock\s*</)
 })
 
 test('confirmação da conclusão chama API real após confirmação explícita', () => {

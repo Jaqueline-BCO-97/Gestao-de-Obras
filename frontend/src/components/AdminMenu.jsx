@@ -4,10 +4,13 @@ import { encerrarSessao } from '../services/auth.js'
 const links = [
   { to: '/admin', label: 'Início', end: true },
   { to: '/admin/obras', label: 'Gestão de Obras' },
-  { to: '/admin/funcionarios', label: 'Gerentes' },
+  { to: '/admin/funcionarios', label: 'Funcionários', end: true },
+  { to: '/admin/funcionarios/gerentes', label: 'Gerentes' },
   { to: '/admin/clientes', label: 'Clientes' },
   { to: '/admin/precos', label: 'Preços' },
   { to: '/admin/calendario', label: 'Calendário' },
+  { to: '/admin/pagamentos', label: 'Pagamentos' },
+  { to: '/admin/notificacoes', label: 'Notificações' },
   { to: '/perfil', label: 'Perfil' },
 ]
 

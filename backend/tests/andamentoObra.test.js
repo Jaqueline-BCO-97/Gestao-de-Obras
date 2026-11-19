@@ -16,6 +16,7 @@ const funcionarios = [
 ];
 const escalasAbertas = [{ id: "escala-a", obraId: "obra-a", funcionarioId: "funcionario-a", dataFim: null }];
 let eventos;
+let notificacoes;
 
 function localizar(lista, where) {
   return lista.find((item) => Object.entries(where).every(([chave, valor]) => item[chave] === valor)) || null;
@@ -25,6 +26,8 @@ const prismaFalso = {
   obra: { findFirst: async ({ where }) => localizar(obras, where) },
   funcionario: { findFirst: async ({ where }) => localizar(funcionarios, where) },
   obraEscala: { findFirst: async ({ where }) => localizar(escalasAbertas, where) },
+  usuario: { findMany: async ({ where }) => perfis.filter((perfil) => perfil.empresaId === where.empresaId && perfil.tipo === where.tipo && (!where.id?.not || perfil.id !== where.id.not)).map(({ id }) => ({ id })) },
+  notificacao: { createMany: async ({ data }) => { notificacoes.push(...data); return { count: data.length }; } },
   obraEvento: {
     create: async ({ data }) => {
       const evento = { id: `evento-${eventos.length + 1}`, criadoEm: new Date(), ...data };
@@ -112,7 +115,7 @@ async function chamarRotaAndamento({ usuarioId, body, obraId = "obra-a", content
 }
 
 describe("Issue #17 — persistência do registro de andamento", () => {
-  beforeEach(() => { eventos = []; });
+  beforeEach(() => { eventos = []; notificacoes = []; });
 
   it("persiste anotação com empresa, autor e visibilidade para o cliente", async () => {
     const resultado = await registrarAndamento({

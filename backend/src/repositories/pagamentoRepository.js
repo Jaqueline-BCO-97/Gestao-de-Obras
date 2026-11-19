@@ -33,10 +33,10 @@ function somarPagamentosPorParcela(pagamentos) {
 
 async function buscarPagamentoPorChave(chaveIdempotencia) {
   exigirBancoConfigurado();
-  return getPrisma().pagamento.findUnique({
-    where: { chaveIdempotencia },
+  return getPrisma().pagamento.findFirst({
+    where: { chaveIdempotencia, obra: { excluidaEm: null } },
     include: {
-      obra: { select: { id: true, nome: true, status: true, conclusaoConfirmadaEm: true } },
+      obra: { select: { id: true, nome: true, status: true, conclusaoConfirmadaEm: true, quantidadeParcelas: true, excluidaEm: true } },
       parcela: { select: { id: true, numero: true, valor: true } },
       usuario: { select: { id: true, email: true } },
     },
@@ -47,9 +47,9 @@ async function buscarTentativaPendenteDoCliente({ pagamentoId, obraId, empresaId
   exigirBancoConfigurado();
   return getPrisma().pagamento.findFirst({
     // Restringe pagamento, obra, cliente e empresa autenticados; IDs alheios viram 404.
-    where: { id: pagamentoId, obraId, usuarioId, obra: { empresaId } },
+    where: { id: pagamentoId, obraId, usuarioId, obra: { empresaId, excluidaEm: null } },
     include: {
-      obra: { select: { id: true, nome: true, status: true, conclusaoConfirmadaEm: true } },
+      obra: { select: { id: true, nome: true, status: true, conclusaoConfirmadaEm: true, quantidadeParcelas: true } },
       parcela: { select: { id: true, numero: true, valor: true } },
       usuario: { select: { id: true, email: true } },
     },
@@ -64,23 +64,27 @@ async function criarTentativaPagamento({ obraId, empresaId, usuarioId, parcelaId
     const existente = await tx.pagamento.findUnique({
       where: { chaveIdempotencia },
       include: {
-        obra: { select: { id: true, nome: true, status: true, conclusaoConfirmadaEm: true } },
+        obra: { select: { id: true, nome: true, status: true, conclusaoConfirmadaEm: true, quantidadeParcelas: true, excluidaEm: true } },
         parcela: { select: { id: true, numero: true, valor: true } },
         usuario: { select: { id: true, email: true } },
       },
     });
-    if (existente) return { pagamento: existente, repetida: true };
+    if (existente) {
+      if (existente.obra?.excluidaEm) throw erroPagamento("OBRA_NAO_ENCONTRADA", "Obra não encontrada para este cliente");
+      return { pagamento: existente, repetida: true };
+    }
 
     // O dono e a empresa são filtrados na própria consulta; dados do frontend
     // nunca podem ampliar o alcance do pagamento para outra conta ou empresa.
     const obra = await tx.obra.findFirst({
-      where: { id: obraId, empresaId, clienteId: usuarioId },
+      where: { id: obraId, empresaId, clienteId: usuarioId, excluidaEm: null },
       select: {
         id: true,
         nome: true,
         valorTotal: true,
         status: true,
         conclusaoConfirmadaEm: true,
+        quantidadeParcelas: true,
         parcelas: {
           select: { id: true, numero: true, valor: true, situacao: true },
           orderBy: { numero: "asc" },
@@ -93,9 +97,9 @@ async function criarTentativaPagamento({ obraId, empresaId, usuarioId, parcelaId
 
     const parcela = obra.parcelas.find((item) => item.id === parcelaId);
     if (!parcela) throw erroPagamento("PARCELA_NAO_ENCONTRADA", "Parcela não encontrada nesta obra");
-    // A segunda parcela só pode ser iniciada após a confirmação persistida da conclusão pelo cliente.
-    if (parcela.numero === 2 && !obra.conclusaoConfirmadaEm) {
-      throw erroPagamento("CONCLUSAO_NAO_CONFIRMADA", "A segunda parcela só pode ser paga após a confirmação da conclusão da obra");
+    // A última parcela só pode ser iniciada após a confirmação da conclusão pelo cliente.
+    if (obra.quantidadeParcelas > 1 && parcela.numero === obra.quantidadeParcelas && !obra.conclusaoConfirmadaEm) {
+      throw erroPagamento("CONCLUSAO_NAO_CONFIRMADA", "A última parcela só pode ser paga após a confirmação da conclusão da obra");
     }
 
     const pagamentos = await tx.pagamento.findMany({
@@ -180,7 +184,7 @@ async function processarConfirmacaoExterna({ pagamentoId, pedidoExterno }) {
   return prisma.$transaction(async (tx) => {
     const pagamento = await tx.pagamento.findUnique({
       where: { id: pagamentoId },
-      include: { obra: { select: { id: true, empresaId: true, status: true, conclusaoConfirmadaEm: true } }, parcela: { select: { id: true, numero: true, valor: true, situacao: true } } },
+      include: { obra: { select: { id: true, empresaId: true, status: true, conclusaoConfirmadaEm: true, quantidadeParcelas: true } }, parcela: { select: { id: true, numero: true, valor: true, situacao: true } } },
     });
     if (!pagamento) throw erroPagamento("PAGAMENTO_NAO_ENCONTRADO", "Tentativa de pagamento não encontrada");
     if (pagamento.pedidoExternoId !== String(pedidoExterno.pedidoId)) {
@@ -258,7 +262,7 @@ async function processarConfirmacaoExterna({ pagamentoId, pedidoExterno }) {
 
       // O evento é criado somente na transição real para aprovado, nunca ao
       // gerar o checkout ou ao receber uma confirmação duplicada.
-      await tx.obraEvento.create({
+      const eventoPagamento = await tx.obraEvento.create({
         data: {
           obraId: pagamento.obraId,
           empresaId: pagamento.obra.empresaId,
@@ -268,6 +272,17 @@ async function processarConfirmacaoExterna({ pagamentoId, pedidoExterno }) {
           visivelParaCliente: true,
         },
       });
+      const administradores = await tx.usuario.findMany({ where: { empresaId: pagamento.obra.empresaId, tipo: "ADMIN" }, select: { id: true } });
+      const destinatarios = new Set([pagamento.usuarioId, ...administradores.map((administrador) => administrador.id)]);
+      await tx.notificacao.createMany({ data: [...destinatarios].map((usuarioId) => ({
+        empresaId: pagamento.obra.empresaId,
+        usuarioId,
+        obraId: pagamento.obraId,
+        eventoId: eventoPagamento.id,
+        tipo: "PAGAMENTO",
+        titulo: "Pagamento confirmado",
+        descricao: `Pagamento da parcela ${pagamento.parcela.numero} confirmado.`,
+      })) });
     }
 
     return atualizado;

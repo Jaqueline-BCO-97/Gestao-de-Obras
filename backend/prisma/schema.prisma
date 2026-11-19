@@ -8,8 +8,10 @@ generator client {
 datasource db {
   // Define PostgreSQL como banco de dados.
   provider = "postgresql"
-  // Lê a conexão da variável DATABASE_URL.
+  // Conexão transacional usada pela aplicação.
   url      = env("DATABASE_URL")
+  // Prisma Migrate usa a conexão direta ou o pooler em modo de sessão.
+  directUrl = env("DIRECT_URL")
 }
 
 // Representa uma empresa que mantém usuários, obras e serviços.
@@ -18,6 +20,12 @@ model Empresa {
   id           String        @id @default(uuid())
   // Nome apresentado para a empresa.
   nome         String
+  cnpj         String?
+  cpfResponsavel String?
+  telefone     String?
+  telefoneSecundario String?
+  enderecoResponsavel String?
+  endereco     String?
   // Data de criação automática do registro.
   criadoEm     DateTime      @default(now())
   // Usuários que pertencem à empresa.
@@ -33,6 +41,8 @@ model Empresa {
   // Preços de serviços cadastrados pela empresa.
   tabelasPreco TabelaPreco[]
   convites     Convite[]
+  notificacoes Notificacao[]
+  disponibilidades DisponibilidadeFuncionario[]
 }
 
 // Representa uma pessoa que acessa o sistema.
@@ -53,6 +63,8 @@ model Usuario {
   tipo             TipoUsuario
   // Telefone de contato opcional.
   telefone         String?
+  telefoneSecundario String?
+  fotoUrl          String?
   endereco         String?
   // Data de criação automática do registro.
   criadoEm         DateTime         @default(now())
@@ -69,6 +81,7 @@ model Usuario {
   // Pagamentos iniciados por este usuário.
   pagamentos       Pagamento[]
   convitesCriados  Convite[]        @relation("ConviteCriadoPor")
+  notificacoes     Notificacao[]
 }
 
 // Representa uma obra pertencente a uma empresa.
@@ -103,6 +116,12 @@ model Obra {
   status                StatusObra   @default(AGENDADA)
   // Valor total da obra, inicialmente zero.
   valorTotal            Decimal      @default(0) @db.Decimal(12, 2)
+  valorBase             Decimal      @default(0) @db.Decimal(12, 2)
+  quantidadeParcelas    Int          @default(2)
+  taxaJurosMensal       Decimal      @default(0) @db.Decimal(5, 2)
+  excluidaEm            DateTime?
+  exclusaoExpiraEm      DateTime?
+  exclusaoMotivo        String?
   // Data e hora previstas para começar.
   agendadaPara          DateTime?
   // Prazo final planejado.
@@ -124,6 +143,8 @@ model Obra {
   // Contrato opcional da obra.
   contrato              Contrato?
   convites              Convite[]
+  notificacoes          Notificacao[]
+  disponibilidades      DisponibilidadeFuncionario[]
 }
 
 // Representa um profissional associado a uma empresa.
@@ -142,6 +163,7 @@ model Funcionario {
   nivel     NivelFuncionario
   // Telefone opcional do profissional.
   telefone  String?
+  fotoUrl   String?
   // Indica se o profissional está ativo.
   ativo     Boolean          @default(true)
   // Login opcional ligado ao cadastro do profissional.
@@ -152,6 +174,7 @@ model Funcionario {
   criadoEm  DateTime         @default(now())
   // Histórico de escalas deste profissional.
   escalas   ObraEscala[]
+  disponibilidades DisponibilidadeFuncionario[]
 
   // Acelera consultas de funcionários por empresa.
   @@index([empresaId])
@@ -172,6 +195,9 @@ model Convite {
   funcao      String?
   telefone    String?
   endereco    String?
+  quantidadeParcelas Int?
+  vencimentoInicial DateTime?
+  contratoUrl String?
   tokenHash   String      @unique
   expiraEm    DateTime
   usadoEm     DateTime?
@@ -233,6 +259,7 @@ model ObraEvento {
   visivelParaCliente Boolean    @default(true)
   // Data de criação automática do evento.
   criadoEm           DateTime   @default(now())
+  notificacoes       Notificacao[]
 
   // Acelera listagem cronológica dos eventos de uma obra.
   @@index([obraId, criadoEm])
@@ -256,6 +283,9 @@ model Parcela {
   situacao           SituacaoParcela @default(PENDENTE)
   // Data opcional em que o pagamento ocorreu.
   pagaEm             DateTime?
+  vencimento         DateTime?
+  comprovanteUrl     String?
+  comprovanteEnviadoEm DateTime?
   // Identificador opcional e exclusivo do sistema de pagamento externo.
   pagamentoExternoId String?         @unique
   // Tentativas associadas à parcela.
@@ -267,6 +297,43 @@ model Parcela {
   @@unique([id, obraId])
   // Acelera consultas de parcelas por obra.
   @@index([obraId])
+}
+
+// Aviso persistente endereçado a um usuário da empresa.
+model Notificacao {
+  id          String      @id @default(uuid())
+  empresaId   String
+  empresa     Empresa     @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  usuarioId   String
+  usuario     Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  obraId      String?
+  obra        Obra?       @relation(fields: [obraId], references: [id], onDelete: SetNull)
+  eventoId    String?
+  evento      ObraEvento? @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+  tipo        String
+  titulo      String
+  descricao   String
+  lidaEm      DateTime?
+  criadoEm    DateTime    @default(now())
+
+  @@index([usuarioId, lidaEm, criadoEm])
+  @@index([empresaId, criadoEm])
+}
+
+// Dias da semana em que um funcionário sem conta trabalha em uma obra.
+model DisponibilidadeFuncionario {
+  id            String      @id @default(uuid())
+  empresaId     String
+  empresa       Empresa     @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  funcionarioId String
+  funcionario   Funcionario @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+  obraId        String
+  obra          Obra        @relation(fields: [obraId], references: [id], onDelete: Cascade)
+  diaSemana     Int
+  criadoEm      DateTime    @default(now())
+
+  @@unique([funcionarioId, obraId, diaSemana])
+  @@index([obraId, diaSemana])
 }
 
 // Mantém cada tentativa financeira até a confirmação oficial do provedor.

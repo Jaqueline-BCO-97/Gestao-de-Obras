@@ -65,10 +65,10 @@ test('retomada usa o ID persistido e funciona sem a chave no sessionStorage', as
   }
 })
 
-test('retorno do checkout apenas consulta novamente e parcela dois fica bloqueada até conclusão', () => {
+test('retorno do checkout apenas consulta novamente e última parcela fica bloqueada até conclusão', () => {
   assert.match(pagina, /collection_status/)
   assert.match(pagina, /não confirma pagamento/)
-  assert.match(pagina, /parcela\.numero === 2 && !conclusaoConfirmada/)
+  assert.match(pagina, /parcelas\.length > 1 && parcela\.numero === parcelas\.length && !conclusaoConfirmada/)
   assert.doesNotMatch(pagina, /situacao\s*=\s*['"]paga/)
   assert.match(pagina, /setInterval\(consultar, 30000\)/)
   assert.match(pagina, /removeEventListener\('visibilitychange'/)
