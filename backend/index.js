@@ -8,12 +8,14 @@ require("dotenv").config();
 const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const { isDbConfigured } = require("./src/config/db");
+const crypto = require("node:crypto");
+const { getPrisma, isDbConfigured } = require("./src/config/db");
 const {
   listarUsuarios,
   buscarUsuarioPorEmail,
   buscarUsuarioPorId,
   buscarPerfilUsuarioPorId,
+  buscarFuncionarioPorUsuarioId,
   atualizarSenhaUsuario,
   criarUsuarioColaborador,
 } = require("./src/repositories/usuarioRepository");
@@ -21,12 +23,31 @@ const {
   listarObras,
   buscarObraPorId,
   criarObra,
+  listarAlocacoesDaObra,
+  alocarFuncionario,
+  encerrarAlocacao,
+  registrarAndamento,
+  validarPermissaoAndamento,
+  reagendarObra,
+  solicitarConferenciaObra,
+  confirmarConclusaoObra,
+  iniciarExecucaoObra,
+  confirmarPrimeiraParcela,
+  moverAlocacao,
+  atualizarDadosObra,
+  anexarFotoObra,
+  arquivarObra,
+  restaurarObra,
+  listarObrasArquivadas,
 } = require("./src/repositories/obraRepository");
+const pagamentoService = require("./src/services/pagamentoService");
+const mercadoPagoService = require("./src/services/mercadoPagoService");
+const cloudinaryService = require("./src/services/cloudinaryService");
 const authMiddleware = require("./src/middlewares/authMiddleware");
 const exigirPapel = require("./src/middlewares/exigirPapel");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "40mb" }));
 
 function exigirEmpresaDoToken(req, res, next) {
   if (typeof req.usuario?.empresaId !== "string" || !req.usuario.empresaId) {
@@ -35,7 +56,316 @@ function exigirEmpresaDoToken(req, res, next) {
   return next();
 }
 
+function converterDataHoraISO(valor) {
+  if (typeof valor !== "string") return null;
+  const partes = valor.match(/^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/);
+  if (!partes) return null;
+
+  const ano = Number(partes[1]);
+  const mes = Number(partes[2]);
+  const dia = Number(partes[3]);
+  if (ano < 1 || mes < 1 || mes > 12) return null;
+  const anoBissexto = ano % 4 === 0 && (ano % 100 !== 0 || ano % 400 === 0);
+  const diasNoMes = [31, anoBissexto ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (dia < 1 || dia > diasNoMes[mes - 1]) return null;
+
+  if (partes[8] !== "Z") {
+    const horaOffset = Number(partes[10]);
+    const minutoOffset = Number(partes[11]);
+    if (horaOffset > 14 || minutoOffset > 59 || (horaOffset === 14 && minutoOffset !== 0)) return null;
+  }
+
+  const instante = new Date(valor);
+  return Number.isFinite(instante.getTime()) ? instante : null;
+}
+
+function somarMesesPreservandoDia(dataInicial, quantidadeMeses) {
+  const dia = dataInicial.getUTCDate();
+  const resultado = new Date(Date.UTC(dataInicial.getUTCFullYear(), dataInicial.getUTCMonth() + quantidadeMeses, 1, 12));
+  const ultimoDia = new Date(Date.UTC(resultado.getUTCFullYear(), resultado.getUTCMonth() + 1, 0)).getUTCDate();
+  resultado.setUTCDate(Math.min(dia, ultimoDia));
+  return resultado;
+}
+
 const PORT = process.env.PORT || 3000;
+
+function hashConvite(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function sessao(usuario) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw Object.assign(new Error("JWT_SECRET não configurado"), { code: "JWT_NOT_CONFIGURED" });
+  const token = jwt.sign({ id: usuario.id, email: usuario.email, tipo: usuario.tipo, empresaId: usuario.empresaId }, secret, { expiresIn: "8h" });
+  return { token, usuario: { id: usuario.id, nome: usuario.nome, email: usuario.email, tipo: usuario.tipo, empresaId: usuario.empresaId } };
+}
+
+// Cadastro da empreiteira e da primeira conta administradora.
+app.post("/auth/registro-empreiteira", async (req, res) => {
+  try {
+    const { empresa, nome, email, senha, cnpj, cpfResponsavel, telefone, telefoneSecundario, enderecoResponsavel, endereco } = req.body || {};
+    if (![empresa, nome, email, senha, cnpj, cpfResponsavel, telefone, enderecoResponsavel, endereco].every((v) => typeof v === "string" && v.trim())) return res.status(400).json({ erro: "Preencha os dados da empresa, CNPJ, CPF, telefone, endereço pessoal, endereço da empresa e dados do administrador" });
+    if (senha.length < 8) return res.status(400).json({ erro: "A senha deve ter pelo menos 8 caracteres" });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return res.status(400).json({ erro: "E-mail inválido" });
+    if (cnpj.replace(/\D/g, "").length !== 14) return res.status(400).json({ erro: "CNPJ deve conter 14 números" });
+    if (cpfResponsavel.replace(/\D/g, "").length !== 11) return res.status(400).json({ erro: "CPF deve conter 11 números" });
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const senhaHash = await bcrypt.hash(senha, 10);
+    const usuario = await prisma.$transaction(async (tx) => {
+      const criada = await tx.empresa.create({ data: { nome: empresa.trim(), cnpj: cnpj.replace(/\D/g, ""), cpfResponsavel: cpfResponsavel.replace(/\D/g, ""), telefone: telefone.trim(), telefoneSecundario: telefoneSecundario?.trim() || null, enderecoResponsavel: enderecoResponsavel.trim(), endereco: endereco.trim() } });
+      return tx.usuario.create({ data: { empresaId: criada.id, nome: nome.trim(), email: email.trim().toLowerCase(), senhaHash, tipo: "ADMIN", telefone: telefone.trim(), telefoneSecundario: telefoneSecundario?.trim() || null, endereco: enderecoResponsavel.trim() } });
+    });
+    return res.status(201).json(sessao(usuario));
+  } catch (erro) {
+    if (erro.code === "P2002") return res.status(409).json({ erro: "E-mail já cadastrado" });
+    if (erro.code === "JWT_NOT_CONFIGURED") return res.status(503).json({ erro: "Autenticação não configurada" });
+    console.error("Erro ao cadastrar empreiteira:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível cadastrar a empreiteira" });
+  }
+});
+
+app.get("/convites/:token", async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const convite = await prisma.convite.findUnique({ where: { tokenHash: hashConvite(req.params.token) }, include: { empresa: { select: { nome: true } }, obra: { select: { nome: true } } } });
+    if (!convite) return res.status(404).json({ erro: "Convite não encontrado" });
+    return res.json({ tipo: convite.tipo, nome: convite.nome, email: convite.email, empresa: convite.empresa.nome, obra: convite.obra?.nome || null, expirado: convite.expiraEm <= new Date(), usado: Boolean(convite.usadoEm) });
+  } catch (erro) { return res.status(503).json({ erro: "Não foi possível consultar o convite" }); }
+});
+
+app.post("/convites/:token/aceitar", async (req, res) => {
+  try {
+    const { senha } = req.body || {};
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const tokenHash = hashConvite(req.params.token);
+    const conviteAtual = await prisma.convite.findUnique({ where: { tokenHash } });
+    if (!conviteAtual || conviteAtual.usadoEm || conviteAtual.expiraEm <= new Date()) return res.status(410).json({ erro: "Convite inválido, expirado ou já utilizado" });
+    let usuarioSessao = null;
+    const cabecalho = req.headers.authorization;
+    if (cabecalho?.startsWith("Bearer ")) {
+      try {
+        const decoded = jwt.verify(cabecalho.slice(7), process.env.JWT_SECRET, { algorithms: ["HS256"] });
+        usuarioSessao = await prisma.usuario.findUnique({ where: { id: decoded.id } });
+        if (!usuarioSessao || usuarioSessao.email !== decoded.email || usuarioSessao.empresaId !== decoded.empresaId || usuarioSessao.tipo !== decoded.tipo) usuarioSessao = null;
+      } catch { usuarioSessao = null; }
+    }
+    if (!usuarioSessao && (typeof senha !== "string" || senha.length < 8)) return res.status(400).json({ erro: "A senha deve ter pelo menos 8 caracteres" });
+    const senhaHash = usuarioSessao ? null : await bcrypt.hash(senha, 10);
+    const usuario = await prisma.$transaction(async (tx) => {
+      const convite = await tx.convite.findFirst({ where: { id: conviteAtual.id, usadoEm: null, expiraEm: { gt: new Date() } } });
+      if (!convite) throw Object.assign(new Error("Convite já utilizado"), { code: "INVITE_USED" });
+      const reivindicado = await tx.convite.updateMany({
+        where: { id: convite.id, usadoEm: null, expiraEm: { gt: new Date() } },
+        data: { usadoEm: new Date() },
+      });
+      if (reivindicado.count !== 1) throw Object.assign(new Error("Convite já utilizado"), { code: "INVITE_USED" });
+      const tipoUsuario = convite.tipo === "CLIENTE" ? "CLIENTE" : "COLABORADOR";
+      let novo = await tx.usuario.findUnique({ where: { email: convite.email } });
+      if (novo) {
+        if (!usuarioSessao || usuarioSessao.id !== novo.id || novo.empresaId !== convite.empresaId || novo.tipo !== tipoUsuario) throw Object.assign(new Error("Entre com a conta deste e-mail antes de aceitar o convite."), { code: "EMAIL_EXISTS" });
+      } else {
+        if (usuarioSessao) throw Object.assign(new Error("O convite foi enviado para outro e-mail. Saia da conta atual e use o e-mail convidado."), { code: "ACCOUNT_MISMATCH" });
+        novo = await tx.usuario.create({ data: { empresaId: convite.empresaId, nome: convite.nome, email: convite.email, senhaHash, tipo: tipoUsuario, telefone: convite.telefone, endereco: convite.endereco } });
+      }
+      if (usuarioSessao && (convite.telefone || convite.endereco)) {
+        novo = await tx.usuario.update({ where: { id: novo.id }, data: { ...(convite.telefone ? { telefone: convite.telefone } : {}), ...(convite.endereco ? { endereco: convite.endereco } : {}) } });
+      }
+      if (convite.tipo === "CLIENTE") {
+        if (convite.obraId) {
+          const vinculada = await tx.obra.updateMany({ where: { id: convite.obraId, empresaId: convite.empresaId, clienteId: null }, data: { clienteId: novo.id } });
+          const obra = await tx.obra.findFirst({ where: { id: convite.obraId, empresaId: convite.empresaId }, select: { id: true, clienteId: true, valorBase: true, valorTotal: true } });
+          if (!obra || (obra.clienteId !== novo.id && vinculada.count === 0)) throw Object.assign(new Error("A obra já está vinculada a outro cliente."), { code: "WORK_ALREADY_LINKED" });
+          if (convite.quantidadeParcelas && convite.vencimentoInicial) {
+            const parcelasAtuais = await tx.parcela.findMany({ where: { obraId: convite.obraId }, include: { pagamentos: { select: { id: true } } }, orderBy: { numero: "asc" } });
+            if (parcelasAtuais.some((parcela) => parcela.situacao === "PAGA" || parcela.pagamentos.length)) throw Object.assign(new Error("Não é possível alterar parcelas depois de iniciar pagamentos."), { code: "INSTALLMENTS_LOCKED" });
+            const quantidade = convite.quantidadeParcelas;
+            const taxa = quantidade > 12 ? 1 : 0;
+            const base = Number(obra.valorBase || obra.valorTotal);
+            const total = Math.round(base * (1 + (taxa / 100) * Math.max(0, quantidade - 12)) * 100) / 100;
+            const valores = Array.from({ length: quantidade }, (_, indice) => Math.round((total / quantidade) * 100) / 100);
+            valores[valores.length - 1] = Math.round((total - valores.slice(0, -1).reduce((soma, item) => soma + item, 0)) * 100) / 100;
+            await tx.obra.update({ where: { id: obra.id }, data: { valorBase: base.toFixed(2), valorTotal: total.toFixed(2), quantidadeParcelas: quantidade, taxaJurosMensal: taxa } });
+            for (let indice = 0; indice < quantidade; indice += 1) {
+              const vencimento = somarMesesPreservandoDia(new Date(convite.vencimentoInicial), indice);
+              const parcela = parcelasAtuais[indice];
+              if (parcela) await tx.parcela.update({ where: { id: parcela.id }, data: { numero: indice + 101, valor: valores[indice].toFixed(2), vencimento } });
+              else await tx.parcela.create({ data: { obraId: obra.id, numero: indice + 101, valor: valores[indice].toFixed(2), vencimento } });
+            }
+            for (const parcela of parcelasAtuais.slice(quantidade)) await tx.parcela.delete({ where: { id: parcela.id } });
+            for (let indice = 0; indice < quantidade; indice += 1) {
+              await tx.parcela.updateMany({ where: { obraId: obra.id, numero: indice + 101 }, data: { numero: indice + 1 } });
+            }
+            if (convite.contratoUrl) await tx.contrato.upsert({ where: { obraId: obra.id }, create: { obraId: obra.id, empresaId: convite.empresaId, termos: "Contrato anexado ao cadastrar o cliente.", arquivoUrl: convite.contratoUrl }, update: { termos: "Contrato anexado ao cadastrar o cliente.", arquivoUrl: convite.contratoUrl } });
+          }
+        }
+      } else {
+        let funcionario = await tx.funcionario.findUnique({ where: { usuarioId: novo.id } });
+        if (!funcionario) funcionario = await tx.funcionario.create({ data: { empresaId: convite.empresaId, nome: convite.nome, funcao: convite.funcao || "Gerente de obras", nivel: "RESPONSAVEL", telefone: convite.telefone, usuarioId: novo.id } });
+        else if (convite.telefone) await tx.funcionario.update({ where: { id: funcionario.id }, data: { telefone: convite.telefone } });
+        if (funcionario.empresaId !== convite.empresaId || !funcionario.ativo || funcionario.nivel !== "RESPONSAVEL") throw Object.assign(new Error("A conta existente não pode receber acesso de gerente."), { code: "MANAGER_PROFILE_INVALID" });
+        const escalaAberta = await tx.obraEscala.findFirst({ where: { obraId: convite.obraId, funcionarioId: funcionario.id, dataFim: null } });
+        if (!escalaAberta) {
+          await tx.obraEscala.create({ data: { obraId: convite.obraId, funcionarioId: funcionario.id, alteradoPorId: convite.criadoPorId, motivo: "Convite de gerente aceito" } });
+          const evento = await tx.obraEvento.create({ data: { obraId: convite.obraId, empresaId: convite.empresaId, usuarioId: convite.criadoPorId, tipo: "EQUIPE", descricao: `${convite.nome} recebeu acesso de gerente à obra.`, visivelParaCliente: false } });
+          await tx.notificacao.create({ data: { empresaId: convite.empresaId, usuarioId: novo.id, obraId: convite.obraId, eventoId: evento.id, tipo: "EQUIPE", titulo: "Você recebeu acesso a uma obra", descricao: "A empreiteira atribuiu uma obra à sua conta." } });
+        }
+      }
+      return novo;
+    });
+    return res.json(sessao(usuario));
+  } catch (erro) {
+    if (erro.code === "EMAIL_EXISTS") return res.status(409).json({ erro: erro.message });
+    if (["ACCOUNT_MISMATCH", "WORK_ALREADY_LINKED", "MANAGER_PROFILE_INVALID", "INSTALLMENTS_LOCKED"].includes(erro.code)) return res.status(409).json({ erro: erro.message });
+    if (erro.code === "INVITE_USED") return res.status(410).json({ erro: "Convite já utilizado" });
+    if (erro.code === "P2034") return res.status(409).json({ erro: "O convite foi aceito por outra solicitação; atualize a página" });
+    console.error("Erro ao aceitar convite:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível aceitar o convite" });
+  }
+});
+
+async function criarConvite(req, res, tipo) {
+  try {
+    const { obraId, nome, email, funcao, telefone, endereco, quantidadeParcelas, vencimentoInicial, contrato } = req.body || {};
+    const obraIdInformada = typeof obraId === "string" && obraId.trim() ? obraId.trim() : null;
+    if (![nome, email, telefone].every((v) => typeof v === "string" && v.trim()) || !obraIdInformada || (tipo === "GERENTE" && (typeof funcao !== "string" || !funcao.trim())) || (tipo === "CLIENTE" && (typeof endereco !== "string" || !endereco.trim()))) return res.status(400).json({ erro: tipo === "GERENTE" ? "Obra, nome, e-mail, telefone e função são obrigatórios" : "Obra, nome, e-mail, telefone e endereço são obrigatórios" });
+    if (tipo === "CLIENTE" && (!Number.isInteger(Number(quantidadeParcelas)) || Number(quantidadeParcelas) < 1 || Number(quantidadeParcelas) > 36 || !/^\d{4}-\d{2}-\d{2}$/.test(vencimentoInicial || "") || typeof contrato?.data !== "string" || contrato.mimeType !== "application/pdf")) return res.status(400).json({ erro: "Selecione o contrato PDF, a quantidade de parcelas (1 a 36) e a data do primeiro vencimento" });
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const obra = await prisma.obra.findFirst({ where: { id: obraIdInformada, empresaId: req.usuario.empresaId, excluidaEm: null } });
+    if (!obra) return res.status(404).json({ erro: "Obra não encontrada" });
+    if (tipo === "CLIENTE" && obra?.clienteId) return res.status(409).json({ erro: "Esta obra já está vinculada a um cliente" });
+    if (tipo === "CLIENTE") {
+      const pagamentos = await prisma.pagamento.count({ where: { obraId: obra.id } });
+      const pagas = await prisma.parcela.count({ where: { obraId: obra.id, situacao: "PAGA" } });
+      if (pagamentos || pagas) return res.status(409).json({ erro: "Só é possível vincular cliente e definir parcelas antes de iniciar pagamentos" });
+    }
+    if (tipo === "GERENTE" && (!obraIdInformada || !funcao?.trim())) return res.status(400).json({ erro: "Selecione a obra e informe a função" });
+    const normalizedEmail = email.trim().toLowerCase();
+    let contratoUrl = null;
+    let vencimento = null;
+    if (tipo === "CLIENTE") {
+      const dataComHora = new Date(`${vencimentoInicial}T12:00:00.000Z`);
+      if (!Number.isFinite(dataComHora.getTime()) || dataComHora.toISOString().slice(0, 10) !== vencimentoInicial) return res.status(400).json({ erro: "Data do primeiro vencimento inválida" });
+      vencimento = dataComHora;
+      contratoUrl = await cloudinaryService.enviarContratoObra({ arquivo: contrato, obraId: obra.id });
+    }
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const convite = await prisma.convite.create({ data: { empresaId: req.usuario.empresaId, obraId: obra.id, criadoPorId: req.usuario.id, tipo, nome: nome.trim(), email: normalizedEmail, telefone: telefone.trim(), endereco: tipo === "CLIENTE" ? endereco.trim() : null, funcao: tipo === "GERENTE" ? funcao.trim() : null, quantidadeParcelas: tipo === "CLIENTE" ? Number(quantidadeParcelas) : null, vencimentoInicial: vencimento, contratoUrl, tokenHash: hashConvite(rawToken), expiraEm: new Date(Date.now() + 48 * 60 * 60 * 1000) } });
+    const base = process.env.FRONTEND_URL || "http://localhost:5173";
+    return res.status(201).json({ convite: { id: convite.id, email: convite.email, expiraEm: convite.expiraEm, link: `${base.replace(/\/$/, "")}/convite/${rawToken}` } });
+  } catch (erro) {
+    if (erro.code === "CLOUDINARY_NAO_CONFIGURADO") return res.status(503).json({ erro: "Configure o armazenamento seguro para anexar contratos" });
+    if (["CONTRATO_INVALIDO", "CLOUDINARY_FALHA", "CLOUDINARY_INDISPONIVEL", "CLOUDINARY_RESPOSTA_INVALIDA"].includes(erro.code)) return res.status(400).json({ erro: erro.message });
+    console.error("Erro ao criar convite:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível criar o convite" });
+  }
+}
+
+app.post("/convites/cliente", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), (req, res) => criarConvite(req, res, "CLIENTE"));
+app.post("/convites/gerente", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), (req, res) => criarConvite(req, res, "GERENTE"));
+
+app.get("/convites", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const convites = await prisma.convite.findMany({
+      where: { empresaId: req.usuario.empresaId },
+      include: { obra: { select: { id: true, nome: true } } },
+      orderBy: { criadoEm: "desc" },
+    });
+    return res.json(convites.map(({ tokenHash, ...convite }) => convite));
+  } catch (erro) {
+    console.error("Erro ao listar convites:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao listar convites" });
+  }
+});
+
+app.post("/convites/:id/reenviar", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const convite = await prisma.convite.findFirst({ where: { id: req.params.id, empresaId: req.usuario.empresaId, usadoEm: null } });
+    if (!convite) return res.status(404).json({ erro: "Convite pendente não encontrado" });
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const expiraEm = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    const atualizado = await prisma.convite.updateMany({
+      where: { id: convite.id, empresaId: req.usuario.empresaId, usadoEm: null },
+      data: { tokenHash: hashConvite(rawToken), expiraEm },
+    });
+    if (atualizado.count !== 1) return res.status(409).json({ erro: "O convite já foi aceito; atualize a lista" });
+    const base = process.env.FRONTEND_URL || "http://localhost:5173";
+    return res.json({ convite: { id: convite.id, email: convite.email, expiraEm, link: `${base.replace(/\/$/, "")}/convite/${rawToken}` } });
+  } catch (erro) {
+    console.error("Erro ao gerar novo link de convite:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível gerar um novo link" });
+  }
+});
+
+app.get("/tabela-precos", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const precos = await prisma.tabelaPreco.findMany({ where: { empresaId: req.usuario.empresaId }, orderBy: [{ ativo: "desc" }, { servico: "asc" }] });
+    return res.json(precos.map((item) => ({ ...item, valor: Number(item.valor) })));
+  } catch (erro) { console.error("Erro ao consultar tabela de preços:", erro.code || erro.message); return res.status(500).json({ erro: "Erro ao consultar tabela de preços" }); }
+});
+
+app.post("/tabela-precos", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const { servico, unidade, valor } = req.body || {};
+    if (typeof servico !== "string" || !servico.trim() || servico.trim().length > 120 || typeof unidade !== "string" || !unidade.trim() || unidade.trim().length > 30) return res.status(400).json({ erro: "Serviço e unidade são obrigatórios (até 120 e 30 caracteres)" });
+    const normalizado = String(valor ?? "");
+    if (!/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(normalizado) || Number(normalizado) <= 0) return res.status(400).json({ erro: "O preço deve ser positivo e ter até duas casas decimais" });
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const preco = await prisma.tabelaPreco.create({ data: { empresaId: req.usuario.empresaId, servico: servico.trim(), unidade: unidade.trim(), valor: normalizado } });
+    return res.status(201).json({ preco: { ...preco, valor: Number(preco.valor) } });
+  } catch (erro) { console.error("Erro ao criar preço:", erro.code || erro.message); return res.status(500).json({ erro: "Erro ao criar preço" }); }
+});
+
+app.patch("/tabela-precos/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const dados = {};
+    for (const campo of ["servico", "unidade"]) {
+      if (req.body?.[campo] !== undefined) {
+        if (typeof req.body[campo] !== "string" || !req.body[campo].trim() || req.body[campo].trim().length > (campo === "servico" ? 120 : 30)) return res.status(400).json({ erro: `Campo ${campo} inválido` });
+        dados[campo] = req.body[campo].trim();
+      }
+    }
+    if (req.body?.valor !== undefined) {
+      const normalizado = String(req.body.valor);
+      if (!/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(normalizado) || Number(normalizado) <= 0) return res.status(400).json({ erro: "O preço deve ser positivo e ter até duas casas decimais" });
+      dados.valor = normalizado;
+    }
+    if (req.body?.ativo !== undefined) {
+      if (typeof req.body.ativo !== "boolean") return res.status(400).json({ erro: "ativo deve ser booleano" });
+      dados.ativo = req.body.ativo;
+    }
+    if (Object.keys(dados).length === 0) return res.status(400).json({ erro: "Informe dados para atualizar" });
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const resultado = await prisma.tabelaPreco.updateMany({ where: { id: req.params.id, empresaId: req.usuario.empresaId }, data: dados });
+    if (resultado.count !== 1) return res.status(404).json({ erro: "Preço não encontrado" });
+    const preco = await prisma.tabelaPreco.findFirst({ where: { id: req.params.id, empresaId: req.usuario.empresaId } });
+    return res.json({ preco: { ...preco, valor: Number(preco.valor) } });
+  } catch (erro) { console.error("Erro ao atualizar preço:", erro.code || erro.message); return res.status(500).json({ erro: "Erro ao atualizar preço" }); }
+});
+
+app.get("/calendario", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const obras = await prisma.obra.findMany({
+      where: { empresaId: req.usuario.empresaId, excluidaEm: null, agendadaPara: { not: null } },
+      select: { id: true, nome: true, status: true, agendadaPara: true, prazoFinal: true, cliente: { select: { nome: true } } },
+      orderBy: { agendadaPara: "asc" },
+    });
+    return res.json(obras);
+  } catch (erro) { console.error("Erro ao consultar calendário:", erro.code || erro.message); return res.status(500).json({ erro: "Erro ao consultar calendário" }); }
+});
 
 // Rota raiz — hello world do backend
 app.get("/", (req, res) => {
@@ -48,6 +378,39 @@ app.get("/health", (req, res) => {
     status: "ok",
     db: isDbConfigured() ? "configured" : "not_configured",
   });
+});
+
+// O webhook é público por definição, mas só processa eventos com assinatura
+// HMAC válida e estado consultado diretamente na API do Mercado Pago.
+app.post("/webhooks/mercado-pago", async (req, res) => {
+  const segredo = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
+  if (!segredo) return res.status(503).json({ erro: "Webhook do Mercado Pago não configurado" });
+
+  const tipo = req.query.type || req.query.topic || req.body?.type;
+  if (tipo && tipo !== "order") return res.status(200).json({ recebido: true, ignorado: true });
+
+  const dataId = req.query["data.id"];
+  const requestId = req.headers["x-request-id"];
+  const assinatura = req.headers["x-signature"];
+  if (!mercadoPagoService.validarAssinaturaWebhook({ assinatura, requestId, dataId, segredo })) {
+    return res.status(401).json({ erro: "Assinatura do webhook inválida" });
+  }
+
+  try {
+    await pagamentoService.confirmarNotificacaoMercadoPago(dataId);
+    return res.status(200).json({ recebido: true });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: "Banco temporariamente indisponível" });
+    if (erro.code?.startsWith("MERCADO_PAGO")) return res.status(503).json({ erro: "Não foi possível confirmar o evento no provedor" });
+    if (erro.code === "P2002" || erro.code === "TRANSACAO_DUPLICADA") {
+      return res.status(409).json({ erro: "A transação externa já está associada a outro pagamento" });
+    }
+    if (["REFERENCIA_EXTERNA_INVALIDA", "PEDIDO_EXTERNO_DIVERGENTE", "MOEDA_INVALIDA", "VALOR_EXTERNO_DIVERGENTE", "RESPOSTA_PROVEDOR_INVALIDA"].includes(erro.code)) {
+      return res.status(409).json({ erro: "Os dados confirmados pelo provedor não correspondem à tentativa local" });
+    }
+    console.error("Erro ao processar webhook do Mercado Pago:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível processar a confirmação do pagamento" });
+  }
 });
 
 // Rota de autenticação — login com e-mail e senha
@@ -67,6 +430,19 @@ app.post("/auth/login", async (req, res) => {
     const senhaValida = await bcrypt.compare(senha, usuario.senhaHash);
     if (!senhaValida) {
       return res.status(401).json({ erro: "Credenciais inválidas" });
+    }
+
+    if (usuario.tipo === "COLABORADOR") {
+      const funcionario = await buscarFuncionarioPorUsuarioId(usuario.id);
+      // Usa a mesma resposta genérica de credenciais para não revelar se um
+      // colaborador existe, foi desativado ou está associado a outra empresa.
+      if (
+        !funcionario ||
+        funcionario.ativo !== true ||
+        funcionario.empresaId !== usuario.empresaId
+      ) {
+        return res.status(401).json({ erro: "Credenciais inválidas" });
+      }
     }
 
     const secret = process.env.JWT_SECRET;
@@ -99,8 +475,11 @@ app.post("/auth/login", async (req, res) => {
       },
     });
   } catch (erro) {
-    if (erro.code === "DATABASE_NOT_CONFIGURED") {
-      return res.status(503).json({ erro: erro.message });
+    if (
+      erro.code === "DATABASE_NOT_CONFIGURED" ||
+      (typeof erro.name === "string" && erro.name.startsWith("PrismaClient"))
+    ) {
+      return res.status(503).json({ erro: "Não foi possível validar as credenciais no momento" });
     }
     console.error("Erro ao realizar login:", erro.message);
     return res.status(500).json({ erro: "Erro ao realizar login" });
@@ -124,6 +503,98 @@ app.get("/auth/me", authMiddleware, async (req, res) => {
   }
 });
 
+app.patch("/usuarios/me", authMiddleware, async (req, res) => {
+  try {
+    const corpo = req.body || {};
+    const dados = {};
+    if (corpo.email !== undefined) {
+      if (typeof corpo.email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(corpo.email.trim())) return res.status(400).json({ erro: "Informe um e-mail válido" });
+      dados.email = corpo.email.trim().toLowerCase();
+    }
+    for (const campo of ["telefone", "telefoneSecundario"]) {
+      if (corpo[campo] !== undefined) {
+        if (typeof corpo[campo] !== "string" || corpo[campo].trim().length > 40) return res.status(400).json({ erro: "Telefone inválido" });
+        dados[campo] = corpo[campo].trim() || null;
+      }
+    }
+    if (corpo.foto !== undefined) dados.fotoUrl = await cloudinaryService.enviarFotoObra({ foto: corpo.foto, obraId: req.usuario.id });
+    if (!Object.keys(dados).length) return res.status(400).json({ erro: "Informe e-mail, telefone ou foto para atualizar" });
+    const usuario = await getPrisma().usuario.update({ where: { id: req.usuario.id }, data: dados, select: { id: true, empresaId: true, nome: true, email: true, tipo: true, telefone: true, telefoneSecundario: true, fotoUrl: true, funcionario: { select: { funcao: true, telefone: true, fotoUrl: true } } } });
+    return res.json({ ...sessao(usuario), usuario, mensagem: "Perfil atualizado" });
+  } catch (erro) {
+    if (erro.code === "P2002") return res.status(409).json({ erro: "Este e-mail já está cadastrado" });
+    if (erro.code === "FOTO_INVALIDA") return res.status(400).json({ erro: erro.message });
+    if (erro.code?.startsWith("CLOUDINARY")) return res.status(503).json({ erro: erro.message });
+    console.error("Erro ao atualizar perfil:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível atualizar o perfil" });
+  }
+});
+
+app.get("/notificacoes", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
+  try {
+    const notificacoes = await getPrisma().notificacao.findMany({
+      where: { empresaId: req.usuario.empresaId, usuarioId: req.usuario.id },
+      include: { obra: { select: { id: true, nome: true } } },
+      orderBy: [{ lidaEm: "asc" }, { criadoEm: "desc" }],
+    });
+    return res.json(notificacoes);
+  } catch (erro) { console.error("Erro ao listar notificações:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível carregar as notificações" }); }
+});
+
+app.patch("/notificacoes/:id/lida", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
+  try {
+    const resultado = await getPrisma().notificacao.updateMany({ where: { id: req.params.id, empresaId: req.usuario.empresaId, usuarioId: req.usuario.id }, data: { lidaEm: new Date() } });
+    if (!resultado.count) return res.status(404).json({ erro: "Notificação não encontrada" });
+    return res.json({ mensagem: "Notificação marcada como lida" });
+  } catch (erro) { console.error("Erro ao marcar notificação:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível atualizar a notificação" }); }
+});
+
+app.delete("/notificacoes/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const resultado = await getPrisma().notificacao.deleteMany({ where: { id: req.params.id, empresaId: req.usuario.empresaId } });
+    if (!resultado.count) return res.status(404).json({ erro: "Notificação não encontrada" });
+    return res.json({ mensagem: "Notificação removida" });
+  } catch (erro) { console.error("Erro ao remover notificação:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível remover a notificação" }); }
+});
+
+app.get("/pagamentos", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    const whereObra = { empresaId: req.usuario.empresaId, excluidaEm: null, ...(req.usuario.tipo === "CLIENTE" ? { clienteId: req.usuario.id } : {}) };
+    if (req.usuario.tipo === "COLABORADOR") return res.status(403).json({ erro: "Acesso a pagamentos não permitido" });
+    const obras = await prisma.obra.findMany({ where: whereObra, select: { id: true, nome: true, valorTotal: true, parcelas: { orderBy: { numero: "asc" }, include: { pagamentos: { select: { id: true, valor: true, status: true } } } } }, orderBy: { criadoEm: "desc" } });
+    return res.json(obras.map((obra) => ({ id: obra.id, nome: obra.nome, valorTotal: Number(obra.valorTotal), parcelas: obra.parcelas.map((parcela) => ({ id: parcela.id, numero: parcela.numero, valor: Number(parcela.valor), situacao: parcela.situacao, vencimento: parcela.vencimento, comprovanteUrl: parcela.comprovanteUrl, comprovanteEnviadoEm: parcela.comprovanteEnviadoEm, pagamentos: parcela.pagamentos })) })));
+  } catch (erro) { console.error("Erro ao listar pagamentos:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível carregar os pagamentos" }); }
+});
+
+app.post("/obras/:id/parcelas/:parcelaId/comprovante", authMiddleware, exigirEmpresaDoToken, exigirPapel("CLIENTE"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    const obra = await prisma.obra.findFirst({ where: { id: req.params.id, empresaId: req.usuario.empresaId, clienteId: req.usuario.id, excluidaEm: null }, select: { id: true } });
+    if (!obra) return res.status(404).json({ erro: "Obra não encontrada" });
+    const parcela = await prisma.parcela.findFirst({ where: { id: req.params.parcelaId, obraId: obra.id } });
+    if (!parcela) return res.status(404).json({ erro: "Parcela não encontrada nesta obra" });
+    if (parcela.situacao === "PAGA") return res.status(409).json({ erro: "Esta parcela já foi confirmada como paga" });
+    const arquivo = req.body?.arquivo;
+    let comprovanteUrl;
+    if (arquivo?.mimeType === "application/pdf") comprovanteUrl = await cloudinaryService.enviarContratoObra({ arquivo, obraId: `${obra.id}/comprovantes` });
+    else if (arquivo?.mimeType?.startsWith("image/")) comprovanteUrl = await cloudinaryService.enviarFotoObra({ foto: arquivo, obraId: `${obra.id}/comprovantes` });
+    else return res.status(400).json({ erro: "Envie um comprovante em PDF, JPG, PNG ou WebP" });
+    const atualizada = await prisma.$transaction(async (tx) => {
+      const atualizadaParcela = await tx.parcela.update({ where: { id: parcela.id }, data: { comprovanteUrl, comprovanteEnviadoEm: new Date() } });
+      const administradores = await tx.usuario.findMany({ where: { empresaId: req.usuario.empresaId, tipo: "ADMIN" }, select: { id: true } });
+      if (administradores.length) await tx.notificacao.createMany({ data: administradores.map((administrador) => ({ empresaId: req.usuario.empresaId, usuarioId: administrador.id, obraId: obra.id, tipo: "PAGAMENTO", titulo: "Novo comprovante de pagamento", descricao: `O cliente enviou o comprovante da parcela ${parcela.numero}.` })) });
+      return atualizadaParcela;
+    });
+    return res.status(201).json({ parcela: { id: atualizada.id, comprovanteUrl: atualizada.comprovanteUrl, comprovanteEnviadoEm: atualizada.comprovanteEnviadoEm } });
+  } catch (erro) {
+    if (erro.code === "CONTRATO_INVALIDO" || erro.code === "FOTO_INVALIDA") return res.status(400).json({ erro: erro.message });
+    if (erro.code?.startsWith("CLOUDINARY")) return res.status(503).json({ erro: erro.message });
+    console.error("Erro ao enviar comprovante:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível enviar o comprovante" });
+  }
+});
+
 // Lista usuários do banco (model Usuario do Prisma) — rota privada protegida
 app.get("/usuarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
   try {
@@ -135,6 +606,130 @@ app.get("/usuarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"),
     }
     console.error("Erro ao listar usuários:", erro.message);
     res.status(500).json({ erro: "Erro ao listar usuários" });
+  }
+});
+
+// Lista funcionários da empresa e as obras em que têm escala ativa.
+app.get("/funcionarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const funcionarios = await prisma.funcionario.findMany({
+      where: { empresaId: req.usuario.empresaId },
+      include: {
+        usuario: { select: { id: true, email: true, tipo: true, fotoUrl: true } },
+        escalas: {
+          where: { dataFim: null },
+          include: { obra: { select: { id: true, nome: true, status: true } } },
+          orderBy: { dataInicio: "desc" },
+        },
+        disponibilidades: {
+          where: { obra: { empresaId: req.usuario.empresaId, excluidaEm: null } },
+          include: { obra: { select: { id: true, nome: true, status: true } } },
+          orderBy: [{ obra: { nome: "asc" } }, { diaSemana: "asc" }],
+        },
+      },
+      orderBy: [{ ativo: "desc" }, { nome: "asc" }],
+    });
+    return res.json(funcionarios.map((funcionario) => {
+      const porObra = new Map();
+      for (const item of funcionario.disponibilidades) {
+        if (!porObra.has(item.obraId)) porObra.set(item.obraId, { obraId: item.obraId, obra: item.obra, diasSemana: [] });
+        porObra.get(item.obraId).diasSemana.push(item.diaSemana);
+      }
+      return { ...funcionario, disponibilidades: [...porObra.values()] };
+    }));
+  } catch (erro) {
+    console.error("Erro ao listar funcionários:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao listar funcionários" });
+  }
+});
+
+function validarDisponibilidades(disponibilidades) {
+  if (!Array.isArray(disponibilidades) || !disponibilidades.length) return "Selecione pelo menos uma obra e os dias de trabalho";
+  const diasUsados = new Set();
+  const obrasSelecionadas = new Set();
+  for (const item of disponibilidades) {
+    if (!item || typeof item.obraId !== "string" || !Array.isArray(item.diasSemana) || !item.diasSemana.length || item.diasSemana.some((dia) => !Number.isInteger(dia) || dia < 0 || dia > 6)) return "Cada obra precisa ter ao menos um dia da semana válido";
+    if (obrasSelecionadas.has(item.obraId)) return "Selecione cada obra apenas uma vez";
+    obrasSelecionadas.add(item.obraId);
+    for (const dia of item.diasSemana) {
+      if (diasUsados.has(dia)) return "O funcionário não pode trabalhar em duas obras no mesmo dia";
+      diasUsados.add(dia);
+    }
+  }
+  return null;
+}
+
+app.post("/funcionarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const { nome, telefone, funcao, foto, disponibilidades } = req.body || {};
+    if (![nome, telefone, funcao].every((valor) => typeof valor === "string" && valor.trim()) || typeof foto?.data !== "string") return res.status(400).json({ erro: "Nome, telefone, função e foto 3x4 são obrigatórios" });
+    const erroEscala = validarDisponibilidades(disponibilidades);
+    if (erroEscala) return res.status(400).json({ erro: erroEscala });
+    const prisma = getPrisma();
+    const obras = await prisma.obra.findMany({ where: { id: { in: disponibilidades.map((item) => item.obraId) }, empresaId: req.usuario.empresaId, excluidaEm: null }, select: { id: true } });
+    if (obras.length !== new Set(disponibilidades.map((item) => item.obraId)).size) return res.status(400).json({ erro: "Uma ou mais obras não pertencem à empresa" });
+    const id = crypto.randomUUID();
+    const fotoUrl = await cloudinaryService.enviarFotoObra({ foto, obraId: id });
+    const funcionario = await prisma.$transaction(async (tx) => {
+      const novo = await tx.funcionario.create({ data: { id, empresaId: req.usuario.empresaId, nome: nome.trim(), telefone: telefone.trim(), funcao: funcao.trim(), nivel: "APOIO", fotoUrl } });
+      await tx.disponibilidadeFuncionario.createMany({ data: disponibilidades.flatMap((item) => [...new Set(item.diasSemana)].map((diaSemana) => ({ empresaId: req.usuario.empresaId, funcionarioId: id, obraId: item.obraId, diaSemana }))) });
+      return novo;
+    });
+    return res.status(201).json({ funcionario });
+  } catch (erro) {
+    if (erro.code === "FOTO_INVALIDA") return res.status(400).json({ erro: erro.message });
+    if (erro.code?.startsWith("CLOUDINARY")) return res.status(503).json({ erro: erro.message });
+    console.error("Erro ao criar funcionário:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível cadastrar o funcionário" });
+  }
+});
+
+app.patch("/funcionarios/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const { nome, telefone, funcao, foto, disponibilidades } = req.body || {};
+    if (![nome, telefone, funcao].every((valor) => typeof valor === "string" && valor.trim())) return res.status(400).json({ erro: "Nome, telefone e função são obrigatórios" });
+    const erroEscala = validarDisponibilidades(disponibilidades);
+    if (erroEscala) return res.status(400).json({ erro: erroEscala });
+    const prisma = getPrisma();
+    const atual = await prisma.funcionario.findFirst({ where: { id: req.params.id, empresaId: req.usuario.empresaId, usuarioId: null }, select: { id: true } });
+    if (!atual) return res.status(404).json({ erro: "Funcionário sem conta de acesso não encontrado" });
+    const obras = await prisma.obra.findMany({ where: { id: { in: disponibilidades.map((item) => item.obraId) }, empresaId: req.usuario.empresaId, excluidaEm: null }, select: { id: true } });
+    if (obras.length !== new Set(disponibilidades.map((item) => item.obraId)).size) return res.status(400).json({ erro: "Uma ou mais obras não pertencem à empresa" });
+    const fotoUrl = foto ? await cloudinaryService.enviarFotoObra({ foto, obraId: atual.id }) : undefined;
+    const funcionario = await prisma.$transaction(async (tx) => {
+      const atualizado = await tx.funcionario.update({ where: { id: atual.id }, data: { nome: nome.trim(), telefone: telefone.trim(), funcao: funcao.trim(), ...(fotoUrl ? { fotoUrl } : {}) } });
+      await tx.disponibilidadeFuncionario.deleteMany({ where: { funcionarioId: atual.id, empresaId: req.usuario.empresaId } });
+      await tx.disponibilidadeFuncionario.createMany({ data: disponibilidades.flatMap((item) => [...new Set(item.diasSemana)].map((diaSemana) => ({ empresaId: req.usuario.empresaId, funcionarioId: atual.id, obraId: item.obraId, diaSemana }))) });
+      return atualizado;
+    });
+    return res.json({ funcionario });
+  } catch (erro) {
+    if (erro.code === "FOTO_INVALIDA") return res.status(400).json({ erro: erro.message });
+    if (erro.code?.startsWith("CLOUDINARY")) return res.status(503).json({ erro: erro.message });
+    console.error("Erro ao atualizar funcionário:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível atualizar o funcionário" });
+  }
+});
+
+// Lista clientes da empresa e as obras que cada um acompanha.
+app.get("/clientes", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const prisma = getPrisma();
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    const clientes = await prisma.usuario.findMany({
+      where: { empresaId: req.usuario.empresaId, tipo: "CLIENTE" },
+      select: {
+        id: true, nome: true, email: true, telefone: true, telefoneSecundario: true, fotoUrl: true, endereco: true, criadoEm: true,
+        obrasComoCliente: { where: { empresaId: req.usuario.empresaId }, select: { id: true, nome: true, status: true } },
+      },
+      orderBy: { nome: "asc" },
+    });
+    return res.json(clientes);
+  } catch (erro) {
+    console.error("Erro ao listar clientes:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao listar clientes" });
   }
 });
 
@@ -175,22 +770,36 @@ app.post("/colaboradores", authMiddleware, exigirEmpresaDoToken, exigirPapel("AD
 // Criação restrita a ADMIN: leitura (GET) continua liberada pra qualquer usuário autenticado da empresa.
 app.post("/obras", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
   try {
-    const { nome, descricao, endereco } = req.body || {};
-    if (typeof nome !== "string" || !nome.trim()) {
-      return res.status(400).json({ erro: "Nome da obra é obrigatório" });
+    const corpo = req.body || {};
+    const obrigatorios = ["nome", "descricao", "estado", "cidade", "bairro", "endereco", "numero", "prazoFinal"];
+    if (obrigatorios.some((campo) => typeof corpo[campo] !== "string" || !corpo[campo].trim())) return res.status(400).json({ erro: "Preencha nome, descrição, estado, cidade, bairro, endereço, número e prazo da obra" });
+    if (!/^\d+$/.test(corpo.numero.trim())) return res.status(400).json({ erro: "O número do endereço deve conter apenas números" });
+    if (typeof corpo.semApartamento !== "boolean" || typeof corpo.semBloco !== "boolean") return res.status(400).json({ erro: "Informe se o endereço possui apartamento e bloco" });
+    if (!corpo.semApartamento && (typeof corpo.apartamento !== "string" || !corpo.apartamento.trim())) return res.status(400).json({ erro: "Informe o apartamento ou marque que não existe" });
+    if (!corpo.semApartamento && !/^\d+$/.test(corpo.apartamento.trim())) return res.status(400).json({ erro: "O apartamento deve conter apenas números" });
+    if (!corpo.semBloco && (typeof corpo.bloco !== "string" || !corpo.bloco.trim())) return res.status(400).json({ erro: "Informe o bloco ou marque que não existe" });
+    if (!corpo.semBloco && !/^[A-Za-z0-9]+$/.test(corpo.bloco.trim())) return res.status(400).json({ erro: "O bloco deve conter apenas letras e números" });
+    if (typeof corpo.descricao !== "string" || corpo.descricao.trim().length > 5000 || typeof corpo.informacoesAdicionais !== "string" || !corpo.informacoesAdicionais.trim()) return res.status(400).json({ erro: "Descrição e informações de execução são obrigatórias" });
+    if (typeof corpo.valorTotal !== "string" && typeof corpo.valorTotal !== "number") return res.status(400).json({ erro: "Valor final da obra é obrigatório" });
+    const valorTotal = String(corpo.valorTotal);
+    if (!/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(valorTotal) || Number(valorTotal) <= 0) return res.status(400).json({ erro: "Valor final deve ser positivo e ter até duas casas decimais" });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(corpo.prazoFinal) || !Number.isFinite(new Date(`${corpo.prazoFinal}T12:00:00.000Z`).getTime())) return res.status(400).json({ erro: "Informe um prazo final válido" });
+    if (corpo.fotos !== undefined && (!Array.isArray(corpo.fotos) || corpo.fotos.length > 5)) return res.status(400).json({ erro: "Envie até cinco fotos iniciais" });
+    const prisma = getPrisma();
+    let cliente = null;
+    if (corpo.clienteId !== undefined && corpo.clienteId !== null && corpo.clienteId !== "") {
+      cliente = await prisma.usuario.findFirst({ where: { id: corpo.clienteId, empresaId: req.usuario.empresaId, tipo: "CLIENTE" }, select: { id: true } });
+      if (!cliente) return res.status(400).json({ erro: "Selecione um cliente cadastrado nesta empreiteira" });
     }
-    for (const [campo, valor] of [["descricao", descricao], ["endereco", endereco]]) {
-      if (valor !== undefined && typeof valor !== "string") {
-        return res.status(400).json({ erro: `Campo ${campo} deve ser texto` });
-      }
+    const obra = await criarObra({ empresaId: req.usuario.empresaId, nome: corpo.nome.trim(), descricao: corpo.descricao.trim(), endereco: corpo.endereco.trim(), estado: corpo.estado.trim(), cidade: corpo.cidade.trim(), bairro: corpo.bairro.trim(), numero: corpo.numero.trim(), apartamento: corpo.semApartamento ? null : corpo.apartamento.trim(), bloco: corpo.semBloco ? null : corpo.bloco.trim(), semApartamento: corpo.semApartamento, semBloco: corpo.semBloco, informacoesAdicionais: corpo.informacoesAdicionais.trim(), valorTotal, prazoFinal: new Date(`${corpo.prazoFinal}T12:00:00.000Z`), clienteId: cliente?.id || null });
+    const avisos = [];
+    for (const foto of corpo.fotos || []) {
+      try {
+        const fotoUrl = await cloudinaryService.enviarFotoObra({ foto, obraId: obra.id });
+        await anexarFotoObra({ obraId: obra.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id, fotoUrl });
+      } catch (erroFoto) { avisos.push(erroFoto.message || "Não foi possível enviar uma das fotos."); }
     }
-    const obra = await criarObra({
-      empresaId: req.usuario.empresaId,
-      nome: nome.trim(),
-      descricao: descricao?.trim() || null,
-      endereco: endereco?.trim() || null,
-    });
-    return res.status(201).json({ obra });
+    return res.status(201).json({ obra, avisos });
   } catch (erro) {
     if (erro.code === "DATABASE_NOT_CONFIGURED") {
       return res.status(503).json({ erro: erro.message });
@@ -214,6 +823,11 @@ app.get("/obras", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
   }
 });
 
+app.get("/obras/arquivadas", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try { return res.json(await listarObrasArquivadas(req.usuario.empresaId)); }
+  catch (erro) { console.error("Erro ao listar obras arquivadas:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível carregar as obras arquivadas" }); }
+});
+
 app.get("/obras/:id", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
   try {
     // Busca a obra dentro da empresa e do escopo permitido ao perfil.
@@ -228,6 +842,466 @@ app.get("/obras/:id", authMiddleware, exigirEmpresaDoToken, async (req, res) => 
     }
     console.error("Erro ao consultar obra:", erro.message);
     return res.status(500).json({ erro: "Erro ao consultar obra" });
+  }
+});
+
+app.patch("/obras/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const dados = {};
+    for (const campo of ["nome", "descricao", "endereco", "estado", "cidade", "bairro", "numero", "apartamento", "bloco", "informacoesAdicionais"]) {
+      if (req.body?.[campo] !== undefined) {
+        if (typeof req.body[campo] !== "string" || (campo === "nome" && !req.body[campo].trim())) {
+          return res.status(400).json({ erro: campo === "nome" ? "Nome da obra não pode ficar vazio" : `${campo} deve ser texto` });
+        }
+        dados[campo] = req.body[campo].trim() || null;
+      }
+    }
+    for (const campo of ["semApartamento", "semBloco"]) {
+      if (req.body?.[campo] !== undefined) {
+        if (typeof req.body[campo] !== "boolean") return res.status(400).json({ erro: `${campo} deve ser booleano` });
+        dados[campo] = req.body[campo];
+      }
+    }
+    if (dados.numero !== undefined && dados.numero !== null && !/^\d+$/.test(dados.numero)) return res.status(400).json({ erro: "O número do endereço deve conter apenas números" });
+    if (dados.apartamento !== undefined && dados.apartamento !== null && !/^\d+$/.test(dados.apartamento)) return res.status(400).json({ erro: "O apartamento deve conter apenas números" });
+    if (dados.bloco !== undefined && dados.bloco !== null && !/^[A-Za-z0-9]+$/.test(dados.bloco)) return res.status(400).json({ erro: "O bloco deve conter apenas letras e números" });
+    if (req.body?.prazoFinal !== undefined) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.body.prazoFinal) || !Number.isFinite(new Date(`${req.body.prazoFinal}T12:00:00.000Z`).getTime())) return res.status(400).json({ erro: "Informe um prazo final válido" });
+      dados.prazoFinal = new Date(`${req.body.prazoFinal}T12:00:00.000Z`);
+    }
+    if (req.body?.valorTotal !== undefined) {
+      const valor = String(req.body.valorTotal);
+      if (!/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(valor) || Number(valor) <= 0) return res.status(400).json({ erro: "Valor final deve ser positivo e ter até duas casas decimais" });
+      dados.valorTotal = valor;
+    }
+    if (req.body?.clienteId !== undefined) {
+      if (typeof req.body.clienteId !== "string" || !req.body.clienteId.trim()) return res.status(400).json({ erro: "Selecione um cliente válido" });
+      const cliente = await getPrisma().usuario.findFirst({ where: { id: req.body.clienteId, empresaId: req.usuario.empresaId, tipo: "CLIENTE" }, select: { id: true } });
+      if (!cliente) return res.status(400).json({ erro: "Cliente não encontrado nesta empreiteira" });
+      dados.clienteId = cliente.id;
+    }
+    if (Object.keys(dados).length === 0) return res.status(400).json({ erro: "Informe ao menos um campo para atualizar" });
+    const resultado = await atualizarDadosObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id, dados });
+    if (!resultado) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.json(resultado);
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "VALOR_OBRA_TRAVADO") return res.status(409).json({ erro: erro.message });
+    console.error("Erro ao atualizar dados da obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao atualizar dados da obra" });
+  }
+});
+
+app.post("/obras/:id/contrato", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  return res.status(409).json({ erro: "Anexe o contrato ao cadastrar o cliente, na tela Clientes." });
+});
+
+app.post("/obras/:id/fotos", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const foto = req.body?.foto;
+    const obra = await getPrisma().obra.findFirst({ where: { id: req.params.id, empresaId: req.usuario.empresaId, excluidaEm: null }, select: { id: true, fotos: true } });
+    if (!obra) return res.status(404).json({ erro: "Obra não encontrada" });
+    if (obra.fotos.length >= 20) return res.status(409).json({ erro: "A obra já atingiu o limite de 20 fotos" });
+    const fotoUrl = await cloudinaryService.enviarFotoObra({ foto, obraId: obra.id });
+    const atualizada = await anexarFotoObra({ obraId: obra.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id, fotoUrl });
+    return res.status(201).json({ obra: atualizada });
+  } catch (erro) {
+    if (erro.code === "FOTO_INVALIDA") return res.status(400).json({ erro: erro.message });
+    if (erro.code?.startsWith("CLOUDINARY")) return res.status(503).json({ erro: erro.message });
+    console.error("Erro ao adicionar foto da obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível adicionar a foto" });
+  }
+});
+
+// Só ADMIN da empresa pode confirmar novo intervalo; obra e autor vêm da sessão,
+// e a mudança junto do evento visível ao cliente é confirmada numa transação.
+app.patch("/obras/:id/agendamento", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const corpo = req.body;
+    if (!corpo || typeof corpo !== "object" || Array.isArray(corpo)) {
+      return res.status(400).json({ erro: "Informe agendadaPara e prazoFinal" });
+    }
+
+    const agendadaPara = converterDataHoraISO(corpo.agendadaPara);
+    const prazoFinal = converterDataHoraISO(corpo.prazoFinal);
+    if (!agendadaPara || !prazoFinal) {
+      return res.status(400).json({ erro: "agendadaPara e prazoFinal devem ser datas ISO 8601 válidas com fuso horário" });
+    }
+    if (prazoFinal <= agendadaPara) {
+      return res.status(400).json({ erro: "prazoFinal deve ser posterior a agendadaPara" });
+    }
+
+    const resultado = await reagendarObra({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      administradorId: req.usuario.id,
+      agendadaPara,
+      prazoFinal,
+    });
+    if (!resultado) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.json({
+      obra: {
+        ...resultado.obra,
+        agendadaPara: resultado.agendadaPara.toISOString(),
+        prazoFinal: resultado.prazoFinal.toISOString(),
+      },
+      evento: resultado.evento,
+      alterada: resultado.alterada,
+    });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "AGENDAMENTO_CONFLITO") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "AGENDAMENTO_CONCORRENTE" || erro.code === "P2034") {
+      return res.status(409).json({ erro: erro.message || "O agendamento foi alterado por outra operação; atualize e tente novamente" });
+    }
+    console.error("Erro ao reagendar obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao reagendar obra" });
+  }
+});
+
+// A conclusão percorre duas operações explícitas, cada uma autorizada por perfil.
+app.post("/obras/:id/status/iniciar", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const resultado = await iniciarExecucaoObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id });
+    return res.json(resultado);
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "OBRA_NAO_ENCONTRADA") return res.status(404).json({ erro: erro.message });
+    if (erro.code === "STATUS_INVALIDO") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "PRIMEIRA_PARCELA_PENDENTE") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada por outra operação; atualize e tente novamente" });
+    console.error("Erro ao iniciar execução da obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao iniciar execução da obra" });
+  }
+});
+
+app.post("/obras/:id/parcelas/primeira/confirmar", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const parcela = await confirmarPrimeiraParcela({ obraId: req.params.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id });
+    return res.json({ parcela });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "PARCELA_NAO_ENCONTRADA") return res.status(404).json({ erro: erro.message });
+    if (erro.code === "PAGAMENTO_ONLINE_PENDENTE") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "P2034") return res.status(409).json({ erro: "O pagamento mudou durante a confirmação. Atualize os dados antes de tentar novamente" });
+    console.error("Erro ao confirmar primeira parcela:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível confirmar o recebimento" });
+  }
+});
+
+app.post("/obras/:id/arquivar", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const { senha, motivo } = req.body || {};
+    if (typeof senha !== "string" || !senha || typeof motivo !== "string" || motivo.trim().length < 10 || motivo.trim().length > 500) return res.status(400).json({ erro: "Confirme sua senha e informe o motivo da exclusão (10 a 500 caracteres)" });
+    const administrador = await buscarUsuarioPorId(req.usuario.id);
+    if (!administrador || !(await bcrypt.compare(senha, administrador.senhaHash))) return res.status(401).json({ erro: "Senha de confirmação incorreta" });
+    const obra = await arquivarObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, motivo: motivo.trim() });
+    if (!obra) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.json({ mensagem: "Obra arquivada por sete dias", exclusaoExpiraEm: obra.exclusaoExpiraEm });
+  } catch (erro) {
+    const respostas = { OBRA_EM_EXECUCAO: 409, PAGAMENTO_RECEBIDO: 409, ACEITE_CLIENTE_NECESSARIO: 409 };
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada durante a exclusão. Atualize e tente novamente" });
+    if (respostas[erro.code]) return res.status(respostas[erro.code]).json({ erro: erro.message });
+    console.error("Erro ao arquivar obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível arquivar a obra" });
+  }
+});
+
+app.post("/obras/:id/restaurar", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const obra = await restaurarObra({ obraId: req.params.id, empresaId: req.usuario.empresaId });
+    if (!obra) return res.status(404).json({ erro: "Obra arquivada não encontrada" });
+    return res.json({ mensagem: "Obra restaurada" });
+  } catch (erro) {
+    if (erro.code === "PRAZO_RESTAURACAO_EXPIRADO") return res.status(410).json({ erro: erro.message });
+    console.error("Erro ao restaurar obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível restaurar a obra" });
+  }
+});
+
+app.post("/obras/:id/conclusao/solicitar", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const resultado = await solicitarConferenciaObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, administradorId: req.usuario.id });
+    return res.json(resultado);
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "OBRA_NAO_ENCONTRADA") return res.status(404).json({ erro: erro.message });
+    if (erro.code === "STATUS_INVALIDO") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada por outra operação; atualize e tente novamente" });
+    console.error("Erro ao solicitar conferência da obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao solicitar conferência da obra" });
+  }
+});
+
+app.post("/obras/:id/conclusao/confirmar", authMiddleware, exigirEmpresaDoToken, exigirPapel("CLIENTE"), async (req, res) => {
+  try {
+    const resultado = await confirmarConclusaoObra({ obraId: req.params.id, empresaId: req.usuario.empresaId, clienteId: req.usuario.id });
+    return res.json(resultado);
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "OBRA_NAO_ENCONTRADA") return res.status(404).json({ erro: erro.message });
+    if (erro.code === "STATUS_INVALIDO") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada por outra operação; atualize e tente novamente" });
+    console.error("Erro ao confirmar conclusão da obra:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao confirmar conclusão da obra" });
+  }
+});
+
+// O cliente inicia somente pagamentos das próprias obras. Valor e saldo são
+// revalidados no repositório contra as parcelas persistidas.
+app.post("/obras/:id/pagamento", authMiddleware, exigirEmpresaDoToken, exigirPapel("CLIENTE"), async (req, res) => {
+  try {
+    const { parcelaId, valor } = req.body || {};
+    const chaveIdempotencia = req.headers["idempotency-key"];
+    if (typeof parcelaId !== "string" || !parcelaId.trim()) {
+      return res.status(400).json({ erro: "parcelaId é obrigatório" });
+    }
+    if (typeof chaveIdempotencia !== "string" || !/^[\x21-\x7E]{8,128}$/.test(chaveIdempotencia)) {
+      return res.status(400).json({ erro: "O cabeçalho Idempotency-Key é obrigatório e deve ter de 8 a 128 caracteres" });
+    }
+    const valorTexto = typeof valor === "number" && Number.isFinite(valor) ? String(valor) : valor;
+    if (typeof valorTexto !== "string" && typeof valorTexto !== "number") {
+      return res.status(400).json({ erro: "valor deve ser um número positivo com até duas casas decimais" });
+    }
+    const normalizado = String(valorTexto);
+    if (!/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(normalizado)) {
+      return res.status(400).json({ erro: "valor deve ser um número positivo com até duas casas decimais" });
+    }
+    const [parteInteira, parteDecimal = ""] = normalizado.split(".");
+    const valorCentavos = Number(parteInteira) * 100 + Number(parteDecimal.padEnd(2, "0"));
+    if (!Number.isSafeInteger(valorCentavos) || valorCentavos <= 0) {
+      return res.status(400).json({ erro: "valor deve ser maior que zero" });
+    }
+
+    const resultado = await pagamentoService.iniciarPagamento({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      usuarioId: req.usuario.id,
+      parcelaId: parcelaId.trim(),
+      valorCentavos,
+      chaveIdempotencia,
+    });
+    return res.status(resultado.repetida ? 200 : 201).json({
+      pagamento: resultado.pagamento,
+      checkoutUrl: resultado.checkoutUrl,
+    });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED" || erro.code === "MERCADO_PAGO_NAO_CONFIGURADO") {
+      return res.status(503).json({ erro: erro.message });
+    }
+    const respostas = {
+      OBRA_NAO_ENCONTRADA: [404, "Obra não encontrada para este cliente"],
+      PARCELAS_NAO_ENCONTRADAS: [409, "A obra não possui parcelas cadastradas"],
+      PARCELA_NAO_ENCONTRADA: [404, "Parcela não encontrada nesta obra"],
+      SALDO_INSUFICIENTE: [409, "O valor excede o saldo pendente da obra ou da parcela"],
+      CONCLUSAO_NAO_CONFIRMADA: [409, "A segunda parcela só pode ser paga após a confirmação da conclusão da obra"],
+      CHAVE_IDEMPOTENCIA_REUTILIZADA: [409, "A chave de idempotência já foi usada com outros dados"],
+    };
+    if (respostas[erro.code]) {
+      const [status, mensagem] = respostas[erro.code];
+      return res.status(status).json({ erro: mensagem });
+    }
+    if (erro.code === "P2034") return res.status(409).json({ erro: "Saldo alterado por outro pagamento; atualize e tente novamente" });
+    if (erro.code === "P2002") return res.status(409).json({ erro: "Identificador de pagamento duplicado" });
+    if (erro.code?.startsWith("MERCADO_PAGO")) {
+      console.error("Falha ao criar checkout sandbox:", erro.code, erro.statusProvedor || "");
+      const tentativaFinalizada = erro.code === "MERCADO_PAGO_REJEITOU" && erro.statusProvedor >= 400 && erro.statusProvedor < 500;
+      return res.status(502).json({ erro: "Não foi possível iniciar o checkout do Mercado Pago", tentativaFinalizada });
+    }
+    console.error("Erro ao iniciar pagamento:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao iniciar pagamento" });
+  }
+});
+
+// Retoma somente uma tentativa persistida pertencente ao cliente e à obra informados.
+app.post("/obras/:id/pagamentos/:pagamentoId/retomar", authMiddleware, exigirEmpresaDoToken, exigirPapel("CLIENTE"), async (req, res) => {
+  try {
+    const resultado = await pagamentoService.retomarTentativaPagamento({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      usuarioId: req.usuario.id,
+      pagamentoId: req.params.pagamentoId,
+    });
+    return res.status(200).json({ pagamento: resultado.pagamento, checkoutUrl: resultado.checkoutUrl });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED" || erro.code === "MERCADO_PAGO_NAO_CONFIGURADO") {
+      return res.status(503).json({ erro: erro.message });
+    }
+    if (erro.code === "TENTATIVA_NAO_ENCONTRADA") return res.status(404).json({ erro: erro.message });
+    if (erro.code === "TENTATIVA_NAO_PENDENTE" || erro.code === "CONCLUSAO_NAO_CONFIRMADA") {
+      return res.status(409).json({ erro: erro.message });
+    }
+    if (erro.code?.startsWith("MERCADO_PAGO")) {
+      console.error("Falha ao retomar checkout sandbox:", erro.code, erro.statusProvedor || "");
+      return res.status(502).json({ erro: "Não foi possível retomar o checkout do Mercado Pago" });
+    }
+    console.error("Erro ao retomar tentativa de pagamento:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Erro ao retomar tentativa de pagamento" });
+  }
+});
+
+// Consulta separadamente as escalas abertas e encerradas, sempre na empresa
+// do administrador autenticado para manter o histórico fora do alcance alheio.
+app.get("/obras/:id/colaboradores", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const alocacoes = await listarAlocacoesDaObra(req.params.id, req.usuario.empresaId);
+    if (!alocacoes) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.json(alocacoes);
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    console.error("Erro ao consultar alocações da obra:", erro.message);
+    return res.status(500).json({ erro: "Erro ao consultar alocações da obra" });
+  }
+});
+
+// Apenas administradores podem abrir uma escala; obra e funcionário são
+// validados no repositório contra a empresa obtida da sessão, nunca do body.
+app.post("/obras/:id/colaboradores", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const { funcionarioId } = req.body || {};
+    if (typeof funcionarioId !== "string" || !funcionarioId.trim()) {
+      return res.status(400).json({ erro: "funcionarioId é obrigatório" });
+    }
+
+    const alocacao = await alocarFuncionario({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      funcionarioId: funcionarioId.trim(),
+      administradorId: req.usuario.id,
+    });
+    return res.status(201).json({ alocacao });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    const respostas = {
+      OBRA_NAO_ENCONTRADA: [404, "Obra não encontrada"],
+      FUNCIONARIO_NAO_ENCONTRADO: [404, "Funcionário não encontrado nesta empresa"],
+      NIVEL_FUNCIONARIO_INVALIDO: [400, "Somente funcionários de nível Responsável podem ser alocados"],
+      FUNCIONARIO_INATIVO: [409, "Funcionário inativo não pode ser alocado"],
+      VINCULO_USUARIO_INVALIDO: [409, "O login vinculado ao funcionário não é um colaborador válido desta empresa"],
+      ALOCACAO_DUPLICADA: [409, "Funcionário já possui alocação aberta nesta obra"],
+    };
+    if (respostas[erro.code]) {
+      const [status, mensagem] = respostas[erro.code];
+      return res.status(status).json({ erro: mensagem });
+    }
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A alocação conflitou com outra alteração. Tente novamente" });
+    console.error("Erro ao alocar funcionário na obra:", erro.message);
+    return res.status(500).json({ erro: "Erro ao alocar funcionário na obra" });
+  }
+});
+
+// PATCH encerra a escala sem excluir o registro, preservando a trilha histórica.
+app.patch("/obras/:id/colaboradores/:alocacaoId", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const { motivo } = req.body || {};
+    if (motivo !== undefined && motivo !== null && typeof motivo !== "string") {
+      return res.status(400).json({ erro: "motivo deve ser texto" });
+    }
+    if (typeof motivo === "string" && motivo.trim().length > 500) {
+      return res.status(400).json({ erro: "motivo deve ter no máximo 500 caracteres" });
+    }
+
+    const alocacao = await encerrarAlocacao({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      alocacaoId: req.params.alocacaoId,
+      administradorId: req.usuario.id,
+      motivo: typeof motivo === "string" ? (motivo.trim() || null) : null,
+    });
+    return res.json({ alocacao });
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    const respostas = {
+      OBRA_NAO_ENCONTRADA: [404, "Obra não encontrada"],
+      ALOCACAO_NAO_ENCONTRADA: [404, "Alocação não encontrada nesta obra"],
+      ALOCACAO_JA_ENCERRADA: [409, "Esta alocação já foi encerrada"],
+    };
+    if (respostas[erro.code]) {
+      const [status, mensagem] = respostas[erro.code];
+      return res.status(status).json({ erro: mensagem });
+    }
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A alocação conflitou com outra alteração. Tente novamente" });
+    console.error("Erro ao encerrar alocação:", erro.message);
+    return res.status(500).json({ erro: "Erro ao encerrar alocação" });
+  }
+});
+
+app.post("/obras/:id/colaboradores/:alocacaoId/mover", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    const novaObraId = req.body?.novaObraId;
+    if (typeof novaObraId !== "string" || !novaObraId.trim()) return res.status(400).json({ erro: "Selecione a obra de destino" });
+    const resultado = await moverAlocacao({ obraId: req.params.id, novaObraId: novaObraId.trim(), empresaId: req.usuario.empresaId, alocacaoId: req.params.alocacaoId, administradorId: req.usuario.id });
+    return res.json(resultado);
+  } catch (erro) {
+    const respostas = { OBRA_NAO_ENCONTRADA: [404, "Obra não encontrada"], ALOCACAO_NAO_ENCONTRADA: [404, erro.message], OBRA_DESTINO_INVALIDA: [400, erro.message], ALOCACAO_DUPLICADA: [409, erro.message] };
+    if (respostas[erro.code]) return res.status(respostas[erro.code][0]).json({ erro: respostas[erro.code][1] });
+    console.error("Erro ao mover gerente:", erro.code || erro.message);
+    return res.status(500).json({ erro: "Não foi possível mover o gerente" });
+  }
+});
+
+// Colaborador alocado e ADMIN da empresa podem registrar progresso; a foto é
+// armazenada antes do evento para nunca publicar uma referência sem arquivo.
+app.post("/obras/:id/andamento", authMiddleware, exigirEmpresaDoToken, exigirPapel("COLABORADOR", "ADMIN"), async (req, res) => {
+  try {
+    const corpo = req.body || {};
+    const descricao = corpo.descricao;
+    const tiposPermitidos = ["ANOTACAO", "ATUALIZACAO", "OCORRENCIA"];
+    const tipo = corpo.tipo === undefined ? "ATUALIZACAO" : corpo.tipo;
+    if (typeof descricao !== "string" || !descricao.trim()) {
+      return res.status(400).json({ erro: "Descrição do andamento é obrigatória" });
+    }
+    if (descricao.trim().length > 2000) {
+      return res.status(400).json({ erro: "Descrição deve ter no máximo 2000 caracteres" });
+    }
+    if (typeof tipo !== "string" || !tiposPermitidos.includes(tipo)) {
+      return res.status(400).json({ erro: `tipo deve ser um destes valores: ${tiposPermitidos.join(", ")}` });
+    }
+    if (corpo.fotoUrl != null) {
+      return res.status(400).json({ erro: "fotoUrl não pode ser enviado pelo cliente; envie a foto em foto.data" });
+    }
+    if (corpo.visivelParaCliente !== undefined && (req.usuario.tipo !== "ADMIN" || typeof corpo.visivelParaCliente !== "boolean")) {
+      return res.status(400).json({ erro: "visivelParaCliente deve ser booleano e só pode ser definido pelo ADMIN" });
+    }
+
+    let fotoUrl = null;
+    if (corpo.foto !== undefined) {
+      if (req.is("multipart/form-data")) return res.status(415).json({ erro: "Envie a foto como JSON em foto.data" });
+      const autorizada = await validarPermissaoAndamento({
+        obraId: req.params.id,
+        empresaId: req.usuario.empresaId,
+        usuarioId: req.usuario.id,
+        papel: req.usuario.tipo,
+      });
+      if (!autorizada) return res.status(404).json({ erro: "Obra não encontrada" });
+      fotoUrl = await cloudinaryService.enviarFotoObra({ foto: corpo.foto, obraId: req.params.id });
+    }
+
+    const resultado = await registrarAndamento({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      usuarioId: req.usuario.id,
+      tipo,
+      descricao: descricao.trim(),
+      fotoUrl,
+      papel: req.usuario.tipo,
+      visivelParaCliente: corpo.visivelParaCliente ?? true,
+    });
+    if (!resultado) return res.status(404).json({ erro: "Obra não encontrada" });
+    return res.status(201).json(resultado);
+  } catch (erro) {
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "FOTO_INVALIDA") return res.status(400).json({ erro: erro.message });
+    if (erro.code?.startsWith("CLOUDINARY")) return res.status(503).json({ erro: erro.message });
+    if (erro.code === "COLABORADOR_SEM_VINCULO" || erro.code === "COLABORADOR_SEM_ALOCACAO") {
+      return res.status(403).json({ erro: erro.message });
+    }
+    if (erro.code === "P2034") {
+      return res.status(409).json({ erro: "A alocação foi alterada durante o registro. Atualize a obra e tente novamente" });
+    }
+    console.error("Erro ao registrar andamento da obra:", erro.message);
+    return res.status(500).json({ erro: "Erro ao registrar andamento da obra" });
   }
 });
 

@@ -1,5 +1,6 @@
 // Importa os hooks useNavigate e Link do react-router-dom para navegação interna entre páginas
 import { useNavigate, Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
 
 // Importa o componente reutilizável Card do sistema de design
 import Card from '../components/Card.jsx'
@@ -8,24 +9,69 @@ import Card from '../components/Card.jsx'
 import Button from '../components/Button.jsx'
 
 // Importa a lista de dados mockados e as funções auxiliares de formatação e cores
-import { obrasMock, formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
+import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a função de logout para permitir que o cliente encerre a sua sessão
-import { encerrarSessao } from '../services/auth.js'
+import { encerrarSessao, listarObras } from '../services/auth.js'
+import { detectarNovosAgendamentos, registrarEventosConhecidos, registrarListenerOnline } from '../utils/eventosAgendamento.js'
 
 // Componente principal da página do Painel do Cliente (/cliente)
 export default function Cliente() {
   // Inicializa o hook de navegação do React Router para trocar de rota via código
   const navigate = useNavigate()
 
-  // Calcula a quantidade total de obras cadastradas na lista mockada
-  const totalObras = obrasMock.length
+  const [obras, setObras] = useState([])
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState('')
+  const [avisoAgendamento, setAvisoAgendamento] = useState(null)
+  const idsEventosConhecidos = useRef(new Set())
 
-  // Calcula a quantidade de obras que estão atualmente com status "Em andamento"
-  const obrasEmAndamento = obrasMock.filter((obra) => obra.status === 'Em andamento').length
+  useEffect(() => {
+    let ativo = true
+    let consultaEmAndamento = false
+    let primeiraLeitura = true
 
-  // Calcula a quantidade de obras que já foram finalizadas com status "Concluída"
-  const obrasConcluidas = obrasMock.filter((obra) => obra.status === 'Concluída').length
+    async function atualizarObras() {
+      if (!ativo || document.visibilityState === 'hidden' || consultaEmAndamento) return
+      consultaEmAndamento = true
+      try {
+        const resultado = await listarObras()
+        if (!ativo) return
+        const eventos = resultado.flatMap((obra) => obra.timeline || [])
+        if (primeiraLeitura) {
+          registrarEventosConhecidos(eventos, idsEventosConhecidos.current)
+          primeiraLeitura = false
+        } else {
+          const novos = detectarNovosAgendamentos(eventos, idsEventosConhecidos.current)
+          if (novos.length) setAvisoAgendamento(novos[novos.length - 1])
+        }
+        setObras(resultado)
+        setErro('')
+      } catch (falha) {
+        if (ativo) setErro(falha.message)
+      } finally {
+        consultaEmAndamento = false
+        if (ativo) setCarregando(false)
+      }
+    }
+
+    function aoRetomarAba() {
+      if (document.visibilityState === 'visible') atualizarObras()
+    }
+
+    atualizarObras()
+    const intervalo = window.setInterval(atualizarObras, 30000)
+    document.addEventListener('visibilitychange', aoRetomarAba)
+    const removerListenerOnline = registrarListenerOnline(atualizarObras)
+    return () => {
+      ativo = false
+      window.clearInterval(intervalo)
+      document.removeEventListener('visibilitychange', aoRetomarAba)
+      removerListenerOnline()
+    }
+  }, [])
+
+  const totalObras = obras.length
 
   // Função disparada quando o usuário clica no botão de sair (logout)
   function handleLogout() {
@@ -71,14 +117,13 @@ export default function Cliente() {
           </div>
 
           {/* Área de ações do usuário no cabeçalho */}
-          <div className="flex items-center gap-3">
+          <nav className="flex flex-wrap items-center gap-1.5" aria-label="Navegação do cliente">
             {/* Link direto para a página de perfil do usuário logado */}
-            <Link
-              to="/perfil"
-              className="text-xs font-semibold text-slate-600 hover:text-primary transition py-1.5 px-3 rounded-md hover:bg-slate-100"
-            >
-              Meu Perfil
-            </Link>
+            <Link to="/cliente" className="rounded-md bg-navy px-2.5 py-2 text-xs font-semibold text-white">Minhas Obras</Link>
+            <Link to="/cliente/pagamentos" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Pagamentos</Link>
+            <Link to="/cliente/notificacoes" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Notificações</Link>
+            <Link to="/cliente/contratos" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Contrato</Link>
+            <Link to="/perfil" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Perfil</Link>
             {/* Botão de encerrar sessão reutilizando o componente Button com variante outline */}
             <Button
               variant="outline"
@@ -87,7 +132,7 @@ export default function Cliente() {
             >
               Sair
             </Button>
-          </div>
+          </nav>
 
         </div>
       </header>
@@ -111,64 +156,31 @@ export default function Cliente() {
           </p>
         </div>
 
-        {/* Grade de cartões de métricas rápidas (reutilizando Card.jsx) */}
-        <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8" aria-label="Resumo de métricas">
-
-          {/* Cartão de métrica: Total de obras cadastradas */}
-          <Card
-            label="Total de Obras"
-            value={totalObras}
-            accent="border-navy"
-            icon={
-              // Ícone SVG representando prancheta / lista de projetos
-              <svg className="w-5 h-5 text-navy" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-            }
-          />
-
-          {/* Cartão de métrica: Obras atualmente em andamento */}
-          <Card
-            label="Em Andamento"
-            value={obrasEmAndamento}
-            accent="border-amber-500"
-            icon={
-              // Ícone SVG representando ferramentas / obra em execução
-              <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            }
-          />
-
-          {/* Cartão de métrica: Obras concluídas com sucesso */}
-          <Card
-            label="Concluídas"
-            value={obrasConcluidas}
-            accent="border-emerald-500"
-            icon={
-              // Ícone SVG representando check / sucesso
-              <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            }
-          />
-
-        </section>
-
         {/* Título da seção de listagem de obras */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-navy">
-            Obras Cadastradas ({totalObras})
+            Minhas obras ({totalObras})
           </h2>
           <span className="text-xs text-slate-500">
             Clique em qualquer obra para ver os detalhes completos
           </span>
         </div>
 
+        {erro && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{erro}</p>}
+        {carregando && <p className="mb-4 text-sm text-slate-500" role="status">Carregando suas obras…</p>}
+        {avisoAgendamento && (
+          <aside className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950" role="status" aria-live="polite">
+            <div className="flex items-start justify-between gap-3">
+              <div><strong className="block">Uma obra foi reagendada</strong><span>{avisoAgendamento.descricao}</span></div>
+              <button type="button" onClick={() => setAvisoAgendamento(null)} className="shrink-0 font-semibold" aria-label="Fechar aviso">Fechar</button>
+            </div>
+          </aside>
+        )}
+
         {/* Grade responsiva de cartões de obras (mobile-first: 1 coluna no mobile, 2 em tablets e desktops) */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6" aria-label="Lista de obras">
           {/* Itera sobre o array de obras fake para gerar cada card */}
-          {obrasMock.map((obra) => {
+          {obras.map((obra) => {
             // Obtém as cores personalizadas do status para aplicar na borda e badge
             const cores = obterCoresStatus(obra.status)
 
@@ -235,10 +247,10 @@ export default function Cliente() {
                         <span className="text-slate-500">1ª Parcela:</span>
                         <span
                           className={`font-semibold capitalize text-[11px] ${
-                            obra.parcela1.situacao === 'paga' ? 'text-emerald-600' : 'text-amber-600'
+                            obra.parcela1?.situacao === 'paga' ? 'text-emerald-600' : 'text-amber-600'
                           }`}
                         >
-                          {obra.parcela1.situacao}
+                          {obra.parcela1?.situacao || 'pendente'}
                         </span>
                       </div>
                       {/* Status da Parcela 2 */}
@@ -246,10 +258,10 @@ export default function Cliente() {
                         <span className="text-slate-500">2ª Parcela:</span>
                         <span
                           className={`font-semibold capitalize text-[11px] ${
-                            obra.parcela2.situacao === 'paga' ? 'text-emerald-600' : 'text-amber-600'
+                            obra.parcela2?.situacao === 'paga' ? 'text-emerald-600' : 'text-amber-600'
                           }`}
                         >
-                          {obra.parcela2.situacao}
+                          {obra.parcela2?.situacao || 'pendente'}
                         </span>
                       </div>
                     </div>
@@ -289,6 +301,7 @@ export default function Cliente() {
             )
           })}
         </section>
+        {!carregando && !erro && obras.length === 0 && <p className="rounded-xl bg-white p-5 text-sm text-slate-500">Nenhuma obra está vinculada à sua conta.</p>}
 
       </main>
     </div>

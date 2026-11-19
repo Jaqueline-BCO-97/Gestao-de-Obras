@@ -12,6 +12,7 @@ import Cliente from './pages/Cliente.jsx'
 
 // Importa a página temporária de detalhes da obra com parâmetro :id
 import ClienteObra from './pages/ClienteObra.jsx'
+import ClienteAndamento from './pages/ClienteAndamento.jsx'
 // Importa a página temporária de pagamento final do cliente.
 import ClientePagamento from './pages/ClientePagamento.jsx'
 
@@ -29,6 +30,18 @@ import ColaboradorObra from './pages/ColaboradorObra.jsx'
 
 // Importa a página de Perfil para manter a funcionalidade já existente no sistema
 import Perfil from './pages/Perfil/Perfil.jsx'
+import RegistroEmpreiteira from './pages/RegistroEmpreiteira.jsx'
+import AceitarConvite from './pages/AceitarConvite.jsx'
+import AdminFuncionarios from './pages/AdminFuncionarios.jsx'
+import AdminClientes from './pages/AdminClientes.jsx'
+import AdminObra from './pages/AdminObra.jsx'
+import AdminPrecos from './pages/AdminPrecos.jsx'
+import AdminCalendario from './pages/AdminCalendario.jsx'
+import AdminGerentes from './pages/AdminGerentes.jsx'
+import AdminFuncionario from './pages/AdminFuncionario.jsx'
+import Notificacoes from './pages/Notificacoes.jsx'
+import Pagamentos from './pages/Pagamentos.jsx'
+import ClienteContratos from './pages/ClienteContratos.jsx'
 
 // Componente raiz da aplicação (App) que define a estrutura de rotas do frontend
 export default function App() {
@@ -43,6 +56,8 @@ export default function App() {
 
         {/* Rota pública de login (/login): Não requer autenticação */}
         <Route path="/login" element={<Login />} />
+        <Route path="/registro-empreiteira" element={<RegistroEmpreiteira />} />
+        <Route path="/convite/:token" element={<AceitarConvite />} />
 
         {/* Rota protegida do painel do cliente (/cliente): Exige perfil CLIENTE */}
         <Route
@@ -64,6 +79,16 @@ export default function App() {
           }
         />
 
+        {/* Histórico completo da obra do cliente, protegido pelo mesmo perfil. */}
+        <Route
+          path="/cliente/obra/:id/andamento"
+          element={
+            <ProtectedRoute perfisPermitidos={['CLIENTE']}>
+              <ClienteAndamento />
+            </ProtectedRoute>
+          }
+        />
+
         {/* Rota protegida do pagamento da obra, acessível somente ao perfil CLIENTE. */}
         <Route
           path="/cliente/obra/:id/pagamento"
@@ -73,6 +98,9 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/cliente/pagamentos" element={<ProtectedRoute perfisPermitidos={['CLIENTE']}><Pagamentos /></ProtectedRoute>} />
+        <Route path="/cliente/notificacoes" element={<ProtectedRoute perfisPermitidos={['CLIENTE']}><Notificacoes /></ProtectedRoute>} />
+        <Route path="/cliente/contratos" element={<ProtectedRoute perfisPermitidos={['CLIENTE']}><ClienteContratos /></ProtectedRoute>} />
 
         {/* Rota protegida do painel administrativo (/admin): Exige perfil ADMIN */}
         <Route
@@ -94,6 +122,40 @@ export default function App() {
           }
         />
 
+        <Route
+          path="/admin/funcionarios"
+          element={
+            <ProtectedRoute perfisPermitidos={['ADMIN']}>
+              <AdminFuncionarios />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/admin/funcionarios/gerentes" element={<ProtectedRoute perfisPermitidos={['ADMIN']}><AdminGerentes /></ProtectedRoute>} />
+        <Route path="/admin/funcionarios/:id" element={<ProtectedRoute perfisPermitidos={['ADMIN']}><AdminFuncionario /></ProtectedRoute>} />
+
+        <Route
+          path="/admin/clientes"
+          element={
+            <ProtectedRoute perfisPermitidos={['ADMIN']}>
+              <AdminClientes />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/obra/:id"
+          element={
+            <ProtectedRoute perfisPermitidos={['ADMIN']}>
+              <AdminObra />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route path="/admin/precos" element={<ProtectedRoute perfisPermitidos={['ADMIN']}><AdminPrecos /></ProtectedRoute>} />
+        <Route path="/admin/calendario" element={<ProtectedRoute perfisPermitidos={['ADMIN']}><AdminCalendario /></ProtectedRoute>} />
+        <Route path="/admin/pagamentos" element={<ProtectedRoute perfisPermitidos={['ADMIN']}><Pagamentos /></ProtectedRoute>} />
+        <Route path="/admin/notificacoes" element={<ProtectedRoute perfisPermitidos={['ADMIN']}><Notificacoes /></ProtectedRoute>} />
+
         {/* Rota protegida do painel do colaborador (/colaborador): Exige perfil COLABORADOR */}
         <Route
           path="/colaborador"
@@ -113,6 +175,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/colaborador/notificacoes" element={<ProtectedRoute perfisPermitidos={['COLABORADOR']}><Notificacoes /></ProtectedRoute>} />
 
         {/* Rota protegida de perfil (/perfil): Acesso permitido para todos os perfis autenticados */}
         <Route

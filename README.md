@@ -6,7 +6,7 @@
 
 ### Transforme cadernos, planilhas e grupos de WhatsApp em um histórico único, auditável e acessível para todos os envolvidos na obra.
 
-![React](https://img.shields.io/badge/Frontend-React_JS-61DAFB?style=for-the-badge&logo=react) ![Node.js](https://img.shields.io/badge/Backend-Node.js-339933?style=for-the-badge&logo=node.js) ![Express](https://img.shields.io/badge/API-Express-000000?style=for-the-badge) ![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL-4169E1?style=for-the-badge&logo=postgresql) ![JWT](https://img.shields.io/badge/Auth-JWT-010101?style=for-the-badge&logo=jsonwebtokens) ![Mercado Pago](https://img.shields.io/badge/Pagamentos-Mercado_Pago_(planejado)-00B1EA?style=for-the-badge)
+![React](https://img.shields.io/badge/Frontend-React_JS-61DAFB?style=for-the-badge&logo=react) ![Node.js](https://img.shields.io/badge/Backend-Node.js-339933?style=for-the-badge&logo=node.js) ![Express](https://img.shields.io/badge/API-Express-000000?style=for-the-badge) ![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL-4169E1?style=for-the-badge&logo=postgresql) ![JWT](https://img.shields.io/badge/Auth-JWT-010101?style=for-the-badge&logo=jsonwebtoken) ![Mercado Pago](https://img.shields.io/badge/Pagamentos-Mercado_Pago_(sandbox)-00B1EA?style=for-the-badge)
 
 ---
 
@@ -15,13 +15,13 @@
 Pré-requisitos:
 - Node.js 20+
 - Conta no Supabase (banco PostgreSQL já hospedado na nuvem)
-- Conta sandbox no Mercado Pago (para testar pagamentos — ainda não integrado)
+- Conta sandbox no Mercado Pago para validar pagamentos (integração implementada; aprovação real ainda depende de credenciais e webhook público)
 
 **Backend** (Node.js + Express):
 ```
 cd backend
 npm install
-cp .env.example .env     # depois preencha DATABASE_URL e JWT_SECRET
+cp .env.example .env     # depois preencha DATABASE_URL, DIRECT_URL e JWT_SECRET
 npm run dev              # desenvolvimento (reinicia ao salvar)
 ```
 Para rodar sem reinício automático, use `npm start`. Por padrão, a API sobe em `http://localhost:3000` (ou na porta definida em `PORT`). O `npm install` já executa `prisma generate` automaticamente.
@@ -34,23 +34,25 @@ npm run test-connection
 Contrato das rotas atualmente implementadas: [`docs/api-contract.md`](docs/api-contract.md).
 
 **Configuração de Ambiente (.env)**:
-O backend precisa da string de conexão do banco (Supabase) e do segredo do JWT. O arquivo `backend/.env.example` traz três variáveis:
+O backend usa a string de conexão do banco (Supabase), o segredo do JWT e, quando habilitadas, as credenciais de integrações. O arquivo `backend/.env.example` lista as variáveis sem valores secretos:
 
 | Variável | Para que serve |
 |---|---|
 | `PORT` | Porta da API (padrão: `3000`) |
-| `DATABASE_URL` | Connection string do PostgreSQL no Supabase (modo Pooler) |
+| `DATABASE_URL` | Connection string do PostgreSQL no Supabase (pooler transaction, porta `6543`) para a API |
+| `DIRECT_URL` | Connection string direta ou pooler session (porta `5432`) usada pelo Prisma Migrate |
 | `JWT_SECRET` | Segredo usado para assinar os tokens de login (validade de 8h) |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Upload de fotos da obra |
+| `MERCADO_PAGO_ACCESS_TOKEN_TEST`, `MERCADO_PAGO_WEBHOOK_SECRET` | Checkout e confirmação de pagamentos de teste |
 
-- `MERCADOPAGO_ACCESS_TOKEN` e `CLOUDINARY_URL` ainda não são usados no código nem constam no `.env.example` — serão adicionados quando essas integrações forem implementadas.
 - **Frontend**: as telas de Login e Perfil já consomem a API. Em desenvolvimento, o Vite encaminha `/api` para `http://localhost:3000` (ver `frontend/vite.config.js`), então não é preciso configurar nada se o backend estiver rodando localmente. Para apontar para outra API, defina `VITE_API_URL` em `frontend/.env` (padrão: `/api`).
 
 **Banco de dados** (migrations):
 ```
 cd backend
-npx prisma migrate dev
+npx prisma migrate deploy
 ```
-Migrations existentes: `init_usuarios`, `add_obras` e `modelo_v2_1`.
+Configure `DIRECT_URL` com a conexão direta ou o pooler session do Supabase antes de executar. A API continua usando `DATABASE_URL`; o Prisma Migrate usa `DIRECT_URL` para evitar o pooler transaction. Migrations existentes estão em `backend/prisma/migrations/`.
 
 ### Acessos de demonstração
 
@@ -85,8 +87,7 @@ TailwindCSS já está instalado e configurado no frontend.
 cd backend
 npm test
 ```
-O teste de troca de senha cria e remove usuário no banco apontado por `DATABASE_URL`. Execute-o somente com um banco isolado de testes; não aponte `DATABASE_URL` para desenvolvimento ou produção.
-O frontend ainda não tem testes configurados. Detalhes na seção [Testes](#-testes).
+`npm test` executa testes mockados e não acessa o banco. O teste de troca de senha é uma verificação de integração separada e cria registros temporários; execute-o somente com um banco isolado de testes. O frontend tem testes Node nas pastas `frontend/tests`.
 
 ---
 
@@ -114,27 +115,18 @@ O frontend ainda não tem testes configurados. Detalhes na seção [Testes](#-te
 
 ---
 
-# 🌟 Principais Funcionalidades (visão do produto)
+# 🌟 Funcionalidades do MVP
 
-## 👤 Cliente
-- Solicitar orçamento com valores pré-calculados por serviço
-- Acompanhar o andamento da obra (status, fotos, anotações)
-- Pagar pelo app (PIX, crédito ou débito), em parcelas (50% início / 50% conclusão)
-- Consultar histórico de obras contratadas
+## Disponível
+- Cliente consulta suas obras, acompanha status e histórico filtrado por visibilidade, confirma conclusão e inicia checkout de pagamento.
+- Colaborador vê apenas obras alocadas e registra andamento textual ou com foto.
+- Admin cria obras, aloca e encerra escalas, consulta histórico de equipe, reagenda obras, registra andamento e solicita conferência de conclusão.
+- Pagamentos usam Checkout Pro Orders em sandbox; parcela só é quitada após webhook assinado e confirmação consultada no provedor.
 
-## 🧰 Colaborador
-- Conta própria, vinculada às obras em que foi alocado
-- Registrar fotos e anotações de andamento
-- Visualizar apenas as obras atribuídas a ele
-
-## 👷 Administrador / Dono
-- Gerenciar a tabela de preços da empresa
-- Criar e gerenciar obras, aprovar orçamentos
-- Controlar agendamentos via calendário integrado
-- Atualizar o status oficial da obra (Agendada → Em andamento → Concluída)
-- Registrar pagamentos e reajustes de valor
-- Alocar colaboradores por obra
-- Visualizar o histórico de alterações de cada obra
+## Ainda fora do MVP integrado
+- Convites/cadastro self-service de cliente, tabela de preços e calendário consolidado.
+- Gestão dedicada de funcionários, tela administrativa completa da obra, contrato demonstrativo em PDF e auditoria/notificações para todos os eventos.
+- Teste real do checkout depende de credenciais sandbox e webhook HTTPS público; upload de foto depende de credenciais Cloudinary.
 
 ---
 
@@ -147,8 +139,8 @@ flowchart LR
     C --> D[Repositories]
     D --> E[Prisma]
     E --> F[(PostgreSQL - Supabase)]
-    D -.planejado.-> G[Gateway de Pagamento - Mercado Pago]
-    D -.planejado.-> H[Storage de Fotos - Cloudinary]
+    D --> G[Gateway de Pagamento - Mercado Pago]
+    D --> H[Storage de Fotos - Cloudinary]
 ```
 
 ---
@@ -161,8 +153,8 @@ flowchart TD
     Routes --> Middlewares[Middlewares - JWT e papel]
     Middlewares --> Repo[Repositories - acesso ao banco]
     Repo --> Data[(PostgreSQL via Prisma)]
-    Routes --> Payment[Mercado Pago - planejado]
-    Routes --> Storage[Cloudinary - planejado]
+    Routes --> Payment[Mercado Pago - sandbox]
+    Routes --> Storage[Cloudinary]
 ```
 
 ---
@@ -209,7 +201,7 @@ gestao-de-obras/
 ## 🎨 Frontend
 - React 19 + Vite
 - TailwindCSS 3
-- Roteamento simples por `window.location` (React Router *planejado*)
+- React Router 7 com rotas protegidas por perfil
 
 ## 🛠️ Backend
 - Node.js + Express 5
@@ -223,8 +215,8 @@ gestao-de-obras/
 - Modelagem multiempresa (`empresaId` em toda tabela relevante)
 - Migrations via Prisma
 
-## 💳 Integrações (planejadas, ainda não implementadas)
-- Mercado Pago (pagamentos via PIX/crédito/débito, sandbox)
+## 💳 Integrações
+- Mercado Pago Checkout Pro Orders API em sandbox. O endpoint inicia checkout; a confirmação depende de webhook assinado consultado no provedor. Ver configuração e limitações em [`docs/api-contract.md`](docs/api-contract.md).
 - Cloudinary (armazenamento de fotos/arquivos)
 
 ---
@@ -245,8 +237,11 @@ sequenceDiagram
     Backend-->>Frontend: Orçamento aprovado / obra criada
     Cliente->>Frontend: Realiza pagamento (1ª parcela)
     Frontend->>Backend: POST /obras/:id/pagamento
-    Backend->>Gateway: Confirma transação
-    Gateway-->>Backend: Pagamento aprovado
+    Backend->>Gateway: Cria Checkout Pro Order
+    Gateway-->>Backend: Retorna checkout_url
+    Cliente->>Gateway: Conclui checkout sandbox
+    Gateway-->>Backend: Notifica a Order
+    Backend->>Gateway: Consulta estado da Order
     Backend->>DB: Registra pagamento + histórico
     Backend-->>Frontend: Atualiza saldo pendente
     Frontend-->>Cliente: Exibe status atualizado da obra
@@ -265,44 +260,13 @@ sequenceDiagram
 - **RN8** — Pagamento padrão dividido em 2 parcelas: 50% na aprovação do orçamento, 50% na conclusão da obra
 - **RN9** — Isolamento total de dados entre empresas (multiempresa)
 
-> Das regras acima, hoje só a **RN9** está implementada (via `empresaId` do token em todas as consultas de obra). As demais dependem de funcionalidades ainda planejadas (status, pagamento, agenda, histórico, notificações).
+> RN1 é aplicada pelo endpoint de pagamento. RN3 é validada no endpoint de reagendamento por intervalos completos da mesma empresa, e RN7 registra confirmação visível ao cliente na timeline. As demais regras ainda dependem de funcionalidades próprias.
 
 ---
 
 # 🗃️ Modelagem de Dados
 
-## ✅ Implementado no banco
-
-### `Empresa`
-| Campo | Tipo |
-|---|---|
-| id | UUID |
-| nome | VARCHAR |
-| criadoEm | TIMESTAMP |
-
-### `Usuario`
-| Campo | Tipo |
-|---|---|
-| id | UUID |
-| empresaId | UUID (FK → Empresa) |
-| nome | VARCHAR |
-| email | VARCHAR (único) |
-| senhaHash | TEXT |
-| tipo | ENUM (CLIENTE / COLABORADOR / ADMIN) |
-| criadoEm | TIMESTAMP |
-
-### `Obra`
-| Campo | Tipo |
-|---|---|
-| id | UUID |
-| empresaId | UUID (FK → Empresa) |
-| nome | VARCHAR |
-| descricao | VARCHAR (opcional) |
-| endereco | VARCHAR (opcional) |
-| criadoEm | TIMESTAMP |
-
-## 🔜 Planejado, ainda não criado no banco
-`orcamento`, `obra_evento` (linha do tempo/histórico), `obra_colaborador`, `tabela_preco`, `pagamento`. Status, datas e valor da obra também ainda não existem.
+O schema Prisma e as migrations versionadas incluem empresa, usuários, obras, funcionários, escalas históricas, eventos, parcelas, tentativas de pagamento, contratos, aceites e tabelas de preço. O MER está em [`docs/MER-ObraMaster.jpeg`](docs/MER-ObraMaster.jpeg); confira o estado das migrations antes de aplicá-las em um banco.
 
 ## 🗺️ MER
 O diagrama abaixo mostra o modelo completo (as tabelas implementadas e as planejadas):
@@ -313,12 +277,12 @@ O diagrama abaixo mostra o modelo completo (as tabelas implementadas e as planej
 
 # 🌐 Endpoints da API
 
-> O arquivo [`docs/api-contract.md`](docs/api-contract.md) descreve o contrato **desejado** da API e ainda não reflete exatamente o que está implementado (nomes de campos, formato das respostas e rotas ainda não criadas). Em caso de divergência, vale a lista abaixo.
+> O arquivo [`docs/api-contract.md`](docs/api-contract.md) descreve o contrato atual das rotas implementadas e suas limitações.
 
 ## ✅ Implementados
 ```
 GET   /                          (hello world do backend)
-GET   /health                    (status do servidor e do banco)
+GET   /health                    (servidor ativo e presença de DATABASE_URL)
 POST  /auth/login                (login com e-mail/senha, retorna JWT)
 GET   /auth/me                   (dados do usuário autenticado — protegida)
 GET   /usuarios                  (lista usuários da empresa — protegida)
@@ -327,15 +291,21 @@ POST  /colaboradores             (cadastra colaborador — ADMIN)
 POST  /obras                     (cria obra na empresa do token — ADMIN)
 GET   /obras                     (lista obras da empresa — protegida)
 GET   /obras/:id                 (detalhe da obra, filtrado por empresa — protegida)
+PATCH /obras/:id/agendamento    (reagenda obra sem conflito — ADMIN; evento na timeline do cliente)
+POST  /obras/:id/andamento       (texto/foto — Colaborador alocado ou ADMIN; foto via Cloudinary)
+POST  /obras/:id/pagamento       (checkout sandbox — Cliente proprietário; confirmação por webhook)
+POST  /obras/:id/pagamentos/:pagamentoId/retomar (retoma checkout pendente)
+POST  /obras/:id/colaboradores   (aloca colaborador — ADMIN)
+GET   /obras/:id/colaboradores   (alocações abertas e histórico — ADMIN)
+PATCH /obras/:id/colaboradores/:alocacaoId (encerra escala — ADMIN)
+POST  /obras/:id/conclusao/solicitar (ADMIN envia para conferência)
+POST  /obras/:id/conclusao/confirmar (CLIENTE proprietário confirma)
+POST  /webhooks/mercado-pago     (notificação de Order assinada; consulta estado oficial no provedor)
 ```
 
 ## 🔜 Planejados
 ```
 POST  /auth/register             (cadastro de empresa + admin)
-PATCH /obras/:id/status
-POST  /obras/:id/andamento       (foto/anotação — Colaborador)
-POST  /obras/:id/pagamento       (Admin)
-POST  /obras/:id/colaboradores   (alocação — Admin)
 GET   /precos
 POST  /precos
 GET   /agenda
@@ -349,14 +319,13 @@ GET   /agenda
 - Autenticação via JWT (token com validade de 8h)
 - Hash de senha com Bcrypt
 - Rotas privadas protegidas por middleware de autenticação
-- Controle por papel (`exigirPapel`) na criação de obras e colaboradores
-- Isolamento multiempresa: `empresaId` vem do token em todas as consultas de obra e de usuários
+- Controle por papel (`exigirPapel`) nas rotas administrativas e de cliente
+- Isolamento multiempresa por `empresaId` autenticado; colaboradores só consultam obras com escala aberta
 
-## 🔜 Planejado
-- Filtro por papel e por obra atribuída nas leituras (hoje qualquer usuário da empresa lista as obras)
-- Dados sensíveis criptografados em trânsito (HTTPS) e repouso
-- Sem armazenamento direto de dados bancários — pagamento via gateway externo, só token/ID da transação será salvo
-- Conformidade com a LGPD no tratamento de dados pessoais
+## 🔜 Pendências
+- Revisão de segurança e isolamento ponta a ponta com banco de teste.
+- HTTPS e gestão de segredos são responsabilidade do ambiente de implantação.
+- O sistema não recebe nem armazena dados de cartão; pagamentos passam pelo gateway.
 
 ---
 
@@ -366,11 +335,12 @@ GET   /agenda
 cd backend
 npm test
 ```
-Cobre atualmente o fluxo de troca de senha (`/usuarios/me/senha`). Ainda faltam testes de isolamento entre empresas e de frontend.
-
-- Os testes usam o banco real. Com `DATABASE_URL` configurada, eles criam um usuário temporário na primeira empresa encontrada (ou criam uma "Empresa de Testes") e o removem ao final — **use somente banco de desenvolvimento**.
-- Sem `DATABASE_URL`, apenas o teste de acesso sem token roda; os demais são marcados como ignorados (*skipped*).
+- `backend npm test`: testes mockados de alocação, andamento, autenticação, agendamento, pagamentos e upload de fotos; não usa `DATABASE_URL`.
+- `frontend node --test tests/*.test.js`: testes de integração dos serviços e utilitários do cliente.
+- `backend/tests/trocaSenha.test.js` cria registros temporários e requer um banco isolado. Não execute contra desenvolvimento compartilhado ou produção.
+- A aprovação real do pagamento ainda depende de credenciais sandbox e de uma URL HTTPS pública para o webhook.
 - Ainda não há pipeline de CI no repositório — por isso o selo no topo continua como "pending setup".
+- Passos de ambiente e teste manual: [`docs/como-testar.md`](docs/como-testar.md). Estado e limites do MVP: [`docs/escopo-do-projeto.md`](docs/escopo-do-projeto.md).
 
 ---
 
@@ -389,17 +359,19 @@ Cobre atualmente o fluxo de troca de senha (`/usuarios/me/senha`). Ainda faltam 
 - [x] Endpoint de troca de senha
 - [x] Cadastro de colaboradores e obras básicas (nome, descrição, endereço) restritos a ADMIN
 - [x] Frontend: telas de Login e Perfil conectadas à API real
-- [ ] Frontend: painéis por perfil (hoje o Colaborador cai em um painel provisório; "Esqueci minha senha" e "Cadastre-se como cliente" ainda não estão disponíveis)
+- [ ] Frontend: integração parcial por perfil (Cliente e Colaborador usam a API; painel Admin ainda é demonstrativo; convite e recuperação de senha não estão disponíveis)
 - [ ] Cadastro de empresa + admin (`/auth/register`)
 - [ ] Tabela de preços por empresa
 - [ ] Gestão completa de obras (status, datas, valor)
 - [ ] Calendário/agenda consolidada
-- [ ] Registro de andamento (fotos + anotações) pelo Colaborador
-- [ ] Alocação de colaboradores por obra
-- [ ] Pagamento parcelado (50/50) via PIX/cartão
-- [ ] Acompanhamento de obra pelo Cliente
+- [ ] Registro de andamento com texto/foto por Colaborador alocado ou ADMIN (código pronto; upload real depende de Cloudinary configurado)
+- [x] Alocação de colaboradores por obra via API, com histórico de escala
+- [ ] Pagamento parcelado (50/50) via PIX/cartão — endpoint e confirmação por webhook implementados; aprovação real no sandbox pendente de credenciais e configuração
+- [x] Acompanhamento de obra pelo Cliente com timeline filtrada e rota de andamento
 - [ ] Histórico/log de auditoria
 - [ ] Testes de isolamento entre empresas, testes de frontend e CI
+
+> O endpoint de andamento aceita colaborador alocado ou ADMIN. Fotos JPG/PNG/WebP de até 5 MB são armazenadas no Cloudinary quando suas credenciais estão configuradas no ambiente; veja [`docs/api-contract.md`](docs/api-contract.md).
 
 ## 🚀 Fase 2: Melhorias (pós-entrega)
 - [ ] Chat direto entre dono e cliente

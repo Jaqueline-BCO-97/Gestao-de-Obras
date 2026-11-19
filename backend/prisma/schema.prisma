@@ -8,8 +8,10 @@ generator client {
 datasource db {
   // Define PostgreSQL como banco de dados.
   provider = "postgresql"
-  // Lê a conexão da variável DATABASE_URL.
+  // Conexão transacional usada pela aplicação.
   url      = env("DATABASE_URL")
+  // Prisma Migrate usa a conexão direta ou o pooler em modo de sessão.
+  directUrl = env("DIRECT_URL")
 }
 
 // Representa uma empresa que mantém usuários, obras e serviços.
@@ -18,6 +20,12 @@ model Empresa {
   id           String        @id @default(uuid())
   // Nome apresentado para a empresa.
   nome         String
+  cnpj         String?
+  cpfResponsavel String?
+  telefone     String?
+  telefoneSecundario String?
+  enderecoResponsavel String?
+  endereco     String?
   // Data de criação automática do registro.
   criadoEm     DateTime      @default(now())
   // Usuários que pertencem à empresa.
@@ -32,6 +40,9 @@ model Empresa {
   contratos    Contrato[]
   // Preços de serviços cadastrados pela empresa.
   tabelasPreco TabelaPreco[]
+  convites     Convite[]
+  notificacoes Notificacao[]
+  disponibilidades DisponibilidadeFuncionario[]
 }
 
 // Representa uma pessoa que acessa o sistema.
@@ -52,6 +63,9 @@ model Usuario {
   tipo             TipoUsuario
   // Telefone de contato opcional.
   telefone         String?
+  telefoneSecundario String?
+  fotoUrl          String?
+  endereco         String?
   // Data de criação automática do registro.
   criadoEm         DateTime         @default(now())
   // Obras em que este usuário é cliente.
@@ -64,6 +78,10 @@ model Usuario {
   funcionario      Funcionario?
   // Aceites de contrato feitos por este usuário.
   contratosAceitos ContratoAceite[]
+  // Pagamentos iniciados por este usuário.
+  pagamentos       Pagamento[]
+  convitesCriados  Convite[]        @relation("ConviteCriadoPor")
+  notificacoes     Notificacao[]
 }
 
 // Representa uma obra pertencente a uma empresa.
@@ -80,6 +98,16 @@ model Obra {
   descricao             String?
   // Endereço opcional da obra.
   endereco              String?
+  estado                String?
+  cidade                String?
+  bairro                String?
+  numero                String?
+  apartamento           String?
+  bloco                 String?
+  semApartamento        Boolean      @default(false)
+  semBloco              Boolean      @default(false)
+  informacoesAdicionais String?
+  fotos                 String[]     @default([])
   // Cliente associado opcionalmente a um usuário.
   clienteId             String?
   // Relação do cliente com o nome definido para esta associação.
@@ -88,6 +116,12 @@ model Obra {
   status                StatusObra   @default(AGENDADA)
   // Valor total da obra, inicialmente zero.
   valorTotal            Decimal      @default(0) @db.Decimal(12, 2)
+  valorBase             Decimal      @default(0) @db.Decimal(12, 2)
+  quantidadeParcelas    Int          @default(2)
+  taxaJurosMensal       Decimal      @default(0) @db.Decimal(5, 2)
+  excluidaEm            DateTime?
+  exclusaoExpiraEm      DateTime?
+  exclusaoMotivo        String?
   // Data e hora previstas para começar.
   agendadaPara          DateTime?
   // Prazo final planejado.
@@ -104,8 +138,13 @@ model Obra {
   eventos               ObraEvento[]
   // Parcelas de pagamento da obra.
   parcelas              Parcela[]
+  // Tentativas de pagamento associadas às parcelas desta obra.
+  pagamentos            Pagamento[]
   // Contrato opcional da obra.
   contrato              Contrato?
+  convites              Convite[]
+  notificacoes          Notificacao[]
+  disponibilidades      DisponibilidadeFuncionario[]
 }
 
 // Representa um profissional associado a uma empresa.
@@ -124,6 +163,7 @@ model Funcionario {
   nivel     NivelFuncionario
   // Telefone opcional do profissional.
   telefone  String?
+  fotoUrl   String?
   // Indica se o profissional está ativo.
   ativo     Boolean          @default(true)
   // Login opcional ligado ao cadastro do profissional.
@@ -134,9 +174,36 @@ model Funcionario {
   criadoEm  DateTime         @default(now())
   // Histórico de escalas deste profissional.
   escalas   ObraEscala[]
+  disponibilidades DisponibilidadeFuncionario[]
 
   // Acelera consultas de funcionários por empresa.
   @@index([empresaId])
+}
+
+// Convite de uso único para vincular clientes e gerentes a uma obra.
+model Convite {
+  id          String      @id @default(uuid())
+  empresaId   String
+  empresa     Empresa     @relation(fields: [empresaId], references: [id])
+  obraId      String?
+  obra        Obra?       @relation(fields: [obraId], references: [id])
+  criadoPorId String
+  criadoPor   Usuario     @relation("ConviteCriadoPor", fields: [criadoPorId], references: [id])
+  tipo        TipoConvite
+  nome        String
+  email       String
+  funcao      String?
+  telefone    String?
+  endereco    String?
+  quantidadeParcelas Int?
+  vencimentoInicial DateTime?
+  contratoUrl String?
+  tokenHash   String      @unique
+  expiraEm    DateTime
+  usadoEm     DateTime?
+  criadoEm    DateTime    @default(now())
+
+  @@index([empresaId, email])
 }
 
 // Registra cada período de alocação de um funcionário numa obra.
@@ -192,6 +259,7 @@ model ObraEvento {
   visivelParaCliente Boolean    @default(true)
   // Data de criação automática do evento.
   criadoEm           DateTime   @default(now())
+  notificacoes       Notificacao[]
 
   // Acelera listagem cronológica dos eventos de uma obra.
   @@index([obraId, criadoEm])
@@ -215,13 +283,89 @@ model Parcela {
   situacao           SituacaoParcela @default(PENDENTE)
   // Data opcional em que o pagamento ocorreu.
   pagaEm             DateTime?
+  vencimento         DateTime?
+  comprovanteUrl     String?
+  comprovanteEnviadoEm DateTime?
   // Identificador opcional e exclusivo do sistema de pagamento externo.
   pagamentoExternoId String?         @unique
+  // Tentativas associadas à parcela.
+  pagamentos         Pagamento[]
 
   // Impede parcelas com o mesmo número na mesma obra.
   @@unique([obraId, numero])
+  // Permite que Pagamento valide no banco que parcelaId e obraId correspondem.
+  @@unique([id, obraId])
   // Acelera consultas de parcelas por obra.
   @@index([obraId])
+}
+
+// Aviso persistente endereçado a um usuário da empresa.
+model Notificacao {
+  id          String      @id @default(uuid())
+  empresaId   String
+  empresa     Empresa     @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  usuarioId   String
+  usuario     Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  obraId      String?
+  obra        Obra?       @relation(fields: [obraId], references: [id], onDelete: SetNull)
+  eventoId    String?
+  evento      ObraEvento? @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+  tipo        String
+  titulo      String
+  descricao   String
+  lidaEm      DateTime?
+  criadoEm    DateTime    @default(now())
+
+  @@index([usuarioId, lidaEm, criadoEm])
+  @@index([empresaId, criadoEm])
+}
+
+// Dias da semana em que um funcionário sem conta trabalha em uma obra.
+model DisponibilidadeFuncionario {
+  id            String      @id @default(uuid())
+  empresaId     String
+  empresa       Empresa     @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  funcionarioId String
+  funcionario   Funcionario @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+  obraId        String
+  obra          Obra        @relation(fields: [obraId], references: [id], onDelete: Cascade)
+  diaSemana     Int
+  criadoEm      DateTime    @default(now())
+
+  @@unique([funcionarioId, obraId, diaSemana])
+  @@index([obraId, diaSemana])
+}
+
+// Mantém cada tentativa financeira até a confirmação oficial do provedor.
+model Pagamento {
+  // Identificador local enviado como referência externa ao Mercado Pago.
+  id                 String          @id @default(uuid())
+  // Obra e parcela às quais esta tentativa pertence.
+  obraId             String
+  obra               Obra            @relation(fields: [obraId], references: [id], onDelete: Restrict)
+  parcelaId          String
+  // A relação composta impede associar esta tentativa a parcela de outra obra.
+  parcela            Parcela         @relation(fields: [parcelaId, obraId], references: [id, obraId], onDelete: Restrict)
+  // Cliente autenticado que iniciou o checkout.
+  usuarioId          String
+  usuario            Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  // Valor reservado para esta tentativa, em reais.
+  valor              Decimal         @db.Decimal(12, 2)
+  // O estado só muda para aprovado após confirmação consultada no provedor.
+  status             StatusPagamento @default(PENDENTE)
+  // Chave enviada pelo cliente para repetição segura da mesma solicitação.
+  chaveIdempotencia  String          @unique
+  // Identificadores externos, protegidos contra associação duplicada.
+  pedidoExternoId    String?         @unique
+  transacaoExternaId String?         @unique
+  // Link HTTPS retornado para o Checkout Pro.
+  checkoutUrl        String?
+  detalheStatus      String?
+  criadoEm           DateTime        @default(now())
+  atualizadoEm       DateTime        @updatedAt
+
+  @@index([obraId, status])
+  @@index([parcelaId, status])
 }
 
 // Guarda os termos de um contrato para uma obra.
@@ -238,6 +382,7 @@ model Contrato {
   empresa   Empresa          @relation(fields: [empresaId], references: [id])
   // Texto integral dos termos contratuais.
   termos    String
+  arquivoUrl String?
   // Data de criação automática do contrato.
   criadoEm  DateTime         @default(now())
   // Aceites registrados para este contrato.
@@ -297,6 +442,11 @@ enum TipoUsuario {
   ADMIN
 }
 
+enum TipoConvite {
+  CLIENTE
+  GERENTE
+}
+
 // Define o nível de atuação de cada funcionário.
 enum NivelFuncionario {
   // Responsável principal pela atividade.
@@ -323,6 +473,15 @@ enum SituacaoParcela {
   PENDENTE
   // O pagamento foi realizado.
   PAGA
+}
+
+// Estados financeiros internos, distintos dos estados do provedor.
+enum StatusPagamento {
+  PENDENTE
+  APROVADO
+  RECUSADO
+  CANCELADO
+  ERRO
 }
 
 // Define as categorias disponíveis para eventos.

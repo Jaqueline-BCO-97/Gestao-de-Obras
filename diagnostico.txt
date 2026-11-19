@@ -1,0 +1,55 @@
+# Relatório — Issue #23 — Entrega A: Integração do colaborador
+
+Data: 2026-11-17  
+Branch: `niinapimenta`  
+Status: **Entrega A implementada; Issue #23 permanece aberta.**
+s
+## Escopo implementado
+
+- O dashboard `/colaborador` carrega as obras com `listarObras()` e os dados de identificação com `buscarUsuarioAtual()`. Removeu o ID fixo, nome de demonstração e associação local de obras. A tela mostra estados de carregamento, erro com status preservado e lista vazia somente após resposta válida da API.
+- Os detalhes `/colaborador/obra/:id` carregam a obra via `buscarObra(id)`. A tela é remontada ao trocar o ID; respostas assíncronas antigas são invalidadas na desmontagem. Erros 401, 403, 404, 409, 503 e demais erros são apresentados sem simular ausência de obra.
+- O registro textual usa a função autenticada `registrarAndamentoObra(id, descricao, tipo)`, que envia JSON com Bearer Token para `POST /obras/:id/andamento`. Os rótulos mapeiam para `ATUALIZACAO`, `ANOTACAO` e `OCORRENCIA`; descrição obrigatória e limite de 2.000 caracteres são validados.
+- O envio é bloqueado durante a requisição. Formulário e mensagem de sucesso só são atualizados após o POST confirmado. A tela tenta recarregar `buscarObra(id)` e exibe a timeline persistida. Se a recarga falhar depois do POST confirmado, mantém o evento retornado pela API e informa claramente a falha de atualização.
+- A timeline usa `HistoricoObra` compartilhado, sem modificá-lo. As telas continuam sem campos financeiros; o backend mantém a autorização por empresa, funcionário ativo e alocação aberta e identifica o autor pelo token.
+- O seletor e a simulação local de fotos foram removidos. A tela informa que o recurso ainda não está disponível e não envia multipart, `foto` ou `fotoUrl`.
+
+## Arquivos alterados por esta entrega
+
+- `frontend/src/pages/Colaborador.jsx`
+- `frontend/src/pages/ColaboradorObra.jsx`
+- `frontend/src/services/auth.js` — acrescentada `registrarAndamentoObra`; alterações preexistentes neste arquivo foram preservadas.
+- `frontend/tests/colaboradorIntegracao.test.js`
+- `docs/relatorio-issue-23.md`
+- `diagnostico.txt` — substituído integralmente pelo diagnóstico desta execução.
+- `docs/resposta-codex-issue-23.md`
+
+O Git já continha alterações pendentes das Issues #21/#22, inclusive em `frontend/src/services/auth.js`, além de arquivos não rastreados. Elas foram preservadas; não foram descartadas ou reescritas.
+
+## Endpoints reutilizados
+
+- `GET /obras`
+- `GET /auth/me`
+- `GET /obras/:id`
+- `POST /obras/:id/andamento`
+
+Nenhum endpoint backend foi criado ou alterado nesta entrega.
+
+## Testes e validações executados
+
+- `cd frontend && node --test tests/*.test.js` — aprovado: 5 arquivos/suítes, 5 aprovados, 0 falhas.
+- `cd backend && node --test tests/andamentoObra.test.js tests/alocacaoObra.test.js` — aprovado: 2 arquivos/suítes, 2 aprovados, 0 falhas.
+- `cd frontend && npm run lint` — aprovado após ajuste de estado nos efeitos React.
+- `cd frontend && npm run build` — aprovado; Vite gerou o bundle de produção.
+- `git diff --check` — aprovado, sem erros de whitespace.
+
+O teste frontend novo verifica o payload e cabeçalho de autenticação do POST, propagação de erro HTTP e ausência de mocks, IDs fixos, previews de objeto e envio de fotos nas páginas. A aplicação não possui biblioteca de testes de componentes React; a cobertura de tela foi feita por verificações do contrato/estrutura e build, sem adicionar dependências.
+
+## Pendências e limitações
+
+- O critério original de upload real de fotos e apresentação na timeline permanece pendente para a Entrega B. Não há integração Storage nesta entrega; `fotoUrl` e enum `FOTO` do banco não foram modificados.
+- A Issue #23 não está concluída. A conclusão depende da implementação futura de upload persistente e apresentação segura de imagens na timeline.
+- A validação foi feita com testes automatizados; não houve sessão manual com backend/banco real neste ambiente.
+
+## Restrições confirmadas
+
+Nenhum `.env` foi alterado. Nenhuma migration, `db push`, seed, reset ou operação no banco foi executada. Buckets e políticas Supabase não foram alterados. Não houve commit, push ou merge. A Issue #24 não foi iniciada. As alterações pendentes anteriores foram mantidas.

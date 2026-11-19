@@ -1,9 +1,9 @@
 // Importa o hook useState do React para gerenciar o estado dos campos e telas
 import { useState } from 'react'
 // Importa o hook useNavigate do react-router-dom para navegação entre páginas
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 // Importa as funções de autenticação do serviço de autenticação
-import { entrar, salvarSessao, salvarSessaoMock } from '../services/auth.js'
+import { entrar, salvarSessao } from '../services/auth.js'
 // Importa a função que retorna a rota de destino conforme o perfil do usuário
 import { obterRotaDashboard } from '../routes/dashboardRoutes.js'
 // Importa as credenciais de teste pré-definidas
@@ -49,16 +49,11 @@ function Icone({ tipo, className = 'h-5 w-5' }) {
 
 // Lista fixa de benefícios exibidos no banner lateral da tela de login
 const beneficios = [
-  // Benefício 1: orçamentos
-  { icone: 'sparkles', texto: 'Orçamentos digitais com aprovação em poucos cliques' },
-   // Benefício 1: orçamentos
-  { icone: 'sparkles', texto: 'Agenda sem conflito de datas' },
-  // Benefício 2: execução
-  { icone: 'building', texto: 'Fotos para acompanhamento de andamento para o cliente' },
-  // Benefício 3: relatórios
-  { icone: 'shield', texto: 'Pagamento em 2 parcelas pelo app' },
-  // Benefício 3: relatórios
-  { icone: 'shield', texto: 'Histórico que vale como comprovante' },
+  { icone: 'sparkles', texto: 'Cadastre obras e acompanhe prazos e etapas' },
+  { icone: 'sparkles', texto: 'Organize o calendário da empreiteira' },
+  { icone: 'building', texto: 'Compartilhe fotos e atualizações com seus clientes' },
+  { icone: 'shield', texto: 'Acompanhe os pagamentos registrados por obra' },
+  { icone: 'shield', texto: 'Consulte o histórico de execução e ocorrências' },
 ]
 
 // Função auxiliar que traduz códigos de status HTTP em mensagens amigáveis em português
@@ -156,21 +151,11 @@ export default function Login() {
       // Navega para a rota de destino usando o React Router
       navigate(destino)
     } catch (erro) {
-      // Caso seja um acesso demo e o backend esteja inacessível (status 0) ou com erro de servidor/banco (status >= 500)
-      if (tipoDemo && (erro.status === 0 || erro.status >= 500)) {
-        // Gera e salva uma sessão simulada para permitir navegar nas rotas da aplicação mesmo sem o banco/servidor
-        const sessaoMock = salvarSessaoMock(tipoDemo)
-        // Obtém a rota do painel correspondente ao tipo de perfil demonstrado
-        const destino = obterRotaDashboard(sessaoMock.usuario.tipo)
-        // Redireciona para o destino utilizando o React Router
-        navigate(destino)
-        // Encerra a função evitando exibição de alerta de erro
-        return
-      }
-
       // Se a conta de demonstração não existir no banco de dados (erro 401)
       if (tipoDemo && erro.status === 401) {
         setErroLogin('A conta de demonstração não existe ou ainda não foi preparada. No banco de demonstração, execute: cd backend && npx prisma db seed.')
+      } else if (tipoDemo && (erro.status === 0 || erro.status >= 500)) {
+        setErroLogin('A demonstração precisa da API e do banco de dados ativos. Inicie o backend e tente novamente.')
       } else {
         // Exibe mensagem amigável de erro
         setErroLogin(mensagemDeErro(erro))
@@ -230,7 +215,7 @@ export default function Login() {
         {/* Bloco central do banner com benefícios destacados */}
         <div className="relative max-w-xl py-16">
           <p className="mb-4 text-xs font-bold uppercase tracking-[0.2em] text-sky-200">Gestão simples, do início à entrega</p>
-          <h1 className="max-w-xl text-4xl font-bold leading-[1.16] tracking-tight xl:text-5xl">Todo o ciclo da sua obra em uma única plataforma.</h1>
+          <h1 className="max-w-xl text-4xl font-bold leading-[1.16] tracking-tight xl:text-5xl">Organize e acompanhe as obras da sua empreiteira.</h1>
           <ul className="mt-10 space-y-6">
             {beneficios.map((beneficio) => (
               <li key={beneficio.texto} className="flex items-center gap-4 text-sm leading-6 text-sky-50/90 xl:text-base">
@@ -254,7 +239,7 @@ export default function Login() {
           <div className="mb-9 lg:mb-11">
             <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-[#087eae] lg:hidden">ObraMaster · Gestão de obras</p>
             <h2 className="text-3xl font-bold tracking-tight text-[#0c2d43] sm:text-[2.1rem]">Bem-vindo ao ObraMaster</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base">Entre com suas credenciais para acessar o painel de gestão.</p>
+            <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base">O ObraMaster ajuda sua empreiteira e sua equipe a acompanhar obras e compartilhar o andamento com os clientes.</p>
           </div>
 
           {/* Formulário com envio gerenciado pelo manipulador 'enviar' */}
@@ -349,13 +334,7 @@ export default function Login() {
           {/* Opção para novos clientes se cadastrarem */}
           <p className="mt-7 text-center text-sm text-slate-600">
             Não tem uma conta?{' '}
-            <button
-              type="button"
-              onClick={() => informarRecursoIndisponivel('O cadastro de cliente')}
-              className="font-semibold text-[#087eae] hover:text-[#0c2d43]"
-            >
-              Cadastre sua empresa
-            </button>
+            <Link to="/registro-empreiteira" className="font-semibold text-[#087eae] hover:text-[#0c2d43]">Cadastre sua empreiteira</Link>
           </p>
 
           {/* Seção com botões de atalho para demonstração e testes rápidos */}
@@ -370,7 +349,7 @@ export default function Login() {
                 // Botão de acesso rápido para o perfil Administrador
                 { tipo: 'ADMIN', texto: 'Entrar como Admin' },
                 // Botão de acesso rápido para o perfil Colaborador
-                { tipo: 'COLABORADOR', texto: 'Entrar como Colaborador' },
+                { tipo: 'COLABORADOR', texto: 'Entrar como Gerente de Obra' },
               ].map(({ tipo, texto }) => (
                 // Renderiza o botão para cada perfil de demonstração
                 <button
@@ -392,7 +371,7 @@ export default function Login() {
             </div>
             {/* Descrição informativa atualizada mencionando cliente, administrador e colaborador */}
             <p className="mt-3 text-[11px] leading-4 text-slate-500">
-              Contas públicas para testar o acesso como cliente, administrador e colaborador.
+              Contas de demonstração para empreiteira, cliente e gerente de obra.
             </p>
           </section>
         </div>

@@ -44,6 +44,7 @@ async function requisicao(caminho, opcoes = {}) {
     const erro = new Error(dados.erro || 'Não foi possível concluir a solicitação.')
     // Anexa o código de status HTTP retornado pelo servidor ao erro
     erro.status = resposta.status
+    erro.tentativaFinalizada = Boolean(dados.tentativaFinalizada)
     // Lança o erro para a camada superior tratar
     throw erro
   }
@@ -62,6 +63,74 @@ export async function entrar(email, senha) {
     body: JSON.stringify({ email, senha }),
   })
 }
+
+export async function registrarEmpreiteira(dados) {
+  return requisicao('/auth/registro-empreiteira', { method: 'POST', body: JSON.stringify(dados) })
+}
+
+export async function consultarConvite(token) {
+  return requisicao(`/convites/${encodeURIComponent(token)}`)
+}
+
+export async function aceitarConvite(token, senha) {
+  const sessao = obterToken()
+  return requisicao(`/convites/${encodeURIComponent(token)}/aceitar`, { method: 'POST', body: JSON.stringify({ senha }), ...(sessao ? { headers: { Authorization: `Bearer ${sessao}` } } : {}) })
+}
+
+export async function convidarPessoa(tipo, dados) {
+  return requisicaoAutenticada(`/convites/${tipo}`, { method: 'POST', body: JSON.stringify(dados) })
+}
+
+export async function criarObra(dados) {
+  return requisicaoAutenticada('/obras', { method: 'POST', body: JSON.stringify(dados) })
+}
+
+export async function listarFuncionarios() {
+  return requisicaoAutenticada('/funcionarios')
+}
+
+export async function listarClientes() {
+  return requisicaoAutenticada('/clientes')
+}
+
+export async function listarConvites() {
+  return requisicaoAutenticada('/convites')
+}
+
+export async function reenviarConvite(id) {
+  return requisicaoAutenticada(`/convites/${encodeURIComponent(id)}/reenviar`, { method: 'POST' })
+}
+
+export async function listarTabelaPrecos() { return requisicaoAutenticada('/tabela-precos') }
+export async function criarPreco(dados) { return requisicaoAutenticada('/tabela-precos', { method: 'POST', body: JSON.stringify(dados) }) }
+export async function atualizarPreco(id, dados) { return requisicaoAutenticada(`/tabela-precos/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) }) }
+export async function listarCalendario() { return requisicaoAutenticada('/calendario') }
+export async function reagendarObra(obraId, agendadaPara, prazoFinal) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/agendamento`, { method: 'PATCH', body: JSON.stringify({ agendadaPara, prazoFinal }) })
+}
+
+export async function encerrarEscala(obraId, alocacaoId, motivo = '') {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/colaboradores/${encodeURIComponent(alocacaoId)}`, {
+    method: 'PATCH', body: JSON.stringify({ motivo }),
+  })
+}
+
+export async function moverGerente(obraId, alocacaoId, novaObraId) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/colaboradores/${encodeURIComponent(alocacaoId)}/mover`, { method: 'POST', body: JSON.stringify({ novaObraId }) })
+}
+
+export async function criarFuncionario(dados) { return requisicaoAutenticada('/funcionarios', { method: 'POST', body: JSON.stringify(dados) }) }
+export async function atualizarFuncionario(id, dados) { return requisicaoAutenticada(`/funcionarios/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) }) }
+export async function atualizarPerfil(dados) { return requisicaoAutenticada('/usuarios/me', { method: 'PATCH', body: JSON.stringify(dados) }) }
+export async function listarNotificacoes() { return requisicaoAutenticada('/notificacoes') }
+export async function marcarNotificacaoLida(id) { return requisicaoAutenticada(`/notificacoes/${encodeURIComponent(id)}/lida`, { method: 'PATCH' }) }
+export async function excluirNotificacao(id) { return requisicaoAutenticada(`/notificacoes/${encodeURIComponent(id)}`, { method: 'DELETE' }) }
+export async function listarPagamentos() { return requisicaoAutenticada('/pagamentos') }
+export async function enviarComprovante(obraId, parcelaId, arquivo) { return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/parcelas/${encodeURIComponent(parcelaId)}/comprovante`, { method: 'POST', body: JSON.stringify({ arquivo }) }) }
+export async function confirmarPrimeiraParcela(obraId) { return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/parcelas/primeira/confirmar`, { method: 'POST' }) }
+export async function arquivarObra(obraId, senha, motivo) { return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/arquivar`, { method: 'POST', body: JSON.stringify({ senha, motivo }) }) }
+export async function restaurarObra(obraId) { return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/restaurar`, { method: 'POST' }) }
+export async function listarObrasArquivadas() { return requisicaoAutenticada('/obras/arquivadas') }
 
 // Função para salvar os dados da sessão (token e dados do usuário) no navegador
 export function salvarSessao({ token, usuario }, lembrarDeMim) {
@@ -156,6 +225,69 @@ export async function buscarUsuarioAtual() {
   const dados = await requisicaoAutenticada('/auth/me')
   // Retorna apenas a propriedade 'usuario' dos dados retornados
   return dados.usuario
+}
+
+// Consulta as obras do usuário; o backend restringe CLIENTE ao próprio vínculo.
+export async function listarObras() {
+  return requisicaoAutenticada('/obras')
+}
+
+// A API aplica empresa, perfil e vínculo do cliente antes de retornar a obra.
+export async function buscarObra(id) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}`)
+}
+
+// Registra andamento textual e, quando selecionada, foto como data URL.
+export async function registrarAndamentoObra(obraId, descricao, tipo, foto, visivelParaCliente) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/andamento`, {
+    method: 'POST',
+    body: JSON.stringify({ descricao, tipo, ...(visivelParaCliente !== undefined ? { visivelParaCliente } : {}), ...(foto ? { foto } : {}) }),
+  })
+}
+
+export async function atualizarObra(id, dados) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) })
+}
+
+export async function anexarContratoObra(id, arquivo, termos = '') {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/contrato`, { method: 'POST', body: JSON.stringify({ arquivo, termos }) })
+}
+export async function anexarFotoNovaObra(id, foto) { return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/fotos`, { method: 'POST', body: JSON.stringify({ foto }) }) }
+
+export async function iniciarExecucaoObra(id) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/status/iniciar`, { method: 'POST' })
+}
+
+export async function listarAlocacoesObra(id) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/colaboradores`)
+}
+
+export async function encerrarAlocacaoObra(obraId, alocacaoId, motivo = '') {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/colaboradores/${encodeURIComponent(alocacaoId)}`, { method: 'PATCH', body: JSON.stringify({ motivo }) })
+}
+
+// Cria checkout pela API; o servidor confere propriedade, saldo e idempotência.
+export async function iniciarPagamento(obraId, parcelaId, valor, idempotencyKey) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/pagamento`, {
+    method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify({ parcelaId, valor }),
+  })
+}
+
+// Retoma pelo identificador persistido; a chave idempotente permanece somente no backend.
+export async function retomarPagamento(obraId, tentativaId) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/pagamentos/${encodeURIComponent(tentativaId)}/retomar`, {
+    method: 'POST',
+  })
+}
+
+export async function confirmarConclusaoObra(obraId) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/conclusao/confirmar`, { method: 'POST' })
+}
+
+export async function solicitarConferenciaObra(obraId) {
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/conclusao/solicitar`, { method: 'POST' })
 }
 
 // Função para solicitar alteração de senha da conta do usuário atual

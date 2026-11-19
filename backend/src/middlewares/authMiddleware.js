@@ -1,5 +1,8 @@
 const jwt = require("jsonwebtoken");
-const { buscarPerfilUsuarioPorId } = require("../repositories/usuarioRepository");
+const {
+  buscarPerfilUsuarioPorId,
+  buscarFuncionarioPorUsuarioId,
+} = require("../repositories/usuarioRepository");
 
 /**
  * Middleware de autenticação JWT.
@@ -51,13 +54,26 @@ async function authMiddleware(req, res, next) {
       return res.status(401).json({ erro: "Sessão inválida ou expirada" });
     }
 
+    if (usuarioAtual.tipo === "COLABORADOR") {
+      const funcionario = await buscarFuncionarioPorUsuarioId(usuarioAtual.id);
+      // O estado ativo é consultado no banco a cada requisição para invalidar
+      // imediatamente sessões antigas após a desativação do funcionário.
+      if (
+        !funcionario ||
+        funcionario.ativo !== true ||
+        funcionario.empresaId !== usuarioAtual.empresaId
+      ) {
+        return res.status(403).json({ erro: "Acesso bloqueado: colaborador inativo ou sem vínculo válido" });
+      }
+    }
+
     req.usuario = usuarioAtual;
     return next();
   } catch (erro) {
     if (erro.code === "DATABASE_NOT_CONFIGURED") {
       return res.status(503).json({ erro: erro.message });
     }
-    if (erro.name === "PrismaClientKnownRequestError" || erro.name === "PrismaClientInitializationError") {
+    if (typeof erro.name === "string" && erro.name.startsWith("PrismaClient")) {
       console.error("Erro ao validar usuário autenticado:", erro.message);
       return res.status(503).json({ erro: "Não foi possível validar a sessão" });
     }

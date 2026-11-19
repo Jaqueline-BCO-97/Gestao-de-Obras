@@ -94,20 +94,17 @@ export default function HistoricoObra({ eventos = [], perfil = 'CLIENTE' }) {
               <article key={evento.id} className="relative group">
                 {/* Marcador colorido que identifica a posição do evento. */}
                 <span className="absolute -left-[31px] top-1.5 h-4 w-4 rounded-full border-2 border-white bg-primary shadow-sm sm:-left-[39px]" aria-hidden="true" />
-                {/* Cartão com tipo, data, autor e descrição do registro. */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:bg-white hover:shadow-sm">
-                  {/* Linha de metadados do evento. */}
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    {/* Etiqueta com rótulo e cor correspondentes ao tipo. */}
+                <details className="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:bg-white hover:shadow-sm">
+                  <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2">
                     <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${estilo.cor}`}>{estilo.rotulo}</span>
-                    {/* Data e hora em que o evento aconteceu. */}
                     <time className="text-xs font-medium text-slate-500">{evento.data} às {evento.hora || 'horário não informado'}</time>
-                  </div>
+                  </summary>
                   {/* Identificação de quem registrou o evento. */}
-                  <p className="mb-1 text-xs font-semibold text-slate-500">Registrado por: {evento.autor || 'Responsável não informado'}</p>
+                  <p className="mb-1 mt-3 text-xs font-semibold text-slate-500">Registrado por: {evento.autor || 'Responsável não informado'}</p>
                   {/* Texto que explica o que aconteceu na obra. */}
                   <p className="text-xs leading-relaxed text-slate-700 sm:text-sm">{descricao}</p>
-                </div>
+                  {evento.fotoUrl && <img src={evento.fotoUrl} alt={`Foto do andamento: ${descricao}`} loading="lazy" referrerPolicy="no-referrer" className="mt-3 max-h-72 w-full rounded-lg object-cover" />}
+                </details>
               </article>
             )
           })}

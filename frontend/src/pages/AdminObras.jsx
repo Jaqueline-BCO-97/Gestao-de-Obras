@@ -1,8 +1,9 @@
+import AdminMenu from '../components/AdminMenu.jsx'
 // Importa o hook useState do React para controlar filtros e avisos na tela
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 // Importa os componentes de navegação do react-router-dom
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
 // Importa o componente reutilizável Card do sistema de design
 import Card from '../components/Card.jsx'
@@ -11,13 +12,20 @@ import Card from '../components/Card.jsx'
 import Button from '../components/Button.jsx'
 
 // Importa os dados das obras e as funções de moeda e cores
-import { obrasMock, formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
+import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a lista de colaboradores mockados para exibir os membros da equipe alocada
-import { obterColaboradoresDaObra } from '../data/colaboradoresMock.js'
+import { listarObras, listarObrasArquivadas, restaurarObra, solicitarConferenciaObra, criarObra } from '../services/auth.js'
+
+function moedaEntrada(valor) {
+  const centavos = String(valor).replace(/\D/g, '')
+  if (!centavos) return ''
+  return (Number(centavos) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function moedaNumero(valor) { return String(valor).replace(/\./g, '').replace(',', '.') }
 
 // Importa a função de logout para permitir ao administrador encerrar a sessão
-import { encerrarSessao } from '../services/auth.js'
 
 // Componente da página de Gestão de Obras do Administrador (/admin/obras)
 export default function AdminObras() {
@@ -28,7 +36,24 @@ export default function AdminObras() {
   const [filtroStatus, setFiltroStatus] = useState('Todos')
 
   // Estado para armazenar o aviso de visualização ao clicar no botão "Ver"
-  const [avisoVisual, setAvisoVisual] = useState(null)
+  const [obras, setObras] = useState([])
+  const [arquivadas, setArquivadas] = useState([])
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState('')
+  const [solicitando, setSolicitando] = useState('')
+  const [feedbackForm, setFeedbackForm] = useState('')
+  const [fotosObra, setFotosObra] = useState([])
+  const [novaObra, setNovaObra] = useState({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', valorTotal: '', informacoesAdicionais: '' })
+
+  const atualizarObras = useCallback(async () => { const [ativas, arquivadasApi] = await Promise.all([listarObras(), listarObrasArquivadas()]); setObras(ativas); setArquivadas(arquivadasApi) }, [])
+
+  useEffect(() => {
+    let ativo = true
+    Promise.all([listarObras(), listarObrasArquivadas()]).then(([resultado, arquivadasApi]) => { if (ativo) { setObras(resultado); setArquivadas(arquivadasApi); setErro('') } })
+      .catch((falha) => { if (ativo) setErro(falha.message) })
+      .finally(() => { if (ativo) setCarregando(false) })
+    return () => { ativo = false }
+  }, [])
 
   // Lista fixa de opções de filtro permitidas pelo escopo
   const opcoesFiltro = [
@@ -47,40 +72,66 @@ export default function AdminObras() {
   // Filtra as obras conforme a opção selecionada no filtro
   const obrasFiltradas = filtroStatus === 'Todos'
     // Se 'Todos' estiver selecionado, exibe todas as obras
-    ? obrasMock
+    ? obras
     // Caso contrário, filtra pelo status exato selecionado
-    : obrasMock.filter((obra) => obra.status === filtroStatus)
-
-  // Função para deslogar da conta e voltar ao login
-  function handleLogout() {
-    // Apaga os dados de sessão do navegador
-    encerrarSessao()
-    // Redireciona para a página de login
-    navigate('/login')
-  }
+    : obras.filter((obra) => obra.status === filtroStatus)
 
   // Função auxiliar para buscar os colaboradores completos que estão escalados na obra
   function obterColaboradores(obra) {
-    // Usa a função compartilhada para consultar os IDs registrados na obra
-    return obterColaboradoresDaObra(obra)
+    // Usa os nomes e funções reais retornados para o administrador.
+    return (obra.colaboradores || []).map((colaborador) => typeof colaborador === 'object'
+      ? colaborador
+      : ({ id: colaborador, nome: colaborador, funcao: 'Alocado', telefone: '' }))
   }
 
-  // Função disparada ao clicar no botão visual "Ver" de uma obra
-  function handleVerObra(obra) {
-    // Atualiza o estado com as informações da obra clicada para exibir um aviso visual amigável
-    setAvisoVisual({
-      // Identificador da obra selecionada
-      id: obra.id,
-      // Título da obra
-      titulo: obra.titulo,
-      // Cliente responsável
-      cliente: obra.cliente,
-      // Status atual
-      status: obra.status,
-      // Valor formatado
-      valor: formatarMoeda(obra.valorTotal),
-    })
+  async function handleSolicitarConferencia(obra) {
+    setSolicitando(obra.id)
+    setErro('')
+    try {
+      await solicitarConferenciaObra(obra.id)
+      await atualizarObras()
+    } catch (falha) {
+      setErro(falha.message)
+    } finally {
+      setSolicitando('')
+    }
   }
+
+  async function handleRestaurar(obra) {
+    if (!obra.restauravel) return
+    setErro('')
+    try { await restaurarObra(obra.id); await atualizarObras() }
+    catch (falha) { setErro(falha.message) }
+  }
+
+  async function handleCriarObra(event) {
+    event.preventDefault(); setErro(''); setFeedbackForm('')
+    const erros = []
+    if (!/^\d+$/.test(novaObra.numero)) erros.push('Número do endereço: use apenas números.')
+    if (!novaObra.semApartamento && !/^\d+$/.test(novaObra.apartamento)) erros.push('Apartamento: use apenas números.')
+    if (!novaObra.semBloco && !/^[a-z\d]+$/i.test(novaObra.bloco)) erros.push('Bloco: use apenas letras e números.')
+    const valorNormalizado = moedaNumero(novaObra.valorTotal)
+    if (!/^\d+(?:\.\d{1,2})?$/.test(valorNormalizado) || Number(valorNormalizado) <= 0) erros.push('Valor final: informe um valor maior que zero, com até duas casas decimais.')
+    if (erros.length) { setFeedbackForm(erros.join(' ')); return }
+    try {
+      const fotos = await Promise.all(fotosObra.map((arquivo) => new Promise((resolve, reject) => {
+        const leitor = new FileReader(); leitor.onload = () => resolve({ data: leitor.result, mimeType: arquivo.type }); leitor.onerror = () => reject(new Error('Não foi possível ler uma das fotos.')); leitor.readAsDataURL(arquivo)
+      })))
+      const resposta = await criarObra({ ...novaObra, valorTotal: valorNormalizado, fotos })
+      setNovaObra({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', valorTotal: '', informacoesAdicionais: '' }); setFotosObra([])
+      setFeedbackForm(resposta.avisos?.length ? `Obra criada, mas as fotos não foram enviadas: ${resposta.avisos.join('; ')}` : 'Obra cadastrada. Cadastre o cliente na tela Clientes para anexar contrato e parcelas.')
+      await atualizarObras()
+    } catch (falha) { setFeedbackForm(falha.message) }
+  }
+
+  // Abre a página de gestão com dados, equipe e histórico da obra.
+  function handleVerObra(obra) {
+    navigate(`/admin/obra/${encodeURIComponent(obra.id)}`)
+  }
+
+  const hoje = new Date()
+  const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`
+  const proximasObras = obras.filter((obra) => obra.status === 'Agendada' && obra.agendadaParaISO && obra.agendadaParaISO > hojeISO).sort((a, b) => a.agendadaParaISO.localeCompare(b.agendadaParaISO))
 
   // Renderiza a interface da página de Gestão de Obras
   return (
@@ -112,37 +163,7 @@ export default function AdminObras() {
           </div>
 
           {/* Menu de navegação entre as telas */}
-          <nav className="flex items-center flex-wrap gap-2 text-xs font-semibold" aria-label="Menu de navegação">
-            {/* Link para o Dashboard do Administrador */}
-            <Link
-              to="/admin"
-              className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition"
-            >
-              Dashboard
-            </Link>
-            {/* Link ativo da página atual de Gestão de Obras */}
-            <Link
-              to="/admin/obras"
-              className="py-1.5 px-3 rounded-md bg-navy text-white transition shadow-xs"
-            >
-              Gestão de Obras
-            </Link>
-            {/* Link para a página de Perfil */}
-            <Link
-              to="/perfil"
-              className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100 transition"
-            >
-              Perfil
-            </Link>
-            {/* Botão para encerrar a sessão */}
-            <Button
-              variant="outline"
-              onClick={handleLogout}
-              className="text-xs py-1.5 px-3"
-            >
-              Sair
-            </Button>
-          </nav>
+          <AdminMenu />
 
         </div>
       </header>
@@ -179,38 +200,13 @@ export default function AdminObras() {
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Exibindo</span>
             {/* Número com destaque */}
             <strong className="text-lg font-bold text-navy">
-              {obrasFiltradas.length} de {obrasMock.length} obras
+              {obrasFiltradas.length} de {obras.length} obras
             </strong>
           </div>
         </div>
 
-        {/* Aviso visual informativo disparado ao clicar no botão "Ver" de qualquer obra */}
-        {avisoVisual && (
-          // Caixa de notificação com estilo de alerta suave
-          <div className="mb-6 bg-sky-50 border border-sky-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sky-900 shadow-xs">
-            {/* Conteúdo descritivo da obra clicada */}
-            <div className="text-xs sm:text-sm">
-              {/* Título em negrito do aviso */}
-              <p className="font-bold flex items-center gap-1.5 text-primary">
-                {/* Ícone de informação */}
-                <span>ℹ️</span> Visualização da Obra #{avisoVisual.id}: {avisoVisual.titulo}
-              </p>
-              {/* Detalhes rápidos da obra */}
-              <p className="mt-1 text-slate-600">
-                Cliente: <strong className="text-navy">{avisoVisual.cliente}</strong> | Status: <strong className="text-navy">{avisoVisual.status}</strong> | Valor Total: <strong className="text-navy">{avisoVisual.valor}</strong>
-              </p>
-            </div>
-            {/* Botão para fechar o aviso visual */}
-            <Button
-              variant="outline"
-              onClick={() => setAvisoVisual(null)}
-              className="text-xs py-1 px-3 self-end sm:self-auto"
-            >
-              Fechar aviso
-            </Button>
-          </div>
-        )}
-
+        {erro && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{erro}</p>}
+        {carregando && <p className="mb-4 text-sm text-slate-500" role="status">Carregando obras…</p>}
         {/* Barra de filtros por status (mobile-first com rolagem ou quebra de linha suave) */}
         <div className="mb-6 bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
           {/* Rótulo da seção de filtro */}
@@ -225,8 +221,8 @@ export default function AdminObras() {
               const selecionado = filtroStatus === opcao
               // Conta quantas obras têm esse status (ou o total para 'Todos')
               const contagem = opcao === 'Todos'
-                ? obrasMock.length
-                : obrasMock.filter((o) => o.status === opcao).length
+                ? obras.length
+                : obras.filter((o) => o.status === opcao).length
 
               // Retorna o botão de filtro
               return (
@@ -255,6 +251,8 @@ export default function AdminObras() {
             })}
           </div>
         </div>
+
+        {proximasObras.length > 0 && <section className="mb-6 rounded-xl border border-sky-200 bg-sky-50 p-4"><h2 className="font-bold text-navy">Obras nos próximos dias</h2><ul className="mt-2 grid gap-2 sm:grid-cols-2">{proximasObras.map((obra) => <li key={obra.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-sm"><span className="font-semibold text-navy">{obra.titulo}</span><span className="text-xs text-slate-600">{new Date(`${obra.agendadaParaISO}T12:00:00`).toLocaleDateString('pt-BR')}</span><Button variant="outline" onClick={() => handleVerObra(obra)} className="px-2 py-1 text-xs">Abrir</Button></li>)}</ul></section>}
 
         {/* Bloco da tabela: com overflow-x-auto restrito ao próprio bloco para rolagem em celulares */}
         <div className="w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -360,8 +358,9 @@ export default function AdminObras() {
                             onClick={() => handleVerObra(obra)}
                             className="text-xs py-1 px-3"
                           >
-                            Ver
+                            Gerenciar
                           </Button>
+                          {obra.status === 'Em andamento' && <Button variant="compact" disabled={Boolean(solicitando)} onClick={() => handleSolicitarConferencia(obra)} className="ml-2 text-xs py-1 px-3">{solicitando === obra.id ? 'Enviando…' : 'Solicitar conferência'}</Button>}
                         </td>
 
                       </tr>
@@ -388,6 +387,31 @@ export default function AdminObras() {
           </div>
 
         </div>
+
+        {arquivadas.length > 0 && <section className="mt-8 rounded-xl border border-amber-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Obras arquivadas</h2><p className="mt-1 text-xs text-slate-600">Cada obra fica recuperável até a data indicada. O registro é mantido no banco.</p><div className="mt-3 space-y-2">{arquivadas.map((obra) => <article key={obra.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-amber-50 p-3"><div><strong className="text-navy">{obra.titulo}</strong><p className="text-xs text-slate-600">Motivo: {obra.exclusaoMotivo} · {obra.restauravel ? `Restaurar até ${new Date(obra.exclusaoExpiraEm).toLocaleString('pt-BR')}` : 'Prazo de restauração expirado'}</p></div><Button variant="outline" disabled={!obra.restauravel} onClick={() => handleRestaurar(obra)} className="text-xs">Restaurar obra</Button></article>)}</div></section>}
+
+        {/* Cartão de resumo rápido reutilizando Card.jsx */}
+        <section className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-bold text-navy">Cadastrar obra</h2>
+          <p className="mt-1 text-sm text-slate-600">Cadastre os dados da obra. O cliente, contrato e plano de parcelas são vinculados na tela Clientes. O valor base pode receber juros quando o cliente escolher mais de 12 parcelas.</p>
+          {feedbackForm && <p role="status" className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">{feedbackForm}</p>}
+          <form onSubmit={handleCriarObra} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="text-sm">Nome da obra<input required value={novaObra.nome} onChange={(e) => setNovaObra({ ...novaObra, nome: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Descrição da obra<input required value={novaObra.descricao} onChange={(e) => setNovaObra({ ...novaObra, descricao: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Estado<input required value={novaObra.estado} onChange={(e) => setNovaObra({ ...novaObra, estado: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Cidade<input required value={novaObra.cidade} onChange={(e) => setNovaObra({ ...novaObra, cidade: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Bairro<input required value={novaObra.bairro} onChange={(e) => setNovaObra({ ...novaObra, bairro: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Endereço (rua/avenida)<input required value={novaObra.endereco} onChange={(e) => setNovaObra({ ...novaObra, endereco: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Número<input required inputMode="numeric" pattern="[0-9]+" title="Use apenas números" value={novaObra.numero} onChange={(e) => setNovaObra({ ...novaObra, numero: e.target.value.replace(/\D/g, '') })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <div className="grid gap-2 sm:grid-cols-2"><label className="text-sm">Apartamento<input disabled={novaObra.semApartamento} required={!novaObra.semApartamento} inputMode="numeric" pattern="[0-9]+" title="Use apenas números" value={novaObra.apartamento} onChange={(e) => setNovaObra({ ...novaObra, apartamento: e.target.value.replace(/\D/g, '') })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /></label><label className="mt-6 flex items-center gap-2 text-xs"><input type="checkbox" checked={novaObra.semApartamento} onChange={(e) => setNovaObra({ ...novaObra, semApartamento: e.target.checked, apartamento: '' })} /> Não existe apartamento</label></div>
+            <div className="grid gap-2 sm:grid-cols-2"><label className="text-sm">Bloco<input disabled={novaObra.semBloco} required={!novaObra.semBloco} pattern="[A-Za-z0-9]+" title="Use apenas letras e números" value={novaObra.bloco} onChange={(e) => setNovaObra({ ...novaObra, bloco: e.target.value.replace(/[^a-z\d]/gi, '') })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /></label><label className="mt-6 flex items-center gap-2 text-xs"><input type="checkbox" checked={novaObra.semBloco} onChange={(e) => setNovaObra({ ...novaObra, semBloco: e.target.checked, bloco: '' })} /> Não existe bloco</label></div>
+            <label className="text-sm">Prazo final<input required type="date" value={novaObra.prazoFinal} onChange={(e) => setNovaObra({ ...novaObra, prazoFinal: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm">Valor base (R$)<input required inputMode="decimal" placeholder="40.000,25" value={novaObra.valorTotal} onChange={(e) => setNovaObra({ ...novaObra, valorTotal: moedaEntrada(e.target.value) })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm sm:col-span-2 lg:col-span-3">Informações de execução: serviços, materiais e medidas previstos no contrato<textarea required rows="4" value={novaObra.informacoesAdicionais} onChange={(e) => setNovaObra({ ...novaObra, informacoesAdicionais: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+            <label className="text-sm sm:col-span-2 lg:col-span-3">Fotos iniciais (JPG, PNG ou WebP; até 5 arquivos de 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(e) => setFotosObra(Array.from(e.target.files || []).slice(0, 5))} className="mt-1 block w-full rounded border border-slate-300 p-2" /></label>
+            <Button type="submit" className="sm:col-span-2 lg:col-span-3">Criar obra</Button>
+          </form>
+        </section>
 
         {/* Cartão de resumo rápido reutilizando Card.jsx */}
         <div className="mt-8">

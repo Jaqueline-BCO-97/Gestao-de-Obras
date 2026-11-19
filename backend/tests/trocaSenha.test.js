@@ -10,6 +10,7 @@ describe("Issue #32 — PATCH /usuarios/me/senha (Troca de senha)", () => {
   let baseUrl;
   let prisma;
   let usuarioTeste;
+  let funcionarioTeste;
   let tokenAuth;
   let dbDisponivel = false;
 
@@ -54,6 +55,18 @@ describe("Issue #32 — PATCH /usuarios/me/senha (Troca de senha)", () => {
           },
         });
 
+        // Colaboradores precisam de um Funcionário ativo vinculado para
+        // passar pelo middleware central de autenticação.
+        funcionarioTeste = await prisma.funcionario.create({
+          data: {
+            empresaId: empresa.id,
+            nome: usuarioTeste.nome,
+            funcao: "Profissional de teste",
+            nivel: "RESPONSAVEL",
+            usuarioId: usuarioTeste.id,
+          },
+        });
+
         tokenAuth = jwt.sign(
           {
             id: usuarioTeste.id,
@@ -76,8 +89,11 @@ describe("Issue #32 — PATCH /usuarios/me/senha (Troca de senha)", () => {
   });
 
   after(async () => {
-    if (dbDisponivel && prisma && usuarioTeste?.id) {
+    if (prisma && usuarioTeste?.id) {
       try {
+        if (funcionarioTeste?.id) {
+          await prisma.funcionario.delete({ where: { id: funcionarioTeste.id } });
+        }
         await prisma.usuario.delete({ where: { id: usuarioTeste.id } });
       } catch {
         // Ignora se o usuário já tiver sido removido

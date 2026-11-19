@@ -1,7 +1,7 @@
 // Importa os hooks useParams, useNavigate e Link do react-router-dom para lidar com parâmetros de rota e navegação
 import { useParams, useNavigate, Link } from 'react-router-dom'
-// Importa o estado local do React para atualizar a tela após a confirmação.
-import { useState } from 'react'
+// Importa hooks para carregar os dados da obra e atualizar a tela.
+import { useEffect, useState } from 'react'
 
 // Importa o componente reutilizável Card do sistema de design
 import Card from '../components/Card.jsx'
@@ -11,27 +11,85 @@ import Button from '../components/Button.jsx'
 
 // Importa o componente compartilhado que apresenta os eventos da obra
 import HistoricoObra from '../components/HistoricoObra.jsx'
-// Importa o modal reutilizável para pedir confirmação ao cliente.
-import Modal from '../components/Modal.jsx'
 
-// Importa os dados das obras mockadas e as funções auxiliares de formatação e cores
-import { obrasMock, formatarMoeda, obterCoresStatus, confirmarConclusao } from '../data/obrasMock.js'
+// Importa utilitários visuais mantidos em comum com as telas existentes.
+import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
+import { buscarObra, confirmarConclusaoObra } from '../services/auth.js'
+import { consultaAindaPertenceAObra, criarRastreadorObra, detectarNovosAgendamentos, registrarEventosConhecidos, registrarListenerOnline } from '../utils/eventosAgendamento.js'
+import { textoDataParcela } from '../utils/formatacaoParcela.js'
 
 // Componente da página de Detalhes da Obra do Cliente (/cliente/obra/:id)
 export default function ClienteObra() {
   // Extrai o parâmetro dinâmico ":id" presente na URL do navegador
   const { id } = useParams()
+  return <ClienteObraConteudo key={id} id={id} />
+}
 
+function ClienteObraConteudo({ id }) {
   // Inicializa o hook de navegação para permitir retornar ao painel via código
   const navigate = useNavigate()
-  // Controla se a janela de confirmação está aberta.
-  const [modalAberto, setModalAberto] = useState(false)
-  // Guarda uma atualização de tela após registrar a confirmação no mock.
-  const [confirmacaoRegistrada, setConfirmacaoRegistrada] = useState(false)
+  const [obra, setObra] = useState(null)
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState('')
+  const [avisoAgendamento, setAvisoAgendamento] = useState(null)
+  const [confirmandoConclusao, setConfirmandoConclusao] = useState(false)
+  const [erroConclusao, setErroConclusao] = useState('')
+  const [sucessoConclusao, setSucessoConclusao] = useState('')
+  useEffect(() => {
+    // A chave por obra cria estado novo; o cleanup invalida respostas da montagem anterior.
+    const rastreador = criarRastreadorObra(id)
+    let ativo = true
+    let consultaEmAndamento = false
+    let intervalo
 
-  // Busca na lista mockada a obra que possui o id correspondente ao parâmetro da URL
-  // Converte ambos para string para garantir comparação segura caso o id venha como número ou texto
-  const obra = obrasMock.find((item) => String(item.id) === String(id))
+    async function atualizarObra() {
+      if (!ativo || document.visibilityState === 'hidden' || consultaEmAndamento) return
+      consultaEmAndamento = true
+      try {
+        const atualizada = await buscarObra(id)
+        if (!consultaAindaPertenceAObra(rastreador, id, ativo)) return
+        const eventos = atualizada.timeline || []
+        if (rastreador.primeiraLeitura) {
+          // A leitura inicial estabelece a base; histórico antigo não dispara aviso.
+          registrarEventosConhecidos(eventos, rastreador.idsConhecidos)
+          rastreador.primeiraLeitura = false
+        } else {
+          const novos = detectarNovosAgendamentos(eventos, rastreador.idsConhecidos)
+          if (novos.length) setAvisoAgendamento(novos[novos.length - 1])
+        }
+        setObra({
+          ...atualizada,
+          parcela1: atualizada.parcela1 || { valor: 0, situacao: 'pendente' },
+          parcela2: atualizada.parcela2 || { valor: 0, situacao: 'pendente' },
+        })
+        setErro('')
+      } catch (falha) {
+        if (consultaAindaPertenceAObra(rastreador, id, ativo)) setErro(falha.message)
+      } finally {
+        consultaEmAndamento = false
+        if (consultaAindaPertenceAObra(rastreador, id, ativo)) setCarregando(false)
+      }
+    }
+
+    function aoRetomarAba() {
+      if (document.visibilityState === 'visible') atualizarObra()
+    }
+
+    atualizarObra()
+    intervalo = window.setInterval(atualizarObra, 30000)
+    document.addEventListener('visibilitychange', aoRetomarAba)
+    const removerListenerOnline = registrarListenerOnline(atualizarObra)
+    return () => {
+      ativo = false
+      window.clearInterval(intervalo)
+      document.removeEventListener('visibilitychange', aoRetomarAba)
+      removerListenerOnline()
+    }
+  }, [id])
+
+  if (carregando) {
+    return <main className="min-h-screen bg-background p-8 text-center text-sm text-slate-600" role="status">Carregando dados da obra…</main>
+  }
 
   // Caso nenhuma obra seja encontrada com o ID informado na URL, exibe uma tela amigável de erro 404
   if (!obra) {
@@ -51,7 +109,7 @@ export default function ClienteObra() {
           </h1>
           {/* Mensagem explicativa mostrando o ID que foi buscado sem sucesso */}
           <p className="text-sm text-slate-500 mb-6">
-            Não foi possível localizar nenhuma obra cadastrada com o identificador <code className="font-mono font-bold text-primary bg-slate-100 px-1.5 py-0.5 rounded">#{id}</code>.
+            {erro || <>Não foi possível localizar nenhuma obra cadastrada com o identificador <code className="font-mono font-bold text-primary bg-slate-100 px-1.5 py-0.5 rounded">#{id}</code>.</>}
           </p>
           {/* Botão para retornar ao painel do cliente usando o componente Button */}
           <Button
@@ -69,17 +127,23 @@ export default function ClienteObra() {
 
   // Obtém o conjunto de cores personalizadas conforme o status da obra encontrada
   const cores = obterCoresStatus(obra.status)
-  // Verifica se o cliente já confirmou a conclusão desta obra.
-  const conclusaoConfirmada = obra.conclusaoConfirmada === true || confirmacaoRegistrada
 
-  // Paleta de gradientes em Tailwind usada como placeholder para os blocos de fotos (sem imagens externas)
-  const gradientesFotos = [
-    'from-blue-100 via-sky-200 to-indigo-200 text-sky-800',
-    'from-amber-100 via-orange-200 to-yellow-200 text-amber-800',
-    'from-emerald-100 via-teal-200 to-green-200 text-emerald-800',
-    'from-purple-100 via-violet-200 to-fuchsia-200 text-purple-800',
-  ]
-
+  async function handleConfirmarConclusao() {
+    if (!window.confirm('Confirma que a obra foi concluída? Esta ação libera a segunda parcela.')) return
+    setConfirmandoConclusao(true)
+    setErroConclusao('')
+    setSucessoConclusao('')
+    try {
+      await confirmarConclusaoObra(id)
+      const atualizada = await buscarObra(id)
+      setObra({ ...atualizada, parcela1: atualizada.parcela1 || { valor: 0, situacao: 'pendente' }, parcela2: atualizada.parcela2 || { valor: 0, situacao: 'pendente' } })
+      setSucessoConclusao('Conclusão confirmada. A segunda parcela está disponível para pagamento.')
+    } catch (falha) {
+      setErroConclusao(falha.message)
+    } finally {
+      setConfirmandoConclusao(false)
+    }
+  }
   // Retorna a interface completa de detalhes da obra
   return (
     // Contêiner principal com fundo suave padrão e altura mínima de 100vh
@@ -117,6 +181,16 @@ export default function ClienteObra() {
 
       {/* Conteúdo principal com espaçamento responsivo (mobile-first) */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
+
+        {erro && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900" role="status">Não foi possível atualizar agora. Tentaremos novamente automaticamente. {erro}</p>}
+        {avisoAgendamento && (
+          <aside className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950" role="status" aria-live="polite">
+            <div className="flex items-start justify-between gap-3">
+              <div><strong className="block">A obra foi reagendada</strong><span>{avisoAgendamento.descricao}</span></div>
+              <button type="button" onClick={() => setAvisoAgendamento(null)} className="shrink-0 font-semibold" aria-label="Fechar aviso">Fechar</button>
+            </div>
+          </aside>
+        )}
 
         {/* Bloco 1: Informações principais da Obra (Título, Status, Endereço e Prazo) */}
         <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-sm">
@@ -182,12 +256,12 @@ export default function ClienteObra() {
               Informações Financeiras
             </h2>
             <p className="text-xs text-slate-500">
-              Detalhamento do investimento total e a situação de cada parcela (50% cada).
+              {obra.resumoFinanceiro || `Detalhamento do investimento total e das ${obra.parcelas?.length || 2} parcelas.`}
             </p>
           </div>
 
           {/* Grade com 3 cartões financeiros reutilizando o componente Card */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {((obra.parcelas || []).length === 0 || (obra.parcelas || []).length === 2) && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
             {/* Cartão 1: Valor Total Contratado */}
             <Card
@@ -203,13 +277,13 @@ export default function ClienteObra() {
             >
               {/* Informação adicional de rodapé do card */}
               <p className="mt-2 text-xs text-slate-500 border-t border-slate-100 pt-2">
-                Contrato fechado com divisão em 2 etapas
+                {obra.resumoFinanceiro || 'Contrato fechado com divisão em 2 etapas'}
               </p>
             </Card>
 
             {/* Cartão 2: 1ª Parcela (50%) */}
             <Card
-              label="1ª Parcela (50% - Entrada)"
+              label="1ª Parcela (Entrada)"
               value={formatarMoeda(obra.parcela1.valor)}
               accent={obra.parcela1.situacao === 'paga' ? 'border-emerald-500' : 'border-amber-500'}
               icon={
@@ -232,17 +306,14 @@ export default function ClienteObra() {
                   {obra.parcela1.situacao === 'paga' ? '✓ Paga' : '⏳ Pendente'}
                 </span>
               </div>
-              {/* Exibe a data de pagamento ou vencimento */}
               <p className="mt-1 text-[11px] text-slate-400">
-                {obra.parcela1.situacao === 'paga'
-                  ? `Pago em: ${obra.parcela1.pagamento}`
-                  : `Vencimento: ${obra.parcela1.vencimento}`}
+                {textoDataParcela(obra.parcela1)}
               </p>
             </Card>
 
             {/* Cartão 3: 2ª Parcela (50%) */}
             <Card
-              label="2ª Parcela (50% - Final)"
+              label="2ª Parcela (Final)"
               value={formatarMoeda(obra.parcela2.valor)}
               accent={obra.parcela2.situacao === 'paga' ? 'border-emerald-500' : 'border-amber-500'}
               icon={
@@ -265,109 +336,53 @@ export default function ClienteObra() {
                   {obra.parcela2.situacao === 'paga' ? '✓ Paga' : '⏳ Pendente'}
                 </span>
               </div>
-              {/* Exibe a data de pagamento ou vencimento */}
               <p className="mt-1 text-[11px] text-slate-400">
-                {obra.parcela2.situacao === 'paga'
-                  ? `Pago em: ${obra.parcela2.pagamento}`
-                  : `Vencimento: ${obra.parcela2.vencimento}`}
+                {textoDataParcela(obra.parcela2)}
               </p>
             </Card>
 
+          </div>}
+          {(obra.parcelas || []).length > 0 && (obra.parcelas || []).length !== 2 && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{obra.parcelas.map((parcela) => {
+            const vencida = parcela.situacao !== 'paga' && parcela.vencimento && new Date(`${parcela.vencimento.split('/').reverse().join('-')}T23:59:59`) < new Date()
+            return <article key={parcela.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-2"><h3 className="font-bold text-navy">{parcela.numero}ª parcela</h3><span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${parcela.situacao === 'paga' ? 'bg-emerald-50 text-emerald-700' : vencida ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>{parcela.situacao === 'paga' ? 'Paga' : vencida ? 'Atrasada' : 'Pendente'}</span></div><p className="mt-2 text-lg font-bold">{formatarMoeda(parcela.valor)}</p><p className="mt-1 text-xs text-slate-500">Vencimento: {parcela.vencimento || 'A definir'}</p></article>
+          })}</div>}
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-navy">Pagamentos</h2>
+              <p className="text-sm text-slate-600">
+                {obra.status === 'Concluída' ? 'A conclusão foi confirmada; as parcelas pendentes estão disponíveis para pagamento.' : 'A segunda parcela ficará disponível após a confirmação da conclusão da obra.'}
+              </p>
+            </div>
+            <Button variant="primary" onClick={() => navigate(`/cliente/obra/${obra.id}/pagamento`)}>Ver parcelas e pagar</Button>
           </div>
         </section>
 
-        {/* Bloco 3: Galeria de Fotos (Blocos de cor como placeholder, sem imagens externas) */}
         <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-sm" aria-label="Galeria de fotos">
-          {/* Cabeçalho da seção de fotos */}
-          <div className="mb-5">
-            <h2 className="text-lg font-bold text-navy">
-              Galeria de Fotos da Obra ({obra.fotos.length})
-            </h2>
-            <p className="text-xs text-slate-500">
-              Registros visuais de cada etapa da obra (utilizando blocos de cor como placeholder).
-            </p>
-          </div>
-
-          {/* Grade responsiva de fotos (mobile: 1 coluna, sm: 2 colunas, lg: 4 colunas) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Itera sobre a lista de nomes fictícios de fotos */}
-            {obra.fotos.map((nomeFoto, indice) => {
-              // Seleciona um gradiente ciclicamente para dar variação visual
-              const estiloGradiente = gradientesFotos[indice % gradientesFotos.length]
-
-              // Retorna o bloco de cor como placeholder para a foto
-              return (
-                // Caixa externa de cada registro fotográfico
-                <div
-                  key={indice}
-                  className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50 flex flex-col hover:shadow-md transition duration-200"
-                >
-                  {/* Bloco colorido simulando a foto real (placeholder visual com gradiente suave) */}
-                  <div
-                    className={`h-36 sm:h-40 bg-gradient-to-br ${estiloGradiente} flex flex-col items-center justify-center p-4 text-center select-none`}
-                  >
-                    {/* Ícone de câmera fotográfica em SVG */}
-                    <svg className="w-10 h-10 mb-2 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    {/* Número do registro fotográfico */}
-                    <span className="text-xs font-bold uppercase tracking-wider opacity-90">
-                      Registro #{indice + 1}
-                    </span>
-                  </div>
-
-                  {/* Legenda com o nome fictício do arquivo */}
-                  <div className="p-3 bg-white border-t border-slate-100 flex items-center justify-between text-xs">
-                    {/* Nome do arquivo da foto */}
-                    <span className="font-mono text-[11px] text-slate-600 truncate" title={nomeFoto}>
-                      {nomeFoto}
-                    </span>
-                    {/* Selo indicativo de arquivo simulado */}
-                    <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
-                      Mock
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          <h2 className="mb-5 text-lg font-bold text-navy">Fotos da Obra</h2>
+          {(obra.fotos || []).length || (obra.timeline || []).some((evento) => evento.fotoUrl) ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{[...(obra.fotos || []), ...(obra.timeline || []).map((evento) => evento.fotoUrl).filter(Boolean)].map((url) => <a key={url} href={url} target="_blank" rel="noreferrer"><img src={url} alt={`Registro fotográfico de ${obra.titulo}`} loading="lazy" className="h-56 w-full rounded-xl object-cover" /></a>)}</div> : <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500" role="status">Nenhuma foto foi compartilhada nesta obra ainda.</p>}
         </section>
+
+        {obra.contrato?.arquivoUrl && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="font-bold text-navy">Contrato da obra</h2>{obra.contrato.termos && <p className="mt-2 text-sm text-slate-600">{obra.contrato.termos}</p>}<a href={obra.contrato.arquivoUrl} target="_blank" rel="noreferrer" className="mt-3 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">Abrir contrato em PDF</a></section>}
 
         {/* Bloco 4: Histórico de eventos visíveis para o cliente */}
         <HistoricoObra eventos={obra.timeline} perfil="CLIENTE" />
+        <div className="flex justify-center">
+          <Button variant="outline" onClick={() => navigate(`/cliente/obra/${encodeURIComponent(id)}/andamento`)}>
+            Ver andamento completo
+          </Button>
+        </div>
 
-        {/* Mostra ações de conferência apenas enquanto a obra aguarda conferência. */}
+        {erroConclusao && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{erroConclusao}</p>}
+        {sucessoConclusao && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800" role="status">{sucessoConclusao}</p>}
         {obra.status === 'Aguardando conferência' && (
-          // Organiza o botão correspondente ao estado atual da confirmação.
-          <div className="flex justify-center sm:justify-start">
-            {/* Após confirmar, leva o cliente para a página temporária de pagamento final. */}
-            {conclusaoConfirmada ? (
-              // Renderiza a ação de pagamento final depois da confirmação.
-              <Button variant="primary" onClick={() => navigate(`/cliente/obra/${obra.id}/pagamento`)}>
-                Ir para o pagamento final
-              </Button>
-            ) : (
-              // Abre a janela para o cliente confirmar que a obra foi finalizada.
-              <Button variant="primary" onClick={() => setModalAberto(true)}>
-                Confirmar conclusão
-              </Button>
-            )}
+          <div className="space-y-2">
+            <Button variant="primary" disabled={confirmandoConclusao} onClick={handleConfirmarConclusao}>{confirmandoConclusao ? 'Confirmando…' : 'Confirmar conclusão da obra'}</Button>
+            <p className="text-xs text-slate-500">A confirmação libera a segunda parcela após o registro seguro no sistema.</p>
           </div>
         )}
-
-        {/* Exibe a janela de confirmação enquanto o cliente decide. */}
-        <Modal title="Confirmação da conclusão" open={modalAberto} onClose={() => setModalAberto(false)}>
-          {/* Apresenta a pergunta solicitada ao cliente. */}
-          <p className="mb-5 text-sm text-slate-600">Você confirma que a obra foi finalizada?</p>
-          {/* Mantém as duas opções organizadas no rodapé do modal. */}
-          <div className="flex justify-end gap-3">
-            {/* Fecha o modal sem registrar a confirmação. */}
-            <Button variant="outline" onClick={() => setModalAberto(false)}>Cancelar</Button>
-            {/* Registra a confirmação e atualiza a tela para exibir o pagamento final. */}
-            <Button onClick={() => { confirmarConclusao(obra.id); setConfirmacaoRegistrada(true); setModalAberto(false) }}>Confirmar</Button>
-          </div>
-        </Modal>
 
         {/* Bloco 5: Botão de ação inferior para voltar ao dashboard */}
         <div className="pt-2 pb-6 flex justify-center sm:justify-start">
