@@ -1,8 +1,53 @@
 # Planejamento e auditoria de issues
 
-Auditoria do código nesta branch em 19/11/2026. O planejamento detalhado que existia na raiz foi substituído por este quadro atualizado. Foram comparadas as issues #1–#33 e #59–#72, conforme solicitado.
+## Execução de ajustes-5 — 21/11/2026
 
-As fontes `docs/planejamento.md`, `docs/prompt-ajustes.md` e `docs/escopo-v3.md` citadas na solicitação não estavam presentes neste checkout. Os critérios foram conferidos no planejamento disponível na raiz e no PDF `erros4.pdf`; `docs/escopo-do-projeto.md` foi tratado como documentação antiga, não como escopo oficial. A situação abaixo descreve o código e a validação local; não representa mudança no quadro do GitHub.
+Este registro atualiza o estado do código nesta branch. Em conflito de critério, prevalece `docs/escopo-do-projeto.md`.
+
+| Bloco | Antes | Depois | Validação e limite |
+|---|---|---|---|
+| Desempenho | Autenticação consultava o banco em cada pedido; resumos carregavam relações amplas; a interface só deduplicava GETs simultâneos; imagens de demonstração eram PNGs de cerca de 0,7–0,8 MB. | Cache de sessão de até 60 s com invalidação quando muda acesso; seleções menores nos resumos, consultas paralelas e índices para filtros recorrentes; cache GET de 15 s invalidado após mutações; páginas sob demanda com esqueleto; fotos WebP de 7–13 KB. | Banco Supabase indisponível (P1001 em `npx prisma migrate status`). Não foi possível medir latência real nem comparar SQL antes/depois. O script `backend/scripts/medir-latencia.js` imprime 3 rodadas e contagem de queries por rota. |
+| Navegação | O menu era parte de cada painel e sumia em telas de detalhe. | Menu fixo global em telas autenticadas; o perfil mantém só a lateral; menu não aparece no checkout online. Páginas têm um único retorno por estado. | Conferir no roteiro visual depois que a interface estiver disponível. |
+| Correções | Erro no calendário, edição de funcionário e mensagens de upload ainda apareciam nos fluxos informados. | Parser ISO valida datas estritamente; calendário preserva início/prazo com horário e rejeita sobreposição dentro de transação, conforme o escopo; programação de funcionário pode ficar vazia; validação de arquivo e mensagens Cloudinary explícitas; máscara de telefone; cores de pagamento verde/amarelo/vermelho. | Testes do backend (11 arquivos), testes do frontend (9 arquivos), lint, build e validação Prisma passaram. Upload Cloudinary real depende das três credenciais; Mercado Pago sandbox também não foi configurado. |
+| Funcionalidades | Não havia filtro de notificações, exclusão controlada de preço/cliente/convite expirado, detalhes pessoais exclusivos de Admin, alocação de gerentes existentes nem plano de parcelas em cadastro/edição de obra. | Esses controles e filtros foram adicionados. Gerentes ativos com conta podem ser selecionados na obra; funções repetidas são rejeitadas. Endereço completo do cliente é levado do convite ao perfil. | Exclusões em código têm guardas; nenhum registro foi excluído neste ambiente. CPF/CNPJ validam formato e dígitos verificadores, não provam existência, titularidade ou situação cadastral. |
+| Dados demo | As obras demo do cliente não tinham PDF de exemplo nem uma obra própria para testar o aceite final. | `frontend/public/contrato-demo.pdf` foi copiado do PDF solicitado; o seed mantém/atribui o contrato a todas as obras do Cliente Demo e inclui uma obra Aguardando conferência. | Seed idempotente atualizado, mas não executado contra o banco compartilhado ou sem conexão. Checkout sandbox segue pendente. |
+
+### Migrations
+
+A verificação obrigatória do estado falhou por indisponibilidade de conexão (`P1001`, host do Supabase em `sa-east-1`). Portanto, não é possível afirmar quais arquivos já estão aplicados no banco. A sequência ordenada do repositório é:
+
+1. `20260911025619_init_usuarios`
+2. `20260930000000_add_obras`
+3. `20261115180750_modelo_v2_1`
+4. `20261115220000_pagamento_mercado_pago`
+5. `20261118120000_convites`
+6. `20261119090000_dados_completos_obras`
+7. `20261119130000_perfil_financeiro_e_equipes`
+8. `20261119150000_usuario_cpf`
+9. `20261121120000_indices_consulta` — nova; apenas índices aditivos.
+10. `20261121130000_enderecos_perfil` — nova; adiciona campos opcionais de endereço.
+
+Revise o resultado de `npx prisma migrate status` no banco de destino e aplique somente migrations pendentes, nesta ordem. Nenhuma migration foi aplicada aqui. Não foi alterado `.env`.
+
+### Dados e uploads
+
+Não foi possível localizar nem excluir a obra de teste com todos os critérios indicados (`Casa de maquinas`, Agendada, Cliente Demo, Avenida Ana Costa 67), nem a empresa de teste: o banco não respondeu. Nenhum outro dado foi consultado ou removido.
+
+Para habilitar fotos, contratos e comprovantes, configure no ambiente do backend `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` e `CLOUDINARY_API_SECRET`, reinicie o backend e repita o upload em cada tela. Os fluxos de código validam tipo/tamanho e mostram erro explícito se as chaves faltarem; sem credenciais não é possível confirmar o envio real de ponta a ponta.
+
+Para CPF e CNPJ, os dígitos verificadores identificam erros matemáticos comuns. Eles não confirmam que o número foi emitido, está ativo, pertence à pessoa informada ou é autêntico; isso exige consulta a uma fonte oficial e autorização para essa integração.
+
+### Medição de latência
+
+Com backend e banco de demonstração acessíveis, execute `node backend/scripts/medir-latencia.js` na raiz do projeto. Opcionalmente, defina `OBRAMASTER_API_URL` e `OBRAMASTER_DEMO_PASSWORD`. O script compara `/health` (sem query de banco) com painéis, detalhes de obra, perfil e notificações; não preenche medidas fictícias.
+
+O roteiro de clique está em `docs/teste-visual.md`. A solicitação visual de remover horários e permitir sobreposição conflita com a RN do escopo; a RN prevaleceu e foi anotada no calendário e no teste correspondente. Este bloco supersede as observações de 19/11 abaixo; nenhuma exclusão de dados nem operação remota foi realizada nesta atualização.
+
+---
+
+Registro histórico da auditoria de 19/11/2026; consulte “Execução de ajustes-5” acima para o estado atual. Auditoria do código nesta branch em 19/11/2026. O planejamento detalhado que existia na raiz foi substituído por este quadro atualizado. Foram comparadas as issues #1–#33 e #59–#72, conforme solicitado.
+
+As fontes `docs/planejamento.md`, `docs/prompt-ajustes.md` e `docs/escopo-v3.md` citadas na solicitação não estavam presentes neste checkout. Os critérios foram conferidos no planejamento disponível na raiz e no PDF `erros4.pdf`; `docs/escopo-do-projeto.md` é a referência de negócio aplicada nesta atualização, conforme a orientação vigente. A situação abaixo descreve o código e a validação local; não representa mudança no quadro do GitHub.
 
 Legenda: **Implementada** = critérios de código atendidos; **Parcial** = falta validação externa, documentação ou critério; **Pendente** = não verificada/concluída; **Substituída** = atendida por fluxo posterior.
 
