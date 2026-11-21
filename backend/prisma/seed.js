@@ -82,6 +82,10 @@ const OBRAS = [
   { titulo: "Casa de máquinas", endereco: "Rua do Porto, 50 - Centro, Santos - SP", estado: "SP", cidade: "Santos", bairro: "Centro", rua: "Rua do Porto", numero: "50", semApartamento: true, semBloco: true, detalhes: "Adequação demonstrativa da casa de máquinas e revisão dos equipamentos previstos no contrato.", status: "Agendada", agendadaPara: "20/02/2027", valorTotal: 42000, prazo: "20/06/2027", colaboradores: [1], parcelas: [{ situacao: "PENDENTE", vencimento: "20/12/2026" }, { situacao: "PENDENTE", vencimento: "20/01/2027" }], timeline: [
     { data: "19/11/2026", hora: "12:00", autor: "admin", tipo: "STATUS", visivel: true, descricao: "Obra de demonstração agendada para 20/02/2027." },
   ] },
+  // Obra nova para validar a confirmação final no perfil do cliente demo.
+  { titulo: "Conferência de Conclusão Demo", endereco: "Rua da Demonstração, 120 - Gonzaga, Santos - SP", estado: "SP", cidade: "Santos", bairro: "Gonzaga", rua: "Rua da Demonstração", numero: "120", semApartamento: true, semBloco: true, detalhes: "Obra de demonstração pronta para conferência e aceite final pelo cliente.", status: "Aguardando conferência", valorTotal: 24000, prazo: "30/11/2026", colaboradores: [], parcelas: [{ situacao: "PAGA", pagamento: "05/11/2026", vencimento: "05/11/2026" }, { situacao: "PAGA", pagamento: "15/11/2026", vencimento: "15/11/2026" }], timeline: [
+    { data: "18/11/2026", hora: "12:00", autor: "admin", tipo: "STATUS", visivel: true, descricao: "Obra enviada para conferência final do cliente demo." },
+  ] },
 ];
 // Define cinco preços iniciais plausíveis para os serviços demonstrativos.
 const PRECOS = [
@@ -155,7 +159,7 @@ async function main() {
       // Salva os campos de negócio da obra mantendo sua identidade em reexecuções.
       const agendadaPara = dados.agendadaPara ? dataPtBR(dados.agendadaPara) : null;
       const obra = obraExistente ? await prisma.obra.update({ where: { id: obraExistente.id }, data: { descricao: dados.detalhes, endereco: dados.rua, estado: dados.estado, cidade: dados.cidade, bairro: dados.bairro, numero: dados.numero, semApartamento: dados.semApartamento, semBloco: dados.semBloco, informacoesAdicionais: dados.detalhes, status: STATUS_OBRA[dados.status], valorTotal: dados.valorTotal, prazoFinal, agendadaPara, clienteId: cliente.id } }) : await prisma.obra.create({ data: { empresaId: empresa.id, nome: dados.titulo, descricao: dados.detalhes, endereco: dados.rua, estado: dados.estado, cidade: dados.cidade, bairro: dados.bairro, numero: dados.numero, semApartamento: dados.semApartamento, semBloco: dados.semBloco, informacoesAdicionais: dados.detalhes, status: STATUS_OBRA[dados.status], valorTotal: dados.valorTotal, prazoFinal, agendadaPara, clienteId: cliente.id } });
-      const urlContratoDemo = `${(process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "")}/contrato-exemplo.pdf`;
+      const urlContratoDemo = `${(process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "")}/contrato-demo.pdf`;
       await prisma.contrato.upsert({ where: { obraId: obra.id }, update: { empresaId: empresa.id, termos: "Contrato de exemplo para demonstração do ObraMaster.", arquivoUrl: urlContratoDemo }, create: { obraId: obra.id, empresaId: empresa.id, termos: "Contrato de exemplo para demonstração do ObraMaster.", arquivoUrl: urlContratoDemo } });
       for (const registro of [
         { tipo: "STATUS", descricao: "Obra criada pela empreiteira." },
@@ -204,6 +208,16 @@ async function main() {
       // Mostra o título da obra concluída nesta etapa.
       console.log(`Obra de demonstração garantida: ${dados.titulo} (${indice + 1}/${OBRAS.length})`);
     }
+    const obrasClienteDemo = await prisma.obra.findMany({ where: { empresaId: empresa.id, clienteId: cliente.id }, select: { id: true } });
+    const urlContratoClienteDemo = `${(process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "")}/contrato-demo.pdf`;
+    await prisma.contrato.createMany({
+      data: obrasClienteDemo.map(({ id: obraId }) => ({ obraId, empresaId: empresa.id, termos: "Contrato de exemplo para demonstração do ObraMaster.", arquivoUrl: urlContratoClienteDemo })),
+      skipDuplicates: true,
+    });
+    if (obrasClienteDemo.length) await prisma.contrato.updateMany({
+      where: { empresaId: empresa.id, obraId: { in: obrasClienteDemo.map(({ id }) => id) } },
+      data: { termos: "Contrato de exemplo para demonstração do ObraMaster.", arquivoUrl: urlContratoClienteDemo },
+    });
     const casaDeMaquinas = await prisma.obra.findFirst({ where: { empresaId: empresa.id, nome: "Casa de máquinas" } });
     if (casaDeMaquinas) await prisma.parcela.updateMany({ where: { obraId: casaDeMaquinas.id, numero: 1 }, data: { situacao: "PENDENTE", pagaEm: null } });
     // Lista os cinco serviços e seus valores iniciais por empresa.

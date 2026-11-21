@@ -66,7 +66,7 @@ export default function Colaborador() {
 
   return (
     <div className="min-h-screen bg-background text-ink">
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-10 shadow-sm">
+      <header className="border-b border-slate-200 bg-white shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-emerald-600 text-white text-lg font-bold" aria-hidden="true">🔨</span>
@@ -75,7 +75,7 @@ export default function Colaborador() {
               <small className="block text-[10px] tracking-wider text-emerald-700 uppercase font-bold">Painel do Gerente de Obra</small>
             </div>
           </div>
-          <nav className="flex items-center flex-wrap gap-2 text-xs font-semibold" aria-label="Navegação do colaborador">
+          <nav className="hidden" aria-label="Navegação do colaborador">
             <Link to="/colaborador" className="py-1.5 px-3 rounded-md bg-emerald-700 text-white">Minhas Obras</Link>
             <Link to="/colaborador/notificacoes" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100">Notificações</Link>
             <Link to="/perfil" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100">Perfil</Link>

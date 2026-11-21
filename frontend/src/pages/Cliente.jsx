@@ -93,7 +93,7 @@ export default function Cliente() {
     <div className="min-h-screen bg-background text-ink">
 
       {/* Barra de navegação superior (Header) */}
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-10 shadow-sm">
+      <header className="border-b border-slate-200 bg-white shadow-sm">
         {/* Contêiner interno do cabeçalho com alinhamento flexível e espaçamento responsivo */}
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
 
@@ -117,7 +117,7 @@ export default function Cliente() {
           </div>
 
           {/* Área de ações do usuário no cabeçalho */}
-          <nav className="flex flex-wrap items-center gap-1.5" aria-label="Navegação do cliente">
+          <nav className="hidden" aria-label="Navegação do cliente">
             {/* Link direto para a página de perfil do usuário logado */}
             <Link to="/cliente" className="rounded-md bg-navy px-2.5 py-2 text-xs font-semibold text-white">Minhas Obras</Link>
             <Link to="/cliente/pagamentos" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Pagamentos</Link>
