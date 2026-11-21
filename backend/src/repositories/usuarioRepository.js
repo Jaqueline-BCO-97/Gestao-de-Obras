@@ -103,8 +103,37 @@ async function buscarPerfilUsuarioPorId(id) {
       telefoneSecundario: true,
       fotoUrl: true,
       endereco: true,
+      estado: true,
+      cidade: true,
+      bairro: true,
+      numero: true,
+      complemento: true,
+      apartamento: true,
+      bloco: true,
+      semApartamento: true,
+      semBloco: true,
       cpf: true,
       funcionario: { select: { funcao: true, telefone: true, fotoUrl: true } },
+      empresa: { select: { nome: true, cnpj: true, cpfResponsavel: true, telefone: true, telefoneSecundario: true, enderecoResponsavel: true, endereco: true, estado: true, cidade: true, bairro: true, numero: true, complemento: true } },
+    },
+  });
+}
+
+async function buscarAutenticacaoUsuarioPorId(id) {
+  if (!isDbConfigured()) {
+    const erro = new Error("Banco não configurado. Defina DATABASE_URL no .env (PostgreSQL do Supabase)");
+    erro.code = "DATABASE_NOT_CONFIGURED";
+    throw erro;
+  }
+
+  return getPrisma().usuario.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      empresaId: true,
+      email: true,
+      tipo: true,
+      funcionario: { select: { empresaId: true, ativo: true } },
     },
   });
 }
@@ -156,6 +185,7 @@ module.exports = {
   buscarUsuarioPorEmail,
   buscarUsuarioPorId,
   buscarPerfilUsuarioPorId,
+  buscarAutenticacaoUsuarioPorId,
   buscarFuncionarioPorUsuarioId,
   atualizarSenhaUsuario,
 };

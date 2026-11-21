@@ -7,14 +7,40 @@ const TOKEN_KEY = 'token'
 // Nome da chave usada para guardar os dados do usuário no localStorage ou sessionStorage
 const USER_KEY = 'usuario'
 const GETS_EM_ANDAMENTO = new Map()
+const RESPOSTAS_GET = new Map()
+const TEMPO_CACHE_GET_MS = 15_000
+const LIMITE_CACHE_GET = 100
+let versaoCacheGet = 0
+
+function clonarResposta(valor) {
+  return typeof structuredClone === 'function' ? structuredClone(valor) : JSON.parse(JSON.stringify(valor))
+}
+
+function limparCacheLeituras() {
+  versaoCacheGet += 1
+  RESPOSTAS_GET.clear()
+}
 
 // Função auxiliar assíncrona para realizar requisições HTTP usando o fetch da Web API
 function requisicao(caminho, opcoes = {}) {
   const metodo = (opcoes.method || 'GET').toUpperCase()
   const token = opcoes.headers?.Authorization || ''
   const chave = metodo === 'GET' ? `${API_BASE_URL}${caminho}:${token}` : null
+  if (!chave) limparCacheLeituras()
+  if (chave) {
+    const guardada = RESPOSTAS_GET.get(chave)
+    if (guardada && guardada.expiraEm > Date.now()) return Promise.resolve(clonarResposta(guardada.dados))
+    if (guardada) RESPOSTAS_GET.delete(chave)
+  }
   if (chave && GETS_EM_ANDAMENTO.has(chave)) return GETS_EM_ANDAMENTO.get(chave)
-  const promessa = executarRequisicao(caminho, opcoes)
+  const versaoDaLeitura = versaoCacheGet
+  const promessa = executarRequisicao(caminho, opcoes).then((dados) => {
+    if (chave && versaoDaLeitura === versaoCacheGet) {
+      if (RESPOSTAS_GET.size >= LIMITE_CACHE_GET) RESPOSTAS_GET.delete(RESPOSTAS_GET.keys().next().value)
+      RESPOSTAS_GET.set(chave, { dados: clonarResposta(dados), expiraEm: Date.now() + TEMPO_CACHE_GET_MS })
+    }
+    return dados
+  })
   if (chave) {
     GETS_EM_ANDAMENTO.set(chave, promessa)
     promessa.then(() => GETS_EM_ANDAMENTO.delete(chave), () => GETS_EM_ANDAMENTO.delete(chave))
@@ -106,6 +132,8 @@ export async function listarFuncionarios() {
 export async function listarClientes() {
   return requisicaoAutenticada('/clientes')
 }
+export async function buscarCliente(id) { return requisicaoAutenticada(`/clientes/${encodeURIComponent(id)}`) }
+export async function excluirCliente(id) { return requisicaoAutenticada(`/clientes/${encodeURIComponent(id)}`, { method: 'DELETE' }) }
 
 export async function listarConvites() {
   return requisicaoAutenticada('/convites')
@@ -114,11 +142,13 @@ export async function listarConvites() {
 export async function reenviarConvite(id) {
   return requisicaoAutenticada(`/convites/${encodeURIComponent(id)}/reenviar`, { method: 'POST' })
 }
+export async function excluirConviteExpirado(id) { return requisicaoAutenticada(`/convites/${encodeURIComponent(id)}`, { method: 'DELETE' }) }
 
 export async function listarTabelaPrecos() { return requisicaoAutenticada('/tabela-precos') }
 export async function listarTabelaPrecosCliente() { return requisicaoAutenticada('/tabela-precos/cliente') }
 export async function criarPreco(dados) { return requisicaoAutenticada('/tabela-precos', { method: 'POST', body: JSON.stringify(dados) }) }
 export async function atualizarPreco(id, dados) { return requisicaoAutenticada(`/tabela-precos/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) }) }
+export async function excluirPreco(id) { return requisicaoAutenticada(`/tabela-precos/${encodeURIComponent(id)}`, { method: 'DELETE' }) }
 export async function listarCalendario() { return requisicaoAutenticada('/calendario') }
 export async function reagendarObra(obraId, agendadaPara, prazoFinal) {
   return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/agendamento`, { method: 'PATCH', body: JSON.stringify({ agendadaPara, prazoFinal }) })
@@ -136,6 +166,7 @@ export async function moverGerente(obraId, alocacaoId, novaObraId) {
 
 export async function criarFuncionario(dados) { return requisicaoAutenticada('/funcionarios', { method: 'POST', body: JSON.stringify(dados) }) }
 export async function atualizarFuncionario(id, dados) { return requisicaoAutenticada(`/funcionarios/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) }) }
+export async function excluirFuncionario(id) { return requisicaoAutenticada(`/funcionarios/${encodeURIComponent(id)}`, { method: 'DELETE' }) }
 export async function atualizarPerfil(dados) { return requisicaoAutenticada('/usuarios/me', { method: 'PATCH', body: JSON.stringify(dados) }) }
 export async function listarNotificacoes(obraId) { return requisicaoAutenticada(`/notificacoes${obraId ? `?obraId=${encodeURIComponent(obraId)}` : ''}`) }
 export async function marcarNotificacaoLida(id) { return requisicaoAutenticada(`/notificacoes/${encodeURIComponent(id)}/lida`, { method: 'PATCH' }) }
@@ -188,6 +219,7 @@ export function salvarSessaoMock(tipo = 'CLIENTE') {
 
 // Função para encerrar a sessão (fazer logout) limpando o armazenamento
 export function encerrarSessao() {
+  limparCacheLeituras()
   // Remove o token do localStorage
   localStorage.removeItem(TOKEN_KEY)
   // Remove o usuário do localStorage
@@ -280,6 +312,7 @@ export async function listarAlocacoesObra(id) {
 export async function encerrarAlocacaoObra(obraId, alocacaoId, motivo = '') {
   return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/colaboradores/${encodeURIComponent(alocacaoId)}`, { method: 'PATCH', body: JSON.stringify({ motivo }) })
 }
+export async function alocarFuncionarioObra(obraId, funcionarioId) { return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/colaboradores`, { method: 'POST', body: JSON.stringify({ funcionarioId }) }) }
 
 // Cria checkout pela API; o servidor confere propriedade, saldo e idempotência.
 export async function iniciarPagamento(obraId, parcelaId, valor, idempotencyKey) {

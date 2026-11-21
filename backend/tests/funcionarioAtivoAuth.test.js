@@ -31,12 +31,22 @@ function localizar(lista, where) {
 
 function selecionar(registro, select) {
   if (!registro || !select) return registro;
-  return Object.fromEntries(Object.keys(select).filter((campo) => select[campo] === true).map((campo) => [campo, registro[campo]]));
+  const resultado = Object.fromEntries(Object.keys(select).filter((campo) => select[campo] === true).map((campo) => [campo, registro[campo]]));
+  if (select.funcionario?.select) {
+    const funcionario = funcionarios.find((item) => item.usuarioId === registro.id);
+    resultado.funcionario = funcionario ? selecionar(funcionario, select.funcionario.select) : null;
+  }
+  return resultado;
 }
 
 const prismaFalso = {
   usuario: {
     findUnique: async ({ where, select }) => {
+      if (erroConsultaFuncionario && select?.funcionario) {
+        const erro = new Error("Banco temporariamente indisponível");
+        erro.name = "PrismaClientInitializationError";
+        throw erro;
+      }
       const usuario = localizar(usuarios, where);
       return selecionar(usuario, select);
     },
@@ -137,6 +147,7 @@ describe("Bloqueio centralizado de funcionários desativados", () => {
     eventos = [];
     funcionarios.find((item) => item.usuarioId === "colab-ativo").ativo = true;
     funcionarios.find((item) => item.usuarioId === "colab-inativo").ativo = true;
+    usuarios.forEach((usuario) => authMiddleware.invalidarSessaoUsuario(usuario.id));
   });
 
   it("colaborador ativo autentica e recebe token", async () => {

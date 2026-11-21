@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import { obterFotoPerfil } from '../src/utils/fotoPerfil.js'
 
 test('usa a foto de demonstração correspondente ao perfil', () => {
-  assert.equal(obterFotoPerfil({ email: 'admin@obramaster.demo' }), '/foto-admin.png')
-  assert.equal(obterFotoPerfil({ email: 'cliente@obramaster.demo' }), '/foto-cliente.png')
-  assert.equal(obterFotoPerfil({ email: 'colaborador@obramaster.demo' }), '/foto-colaborador.png')
+  assert.equal(obterFotoPerfil({ email: 'admin@obramaster.demo' }), '/foto-admin.webp')
+  assert.equal(obterFotoPerfil({ email: 'cliente@obramaster.demo' }), '/foto-cliente.webp')
+  assert.equal(obterFotoPerfil({ email: 'colaborador@obramaster.demo' }), '/foto-colaborador.webp')
 })
 
 test('prioriza a foto enviada pelo usuário sobre a foto de demonstração', () => {

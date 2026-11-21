@@ -37,7 +37,7 @@ function encontrar(list, where) {
 function prismaMock() {
   const tx = {
     obra: {
-      findFirst: async ({ where, include }) => {
+      findFirst: async ({ where, include, select }) => {
         const obra = obras.find((item) => Object.entries(where).every(([campo, valor]) => campo === "escalas" || campo === "excluidaEm" ? true : item[campo] === valor));
         if (!obra) return null;
         if (where.escalas?.some) {
@@ -45,6 +45,11 @@ function prismaMock() {
           const temAcesso = escalas.some((escala) => escala.obraId === obra.id && escala.dataFim === filtro.dataFim && encontrar(funcionarios, filtro.funcionario));
           if (!temAcesso) return null;
         }
+        if (select) return {
+          id: obra.id,
+          escalas: escalas.filter((escala) => escala.obraId === obra.id).map((escala) => ({ ...escala, funcionario: encontrar(funcionarios, { id: escala.funcionarioId }), alteradoPor: encontrar(usuarios, { id: escala.alteradoPorId }) })),
+          empresa: { funcionarios: funcionarios.filter((funcionario) => funcionario.empresaId === obra.empresaId && funcionario.nivel === "RESPONSAVEL" && funcionario.ativo && funcionario.usuarioId && funcionario.usuario?.tipo === "COLABORADOR").map(({ id, nome, funcao, usuarioId }) => ({ id, nome, funcao, usuarioId })) },
+        };
         if (!include) return obra;
         return { ...obra, cliente: null, contrato: null, disponibilidades: [], parcelas: obra.parcelas, eventos: [], escalas: escalas.filter((escala) => escala.obraId === obra.id && escala.dataFim === null).map((escala) => ({ ...escala, funcionario: encontrar(funcionarios, { id: escala.funcionarioId }) })) };
       },
@@ -104,6 +109,12 @@ require.cache[userRepositoryPath] = {
   filename: userRepositoryPath,
   loaded: true,
   exports: {
+    buscarAutenticacaoUsuarioPorId: async (id) => {
+      const usuario = usuarios.find((item) => item.id === id);
+      if (!usuario) return null;
+      const funcionario = funcionarios.find((item) => item.usuarioId === id);
+      return { id: usuario.id, email: usuario.email, tipo: usuario.tipo, empresaId: usuario.empresaId, funcionario: funcionario ? { empresaId: funcionario.empresaId, ativo: funcionario.ativo } : null };
+    },
     buscarPerfilUsuarioPorId: async (id) => {
       const { senhaHash, ...perfil } = encontrar(usuarios, { id }) || {};
       return perfil.id ? perfil : null;

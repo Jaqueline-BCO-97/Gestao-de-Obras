@@ -5,13 +5,17 @@
 require("dotenv").config();
 
 let prisma = null;
+let queryCount = 0;
 
 function getPrisma() {
   if (prisma) return prisma;
   if (!process.env.DATABASE_URL) return null;
 
   const { PrismaClient } = require("@prisma/client");
-  prisma = new PrismaClient();
+  prisma = new PrismaClient({ log: [{ emit: "event", level: "query" }] });
+  prisma.$on("query", () => {
+    queryCount += 1;
+  });
   return prisma;
 }
 
@@ -19,4 +23,8 @@ function isDbConfigured() {
   return Boolean(process.env.DATABASE_URL);
 }
 
-module.exports = { getPrisma, isDbConfigured };
+function getQueryCount() {
+  return queryCount;
+}
+
+module.exports = { getPrisma, isDbConfigured, getQueryCount };

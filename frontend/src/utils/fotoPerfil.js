@@ -1,7 +1,7 @@
 const FOTOS_DEMO = {
-  'admin@obramaster.demo': '/foto-admin.png',
-  'cliente@obramaster.demo': '/foto-cliente.png',
-  'colaborador@obramaster.demo': '/foto-colaborador.png',
+  'admin@obramaster.demo': '/foto-admin.webp',
+  'cliente@obramaster.demo': '/foto-cliente.webp',
+  'colaborador@obramaster.demo': '/foto-colaborador.webp',
 }
 
 export function obterFotoPerfil(usuario) {
