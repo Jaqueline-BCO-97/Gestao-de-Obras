@@ -1,6 +1,7 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const jwt = require("jsonwebtoken");
+const { invalidarCacheEmpresa } = require("../src/services/cacheConsultas");
 
 const empresaA = "empresa-a";
 const empresaB = "empresa-b";
@@ -36,6 +37,38 @@ function encontrar(list, where) {
 
 function prismaMock() {
   const tx = {
+    $queryRaw: async (consulta) => {
+      const sql = consulta.text;
+      const valores = consulta.values;
+      let resultados = obras.filter((obra) => obra.empresaId === (valores.includes(empresaA) ? empresaA : empresaB));
+      if (sql.includes("WHERE o.id =")) {
+        const obraId = valores.find((valor) => obras.some((obra) => obra.id === valor));
+        resultados = resultados.filter((obra) => obra.id === obraId);
+      }
+      if (sql.includes('o."clienteId" =')) {
+        const clienteId = valores.find((valor) => usuarios.some((usuario) => usuario.id === valor && usuario.tipo === "CLIENTE"));
+        resultados = resultados.filter((obra) => obra.clienteId === clienteId);
+      }
+      if (sql.includes('funcionario."usuarioId" =')) {
+        const usuarioId = valores.find((valor) => usuarios.some((usuario) => usuario.id === valor && usuario.tipo === "COLABORADOR"));
+        resultados = resultados.filter((obra) => escalas.some((escala) => {
+          const funcionario = encontrar(funcionarios, { id: escala.funcionarioId });
+          return escala.obraId === obra.id && escala.dataFim === null && funcionario?.usuarioId === usuarioId && funcionario.empresaId === obra.empresaId;
+        }));
+      }
+      return resultados.map((obra) => ({
+        ...obra,
+        cliente: null,
+        contrato: null,
+        disponibilidades: [],
+        parcelas: obra.parcelas || [],
+        eventos: [],
+        escalas: escalas.filter((escala) => escala.obraId === obra.id && escala.dataFim === null).map((escala) => ({
+          ...escala,
+          funcionario: encontrar(funcionarios, { id: escala.funcionarioId }),
+        })),
+      }));
+    },
     obra: {
       findFirst: async ({ where, include, select }) => {
         const obra = obras.find((item) => Object.entries(where).every(([campo, valor]) => campo === "escalas" || campo === "excluidaEm" ? true : item[campo] === valor));
@@ -174,6 +207,11 @@ async function requisitar(caminho, usuarioId, opcoes = {}) {
     if (chamadaSeguinte) await chamadaSeguinte;
   }
   await executar(0);
+  // This helper dispatches route handlers directly, so it mirrors the app-level
+  // finish hook that clears company list caches after a successful write.
+  if (["post", "put", "patch", "delete"].includes(metodo) && res.statusCode < 400) {
+    invalidarCacheEmpresa(req.usuario?.empresaId);
+  }
 
   return { status: res.statusCode, json: async () => res.body };
 }

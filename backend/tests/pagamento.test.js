@@ -54,6 +54,41 @@ function expandirPagamento(pagamento) {
 }
 
 const prismaFalso = {
+  $queryRaw: async (consulta) => {
+    if (!consulta.values.includes("obra-a")) return [];
+    const obra = localizar(obras, { id: "obra-a" });
+    const cliente = localizar(usuarios, { id: obra.clienteId });
+    return [{
+      ...obra,
+      endereco: "Rua de teste",
+      estado: "SP",
+      cidade: "Santos",
+      bairro: "Centro",
+      numero: "10",
+      apartamento: null,
+      bloco: null,
+      semApartamento: true,
+      semBloco: true,
+      prazoFinal: null,
+      agendadaPara: null,
+      conclusaoConfirmadaEm: obra.conclusaoConfirmadaEm,
+      informacoesAdicionais: "",
+      cliente: cliente ? { id: cliente.id, nome: cliente.nome, empresaId: cliente.empresaId } : null,
+      eventos: [],
+      escalas: [],
+      disponibilidades: [],
+      convites: [],
+      contrato: null,
+      taxaJurosMensal: 0,
+      parcelas: obra.parcelas.map((parcela) => ({
+        ...parcela,
+        vencimento: null,
+        comprovanteUrl: null,
+        comprovanteEnviadoEm: null,
+        pagamentos: pagamentos.filter((item) => item.parcelaId === parcela.id && ["APROVADO", "PENDENTE"].includes(item.status)),
+      })),
+    }];
+  },
   obra: {
     findFirst: async ({ where }) => {
       const obra = localizar(obras, where);

@@ -40,6 +40,31 @@ function selecionar(registro, select) {
 }
 
 const prismaFalso = {
+  $queryRaw: async (consulta) => {
+    const id = consulta.values.find((valor) => usuarios.some((usuario) => usuario.id === valor));
+    const usuario = localizar(usuarios, { id });
+    if (consulta.text.includes("'ativo', funcionario.ativo") && erroConsultaFuncionario) {
+      const erro = new Error("Banco temporariamente indisponível");
+      erro.name = "PrismaClientInitializationError";
+      throw erro;
+    }
+    if (!usuario) return [];
+    const funcionario = funcionarios.find((item) => item.usuarioId === usuario.id) || null;
+    if (consulta.text.includes('LEFT JOIN "Empresa" empresa')) {
+      return [{
+        ...usuario,
+        telefone: null, telefoneSecundario: null, fotoUrl: null, endereco: null, estado: null, cidade: null,
+        bairro: null, numero: null, complemento: null, apartamento: null, bloco: null, semApartamento: null,
+        semBloco: null, cpf: null,
+        funcionario: funcionario ? { funcao: null, telefone: null, fotoUrl: null } : null,
+        empresa: usuario.tipo === "ADMIN" ? { nome: "Empresa de teste" } : null,
+      }];
+    }
+    return [{
+      id: usuario.id, empresaId: usuario.empresaId, email: usuario.email, tipo: usuario.tipo,
+      funcionario: funcionario ? { empresaId: funcionario.empresaId, ativo: funcionario.ativo } : null,
+    }];
+  },
   usuario: {
     findUnique: async ({ where, select }) => {
       if (erroConsultaFuncionario && select?.funcionario) {

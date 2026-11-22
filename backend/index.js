@@ -9,7 +9,16 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("node:crypto");
-const { getPrisma, isDbConfigured, getQueryCount } = require("./src/config/db");
+const { Prisma } = require("@prisma/client");
+const {
+  getPrisma,
+  isDbConfigured,
+  getQueryCount,
+  executarNaRequisicaoDb,
+  iniciarRequisicaoDb,
+  finalizarRequisicaoDb,
+} = require("./src/config/db");
+const { comCacheEmpresa, invalidarCacheEmpresa } = require("./src/services/cacheConsultas");
 const {
   listarUsuarios,
   buscarUsuarioPorEmail,
@@ -52,16 +61,29 @@ const { cnpjValido, somenteDigitosCnpj } = require("./src/utils/cnpj");
 const app = express();
 app.use(express.json({ limit: "40mb" }));
 
-// Exposes the SQL query count for the backend-only latency script. The script
-// sends requests serially, so the per-response delta is attributable to that
-// request; no SQL text or parameters are exposed.
+// X-DB-Query-Count counts application data statements (SELECT/DML). Prisma's
+// BEGIN/COMMIT and pooler housekeeping are still visible in DEBUG_QUERIES.
 app.use((req, res, next) => {
-  const inicio = getQueryCount();
+  const contexto = iniciarRequisicaoDb(`${req.method} ${req.path}`);
+  const finalizar = () => finalizarRequisicaoDb(contexto);
+  res.once("finish", finalizar);
+  res.once("close", finalizar);
   const enviar = res.send;
   res.send = function enviarComMetricas(...argumentos) {
-    if (!res.headersSent) res.setHeader("X-DB-Query-Count", String(getQueryCount() - inicio));
+    if (!res.headersSent) res.setHeader("X-DB-Query-Count", String(getQueryCount(contexto)));
     return enviar.apply(this, argumentos);
   };
+  return executarNaRequisicaoDb(contexto, () => next());
+});
+
+// Qualquer escrita autenticada invalida as listas quentes da empresa após o
+// handler concluir com sucesso. A identidade vem do middleware de sessão.
+app.use((req, res, next) => {
+  res.on("finish", () => {
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method) && res.statusCode < 400) {
+      invalidarCacheEmpresa(req.usuario?.empresaId);
+    }
+  });
   next();
 });
 
@@ -304,12 +326,16 @@ app.get("/convites", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"),
   try {
     const prisma = getPrisma();
     if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
-    const convites = await prisma.convite.findMany({
-      where: { empresaId: req.usuario.empresaId },
-      include: { obra: { select: { id: true, nome: true } } },
-      orderBy: { criadoEm: "desc" },
-    });
-    return res.json(convites.map(({ tokenHash, ...convite }) => convite));
+    const convites = await prisma.$queryRaw(Prisma.sql`
+      SELECT (to_jsonb(convite) - 'tokenHash') || jsonb_build_object(
+        'obra', CASE WHEN obra.id IS NULL THEN NULL ELSE jsonb_build_object('id', obra.id, 'nome', obra.nome) END
+      ) AS convite
+      FROM "Convite" convite
+      LEFT JOIN "Obra" obra ON obra.id = convite."obraId"
+      WHERE convite."empresaId" = ${req.usuario.empresaId}
+      ORDER BY convite."criadoEm" DESC
+    `);
+    return res.json(convites.map(({ convite }) => convite));
   } catch (erro) {
     console.error("Erro ao listar convites:", erro.code || erro.message);
     return res.status(500).json({ erro: "Erro ao listar convites" });
@@ -633,10 +659,19 @@ app.patch("/usuarios/me", authMiddleware, async (req, res) => {
 
 app.get("/notificacoes", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
   try {
-    const notificacoes = await getPrisma().notificacao.findMany({
-      where: { empresaId: req.usuario.empresaId, usuarioId: req.usuario.id, ...(typeof req.query.obraId === "string" && req.query.obraId ? { obraId: req.query.obraId } : {}) },
-      include: { obra: { select: { id: true, nome: true } } },
-      orderBy: [{ lidaEm: "asc" }, { criadoEm: "desc" }],
+    const obraId = typeof req.query.obraId === "string" ? req.query.obraId : "";
+    const cacheKey = `notificacoes:${req.usuario.id}:${obraId}`;
+    const notificacoes = await comCacheEmpresa(req.usuario.empresaId, cacheKey, () => {
+      const filtroObra = obraId ? Prisma.sql`AND notificacao."obraId" = ${obraId}` : Prisma.empty;
+      return getPrisma().$queryRaw(Prisma.sql`
+        SELECT notificacao.*,
+          CASE WHEN obra.id IS NULL THEN NULL ELSE jsonb_build_object('id', obra.id, 'nome', obra.nome) END AS obra
+        FROM "Notificacao" notificacao
+        LEFT JOIN "Obra" obra ON obra.id = notificacao."obraId"
+        WHERE notificacao."empresaId" = ${req.usuario.empresaId}
+          AND notificacao."usuarioId" = ${req.usuario.id}
+          ${filtroObra}
+        ORDER BY notificacao."lidaEm" ASC, notificacao."criadoEm" DESC`);
     });
     return res.json(notificacoes);
   } catch (erro) { console.error("Erro ao listar notificações:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível carregar as notificações" }); }
@@ -661,10 +696,40 @@ app.delete("/notificacoes/:id", authMiddleware, exigirEmpresaDoToken, exigirPape
 app.get("/pagamentos", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
   try {
     const prisma = getPrisma();
-    const whereObra = { empresaId: req.usuario.empresaId, excluidaEm: null, ...(req.usuario.tipo === "CLIENTE" ? { clienteId: req.usuario.id } : {}) };
     if (req.usuario.tipo === "COLABORADOR") return res.status(403).json({ erro: "Acesso a pagamentos não permitido" });
-    const obras = await prisma.obra.findMany({ where: whereObra, select: { id: true, nome: true, valorTotal: true, convites: { where: { tipo: "CLIENTE", usadoEm: null, expiraEm: { gt: new Date() } }, select: { id: true } }, parcelas: { orderBy: { numero: "asc" }, include: { pagamentos: { select: { id: true, valor: true, status: true } } } } }, orderBy: { criadoEm: "desc" } });
-    return res.json(obras.map((obra) => ({ id: obra.id, nome: obra.nome, valorTotal: Number(obra.valorTotal), conviteClientePendente: Boolean(obra.convites?.length), parcelas: obra.parcelas.map((parcela) => ({ id: parcela.id, numero: parcela.numero, valor: Number(parcela.valor), situacao: parcela.situacao, vencimento: parcela.vencimento, comprovanteUrl: parcela.comprovanteUrl, comprovanteEnviadoEm: parcela.comprovanteEnviadoEm, pagamentos: parcela.pagamentos })) })));
+    const obras = await prisma.$queryRaw(Prisma.sql`
+      SELECT obra.id, obra.nome, obra."valorTotal",
+        EXISTS (
+          SELECT 1 FROM "Convite" convite
+          WHERE convite."obraId" = obra.id AND convite.tipo = 'CLIENTE'
+            AND convite."usadoEm" IS NULL AND convite."expiraEm" > ${new Date()}
+        ) AS "conviteClientePendente",
+        COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'id', parcela.id, 'numero', parcela.numero, 'valor', parcela.valor,
+              'situacao', parcela.situacao, 'vencimento', parcela.vencimento,
+              'comprovanteUrl', parcela."comprovanteUrl", 'comprovanteEnviadoEm', parcela."comprovanteEnviadoEm",
+              'pagamentos', COALESCE((
+                SELECT jsonb_agg(jsonb_build_object('id', pagamento.id, 'valor', pagamento.valor::text, 'status', pagamento.status))
+                FROM "Pagamento" pagamento WHERE pagamento."parcelaId" = parcela.id
+              ), '[]'::jsonb)
+            ) ORDER BY parcela.numero ASC
+          )
+          FROM "Parcela" parcela WHERE parcela."obraId" = obra.id
+        ), '[]'::jsonb) AS parcelas
+      FROM "Obra" obra
+      WHERE obra."empresaId" = ${req.usuario.empresaId} AND obra."excluidaEm" IS NULL
+        AND (${req.usuario.tipo !== "CLIENTE"} OR obra."clienteId" = ${req.usuario.id})
+      ORDER BY obra."criadoEm" DESC
+    `);
+    return res.json(obras.map((obra) => ({
+      id: obra.id,
+      nome: obra.nome,
+      valorTotal: Number(obra.valorTotal),
+      conviteClientePendente: obra.conviteClientePendente,
+      parcelas: obra.parcelas.map((parcela) => ({ ...parcela, valor: Number(parcela.valor) })),
+    })));
   } catch (erro) { console.error("Erro ao listar pagamentos:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível carregar os pagamentos" }); }
 });
 
@@ -715,24 +780,40 @@ app.get("/funcionarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMI
   try {
     const prisma = getPrisma();
     if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
-    const funcionarios = await prisma.funcionario.findMany({
-      where: { empresaId: req.usuario.empresaId },
-      include: {
-        usuario: { select: { id: true, email: true, tipo: true, fotoUrl: true } },
-        escalas: {
-          where: { dataFim: null },
-          include: { obra: { select: { id: true, nome: true, status: true } } },
-          orderBy: { dataInicio: "desc" },
-        },
-        disponibilidades: {
-          where: { obra: { empresaId: req.usuario.empresaId, excluidaEm: null } },
-          include: { obra: { select: { id: true, nome: true, status: true } } },
-          orderBy: [{ obra: { nome: "asc" } }, { diaSemana: "asc" }],
-        },
-      },
-      orderBy: [{ ativo: "desc" }, { nome: "asc" }],
-    });
-    return res.json(funcionarios.map((funcionario) => {
+    const funcionarios = await prisma.$queryRaw(Prisma.sql`
+      SELECT to_jsonb(funcionario) || jsonb_build_object(
+        'usuario', CASE WHEN usuario.id IS NULL THEN NULL ELSE jsonb_build_object(
+          'id', usuario.id, 'email', usuario.email, 'tipo', usuario.tipo, 'fotoUrl', usuario."fotoUrl"
+        ) END,
+        'escalas', COALESCE((
+          SELECT jsonb_agg(
+            to_jsonb(escala) || jsonb_build_object(
+              'obra', jsonb_build_object('id', obraEscala.id, 'nome', obraEscala.nome, 'status', obraEscala.status)
+            ) ORDER BY escala."dataInicio" DESC
+          )
+          FROM "ObraEscala" escala
+          JOIN "Obra" obraEscala ON obraEscala.id = escala."obraId"
+          WHERE escala."funcionarioId" = funcionario.id AND escala."dataFim" IS NULL
+        ), '[]'::jsonb),
+        'disponibilidades', COALESCE((
+          SELECT jsonb_agg(
+            to_jsonb(disponibilidade) || jsonb_build_object(
+              'obra', jsonb_build_object('id', obraDisponibilidade.id, 'nome', obraDisponibilidade.nome, 'status', obraDisponibilidade.status)
+            ) ORDER BY obraDisponibilidade.nome ASC, disponibilidade."diaSemana" ASC
+          )
+          FROM "DisponibilidadeFuncionario" disponibilidade
+          JOIN "Obra" obraDisponibilidade ON obraDisponibilidade.id = disponibilidade."obraId"
+          WHERE disponibilidade."funcionarioId" = funcionario.id
+            AND obraDisponibilidade."empresaId" = ${req.usuario.empresaId}
+            AND obraDisponibilidade."excluidaEm" IS NULL
+        ), '[]'::jsonb)
+      ) AS funcionario
+      FROM "Funcionario" funcionario
+      LEFT JOIN "Usuario" usuario ON usuario.id = funcionario."usuarioId"
+      WHERE funcionario."empresaId" = ${req.usuario.empresaId}
+      ORDER BY funcionario.ativo DESC, funcionario.nome ASC
+    `);
+    return res.json(funcionarios.map(({ funcionario }) => {
       const porObra = new Map();
       for (const item of funcionario.disponibilidades) {
         if (!porObra.has(item.obraId)) porObra.set(item.obraId, { obraId: item.obraId, obra: item.obra, diasSemana: [] });
@@ -838,15 +919,22 @@ app.get("/clientes", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"),
   try {
     const prisma = getPrisma();
     if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
-    const clientes = await prisma.usuario.findMany({
-      where: { empresaId: req.usuario.empresaId, tipo: "CLIENTE" },
-      select: {
-        id: true, nome: true, email: true, telefone: true, telefoneSecundario: true, fotoUrl: true, endereco: true, criadoEm: true,
-        obrasComoCliente: { where: { empresaId: req.usuario.empresaId }, select: { id: true, nome: true, status: true } },
-      },
-      orderBy: { nome: "asc" },
-    });
-    return res.json(clientes);
+    const clientes = await prisma.$queryRaw(Prisma.sql`
+      SELECT jsonb_build_object(
+        'id', cliente.id, 'nome', cliente.nome, 'email', cliente.email,
+        'telefone', cliente.telefone, 'telefoneSecundario', cliente."telefoneSecundario",
+        'fotoUrl', cliente."fotoUrl", 'endereco', cliente.endereco, 'criadoEm', cliente."criadoEm",
+        'obrasComoCliente', COALESCE((
+          SELECT jsonb_agg(jsonb_build_object('id', obra.id, 'nome', obra.nome, 'status', obra.status))
+          FROM "Obra" obra
+          WHERE obra."clienteId" = cliente.id AND obra."empresaId" = ${req.usuario.empresaId}
+        ), '[]'::jsonb)
+      ) AS cliente
+      FROM "Usuario" cliente
+      WHERE cliente."empresaId" = ${req.usuario.empresaId} AND cliente.tipo = 'CLIENTE'
+      ORDER BY cliente.nome ASC
+    `);
+    return res.json(clientes.map(({ cliente }) => cliente));
   } catch (erro) {
     console.error("Erro ao listar clientes:", erro.code || erro.message);
     return res.status(500).json({ erro: "Erro ao listar clientes" });
@@ -966,14 +1054,15 @@ app.post("/obras", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), a
 
 app.get("/obras", authMiddleware, exigirEmpresaDoToken, async (req, res) => {
   try {
-    // Consulta as obras da empresa já aplicando usuário e perfil do token.
-    const obras = await listarObras(req.usuario.empresaId, req.usuario.id, req.usuario.tipo);
+    // Mantém cache separado por usuário e perfil para preservar o escopo de acesso.
+    const cacheKey = `obras:${req.usuario.tipo}:${req.usuario.id}`;
+    const obras = await comCacheEmpresa(req.usuario.empresaId, cacheKey, () => listarObras(req.usuario.empresaId, req.usuario.id, req.usuario.tipo));
     return res.json(obras);
   } catch (erro) {
     if (erro.code === "DATABASE_NOT_CONFIGURED") {
       return res.status(503).json({ erro: erro.message });
     }
-    console.error("Erro ao listar obras:", erro.message);
+    console.error("Erro ao listar obras:", erro.stack || erro.message);
     return res.status(500).json({ erro: "Erro ao listar obras" });
   }
 });
@@ -995,7 +1084,7 @@ app.get("/obras/:id", authMiddleware, exigirEmpresaDoToken, async (req, res) => 
     if (erro.code === "DATABASE_NOT_CONFIGURED") {
       return res.status(503).json({ erro: erro.message });
     }
-    console.error("Erro ao consultar obra:", erro.message);
+    console.error("Erro ao consultar obra:", erro.stack || erro.message);
     return res.status(500).json({ erro: "Erro ao consultar obra" });
   }
 });

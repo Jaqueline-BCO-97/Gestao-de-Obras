@@ -42,13 +42,29 @@ function rotuloCurto(texto) {
   return texto.length > 31 ? `${texto.slice(0, 28)}…` : texto;
 }
 
+function mediana(valores) {
+  const ordenados = [...valores].sort((a, b) => a - b);
+  return ordenados[Math.floor(ordenados.length / 2)];
+}
+
 async function medir(linhas, nome, caminho, token) {
+  const resultados = [];
   for (let rodada = 1; rodada <= REPETICOES; rodada += 1) {
     const resultado = await requisitar(caminho, { token });
+    resultados.push(resultado);
     linhas.push([rotuloCurto(nome), String(rodada), String(resultado.queries), resultado.duracaoMs.toFixed(1), resultado.ok ? "OK" : `HTTP ${resultado.status}`]);
     if (!resultado.ok) console.error(`${nome}: ${resultado.conteudo?.erro || `HTTP ${resultado.status}`}`);
-    if (rodada === 1) return resultado;
   }
+  const tempos = resultados.map((resultado) => resultado.duracaoMs);
+  const consultas = resultados.map((resultado) => resultado.queries);
+  linhas.push([
+    rotuloCurto(`${nome} · resumo`),
+    "1ª / med",
+    `${resultados[0].queries} / ${mediana(consultas)}`,
+    `${resultados[0].duracaoMs.toFixed(1)} / ${mediana(tempos).toFixed(1)}`,
+    resultados.every((resultado) => resultado.ok) ? "OK" : "COM ERRO",
+  ]);
+  return resultados[0];
 }
 
 async function main() {
@@ -83,16 +99,28 @@ async function main() {
     await medir(linhas, `notificações ${conta.nome}`, "/notificacoes", tokens.get(conta.tipo));
   }
 
-  const larguras = [31, 5, 8, 10, 12];
-  const cabecalho = ["Rota", "Teste", "Queries", "ms", "Resultado"];
+  await medir(linhas, "funcionários (ADMIN)", "/funcionarios", tokens.get("ADMIN"));
+  await medir(linhas, "convites (ADMIN)", "/convites", tokens.get("ADMIN"));
+  await medir(linhas, "clientes (ADMIN)", "/clientes", tokens.get("ADMIN"));
+  await medir(linhas, "pagamentos (ADMIN)", "/pagamentos", tokens.get("ADMIN"));
+  await medir(linhas, "pagamentos (CLIENTE)", "/pagamentos", tokens.get("CLIENTE"));
+  await medir(linhas, "preços (ADMIN)", "/tabela-precos", tokens.get("ADMIN"));
+  await medir(linhas, "preços (CLIENTE)", "/tabela-precos/cliente", tokens.get("CLIENTE"));
+
+  const larguras = [31, 10, 12, 16, 12];
+  const cabecalho = ["Rota", "Rodada", "Consultas", "ms", "Resultado"];
   const imprimir = (linha) => `| ${linha.map((valor, indice) => String(valor).padEnd(larguras[indice])).join(" | ")} |`;
   console.log(imprimir(cabecalho));
   console.log(`|-${larguras.map((largura) => "-".repeat(largura)).join("-|-")}-|`);
   for (const linha of linhas) console.log(imprimir(linha));
-  console.log(`\nAPI: ${API}. Cada rota foi chamada sequencialmente ${REPETICOES} vezes. X-DB-Query-Count mostra SQL; /health separa rede sem banco do custo das rotas com banco.`);
+  console.log(`\nAPI: ${API}. Cada rota foi chamada sequencialmente ${REPETICOES} vezes. A linha de resumo mostra a 1ª chamada (cache frio) e a mediana das três; X-DB-Query-Count conta instruções de dados (SELECT/DML), sem BEGIN/COMMIT nem manutenção do pooler. Rotas restritas são medidas apenas nos perfis autorizados; pagamentos não é medido para COLABORADOR (HTTP 403).`);
 }
 
-main().catch((erro) => {
-  console.error(erro.message);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((erro) => {
+    console.error(erro.message);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { medir, mediana };
