@@ -17,8 +17,6 @@ const funcionarios = [
 ];
 let estado;
 let falharCriacaoEvento;
-let chamadasLock;
-const filasLock = new Map();
 
 function compararCampo(valor, filtro) {
   if (filtro && typeof filtro === "object" && !(filtro instanceof Date)) {
@@ -90,35 +88,12 @@ function criarPrismaFalso() {
   return {
     ...tx,
     $transaction: async (callback) => {
-      let liberarLock;
-      let snapshot;
-      const contexto = {
-        ...tx,
-        $queryRaw: async (_consulta, empresaId) => {
-          chamadasLock.push(empresaId);
-          const anterior = filasLock.get(empresaId) || Promise.resolve();
-          let liberar;
-          const atual = new Promise((resolve) => { liberar = resolve; });
-          const fila = anterior.then(() => atual);
-          filasLock.set(empresaId, fila);
-          await anterior;
-          liberarLock = () => {
-            liberar();
-            if (filasLock.get(empresaId) === fila) filasLock.delete(empresaId);
-          };
-          // Snapshot após adquirir o mutex simulado, para modelar rollback sem
-          // desfazer alterações confirmadas por outra transação concorrente.
-          snapshot = structuredClone(estado);
-          return [];
-        },
-      };
+      const snapshot = structuredClone(estado);
       try {
-        return await callback(contexto);
+        return await callback(tx);
       } catch (erro) {
-        if (snapshot) estado = snapshot;
+        estado = snapshot;
         throw erro;
-      } finally {
-        liberarLock?.();
       }
     },
   };
@@ -186,88 +161,53 @@ async function chamarReagendamento({ usuarioId = "admin-a", obraId = "obra-a", b
   return res;
 }
 
-const data = (hora) => new Date(`2026-12-01T${hora}:00.000Z`);
-const payload = (inicio = "09:00", fim = "12:00") => ({
-  agendadaPara: `2026-12-01T${inicio}:00.000Z`,
-  prazoFinal: `2026-12-01T${fim}:00.000Z`,
+const data = (dia) => new Date(`${dia}T12:00:00.000Z`);
+const payload = (agendadaPara = "2026-12-01", prazoFinal = "2026-12-04") => ({
+  agendadaPara,
+  prazoFinal,
 });
 
-describe("Issue #19 — reagendamento e conflitos entre obras", () => {
+describe("Reagendamento por data sem conflito de sobreposição", () => {
   beforeEach(() => {
     estado = {
       obras: [
         { id: "obra-a", empresaId: empresaA, clienteId: "cliente-a", nome: "Obra A", status: "AGENDADA", agendadaPara: null, prazoFinal: null, valorTotal: 1000, endereco: "Rua A" },
-        { id: "obra-b", empresaId: empresaA, clienteId: "cliente-a", nome: "Obra B", status: "AGENDADA", agendadaPara: data("13:00"), prazoFinal: data("15:00"), valorTotal: 1200, endereco: "Rua B" },
-        { id: "obra-outra-empresa", empresaId: empresaB, clienteId: null, nome: "Obra Externa", status: "AGENDADA", agendadaPara: data("09:30"), prazoFinal: data("11:00"), valorTotal: 500, endereco: "Rua C" },
+        { id: "obra-b", empresaId: empresaA, clienteId: "cliente-a", nome: "Obra B", status: "AGENDADA", agendadaPara: data("2026-12-03"), prazoFinal: data("2026-12-08"), valorTotal: 1200, endereco: "Rua B" },
+        { id: "obra-outra-empresa", empresaId: empresaB, clienteId: null, nome: "Obra Externa", status: "AGENDADA", agendadaPara: data("2026-12-01"), prazoFinal: data("2026-12-04"), valorTotal: 500, endereco: "Rua C" },
       ],
       eventos: [],
       notificacoes: [],
     };
     falharCriacaoEvento = false;
-    chamadasLock = [];
   });
 
   it("ADMIN agenda uma obra da própria empresa e cria evento visível ao cliente", async () => {
     const resposta = await chamarReagendamento({ body: payload() });
     assert.equal(resposta.statusCode, 200);
     assert.equal(resposta.body.obra.id, "obra-a");
-    assert.equal(resposta.body.obra.prazo, "01/12/2026");
-    assert.equal(resposta.body.obra.agendadaPara, "2026-12-01T09:00:00.000Z");
-    assert.equal(resposta.body.obra.prazoFinal, "2026-12-01T12:00:00.000Z");
+    assert.equal(resposta.body.obra.prazo, "04/12/2026");
+    assert.equal(resposta.body.obra.agendadaPara, "2026-12-01");
+    assert.equal(resposta.body.obra.prazoFinal, "2026-12-04");
     assert.equal(resposta.body.alterada, true);
     assert.equal(resposta.body.evento.tipo, "AGENDAMENTO");
     assert.equal(resposta.body.evento.usuarioId, "admin-a");
     assert.equal(resposta.body.evento.empresaId, empresaA);
     assert.equal(resposta.body.evento.visivelParaCliente, true);
-    assert.match(resposta.body.evento.descricao, /09:00 UTC.*12:00 UTC/);
+    assert.match(resposta.body.evento.descricao, /01\/12\/2026 até 04\/12\/2026/);
   });
 
-  it("rejeita intervalos com sobreposição, considerando a hora completa", async () => {
-    const resposta = await chamarReagendamento({ body: payload("14:30", "16:00") });
-    assert.equal(resposta.statusCode, 409);
-    assert.match(resposta.body.erro, /conflito de agendamento/i);
-    assert.equal(estado.obras[0].agendadaPara, null);
-    assert.equal(estado.eventos.length, 0);
-  });
-
-  it("não considera obras de outra empresa na busca de conflito", async () => {
-    const resposta = await chamarReagendamento({ body: payload("09:30", "10:30") });
+  it("permite datas sobrepostas com outra obra da mesma empresa", async () => {
+    const resposta = await chamarReagendamento({ body: payload("2026-12-06", "2026-12-10") });
     assert.equal(resposta.statusCode, 200);
     assert.equal(estado.eventos.length, 1);
   });
 
-  it("exclui a própria obra da verificação de conflitos", async () => {
-    estado.obras[0].agendadaPara = data("09:00");
-    estado.obras[0].prazoFinal = data("12:00");
-    const resposta = await chamarReagendamento({ body: payload("10:00", "11:00") });
-    assert.equal(resposta.statusCode, 200);
-  });
-
-  it("obra concluída não bloqueia horário", async () => {
-    estado.obras[1].status = "CONCLUIDA";
-    const resposta = await chamarReagendamento({ body: payload("14:00", "14:30") });
-    assert.equal(resposta.statusCode, 200);
-  });
-
-  it("obras sem intervalo completo não reservam horário", async () => {
-    estado.obras[1].prazoFinal = null;
-    const resposta = await chamarReagendamento({ body: payload("14:00", "14:30") });
-    assert.equal(resposta.statusCode, 200);
-  });
-
-  it("permite intervalos adjacentes sem sobreposição", async () => {
-    estado.obras[1].agendadaPara = data("12:00");
-    estado.obras[1].prazoFinal = data("15:00");
-    const resposta = await chamarReagendamento({ body: payload("09:00", "12:00") });
-    assert.equal(resposta.statusCode, 200);
-  });
-
-  it("rejeita datas ausentes, formatos inválidos e datas inexistentes", async () => {
+  it("rejeita horários, datas ausentes, formatos inválidos e datas inexistentes", async () => {
     for (const body of [
       {},
-      { agendadaPara: "amanhã", prazoFinal: "2026-12-01T12:00:00.000Z" },
-      { agendadaPara: "2026-02-30T09:00:00.000Z", prazoFinal: "2026-12-01T12:00:00.000Z" },
-      { agendadaPara: "2026-12-01T09:00:00", prazoFinal: "2026-12-01T12:00:00.000Z" },
+      { agendadaPara: "amanhã", prazoFinal: "2026-12-04" },
+      { agendadaPara: "2026-02-30", prazoFinal: "2026-12-04" },
+      { agendadaPara: "2026-12-01T09:00:00.000Z", prazoFinal: "2026-12-04" },
     ]) {
       const resposta = await chamarReagendamento({ body });
       assert.equal(resposta.statusCode, 400);
@@ -275,7 +215,7 @@ describe("Issue #19 — reagendamento e conflitos entre obras", () => {
   });
 
   it("exige prazoFinal estritamente posterior ao início", async () => {
-    for (const body of [payload("12:00", "12:00"), payload("13:00", "12:00")]) {
+    for (const body of [payload("2026-12-01", "2026-12-01"), payload("2026-12-05", "2026-12-04")]) {
       const resposta = await chamarReagendamento({ body });
       assert.equal(resposta.statusCode, 400);
       assert.match(resposta.body.erro, /posterior/i);
@@ -310,15 +250,13 @@ describe("Issue #19 — reagendamento e conflitos entre obras", () => {
     assert.equal(estado.eventos.length, 0);
   });
 
-  it("serializa, via lock simulado por empresa, duas tentativas incompatíveis", async () => {
+  it("aceita duas obras da empresa no mesmo período, sem lock de conflito", async () => {
     const resultados = await Promise.all([
-      chamarReagendamento({ obraId: "obra-a", body: payload("09:00", "12:00") }),
-      chamarReagendamento({ obraId: "obra-b", body: payload("10:00", "13:00") }),
+      chamarReagendamento({ obraId: "obra-a", body: payload("2026-12-02", "2026-12-06") }),
+      chamarReagendamento({ obraId: "obra-b", body: payload("2026-12-03", "2026-12-07") }),
     ]);
-    assert.deepEqual(resultados.map((resultado) => resultado.statusCode).sort(), [200, 409]);
-    assert.equal(estado.eventos.length, 1);
-    assert.equal(chamadasLock.length, 2);
-    assert.ok(chamadasLock.every((empresaId) => empresaId === empresaA));
+    assert.deepEqual(resultados.map((resultado) => resultado.statusCode).sort(), [200, 200]);
+    assert.equal(estado.eventos.length, 2);
   });
 
   it("repetir exatamente o mesmo intervalo não cria nova notificação", async () => {

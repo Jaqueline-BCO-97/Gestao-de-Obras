@@ -16,7 +16,7 @@ Os papéis válidos são `ADMIN`, `CLIENTE` e `COLABORADOR`.
 | `POST /obras` | ADMIN | Cria obra na empresa do token. Recebe `nome` e, opcionalmente, `descricao` e `endereco`. |
 | `GET /obras` | Autenticado | Lista obras dentro do escopo do perfil. |
 | `GET /obras/:id` | Autenticado | Consulta obra dentro do escopo; obra inexistente ou fora dele retorna 404. |
-| `PATCH /obras/:id/agendamento` | ADMIN da empresa | Confirma novo intervalo sem conflito e registra evento de agenda visível ao cliente. |
+| `PATCH /obras/:id/agendamento` | ADMIN da empresa | Recebe datas, permite períodos sobrepostos e registra evento visível ao cliente. |
 | `POST /obras/:id/conclusao/solicitar` | ADMIN da empresa | Envia obra em andamento para conferência; status, data e evento de timeline são persistidos em transação. |
 | `POST /obras/:id/conclusao/confirmar` | CLIENTE proprietário | Confirma obra aguardando conferência; status, data e evento são persistidos em transação. |
 | `POST /obras/:id/andamento` | COLABORADOR alocado ou ADMIN da empresa | Registra anotação/update/ocorrência e foto opcional na timeline; o ADMIN pode controlar a visibilidade ao cliente. |
@@ -54,18 +54,16 @@ Cadastro/convite de clientes, alteração genérica de status, upload de fotos e
 
 ```json
 {
-  "agendadaPara": "2026-12-01T09:00:00.000Z",
-  "prazoFinal": "2026-12-01T12:00:00.000Z"
+  "agendadaPara": "2026-12-01",
+  "prazoFinal": "2026-12-04"
 }
 ```
 
-Os dois campos devem ser timestamps ISO 8601 válidos com fuso horário e `prazoFinal` deve ser posterior ao início. O backend procura intervalos completos de outras obras da mesma empresa com a condição `inicioExistente < fimSolicitado && fimExistente > inicioSolicitado`. Limites que apenas se tocam são permitidos; a própria obra e obras `CONCLUIDA` são excluídas da busca. Obra sem algum dos limites não reserva intervalo.
+Os dois campos devem ser datas válidas no formato `AAAA-MM-DD` e `prazoFinal` deve ser posterior ao início. Horários não são solicitados nem exibidos. Períodos de obras podem se sobrepor.
 
-Sucesso retorna HTTP 200 com `{ "obra": { ...obra, "agendadaPara": "...Z", "prazoFinal": "...Z" }, "evento": { ... }, "alterada": true }`. Repetir exatamente o intervalo já confirmado retorna HTTP 200, `alterada: false` e `evento: null`, sem inserir outro evento. Conflito de horário retorna HTTP 409 com mensagem explícita. Payload inválido retorna 400, usuário sem autenticação 401, papel ou ausência de empresa 403 e obra inexistente ou fora da empresa 404.
+Sucesso retorna HTTP 200 com `{ "obra": { ...obra, "agendadaPara": "AAAA-MM-DD", "prazoFinal": "AAAA-MM-DD" }, "evento": { ... }, "alterada": true }`. Repetir exatamente as datas já salvas retorna HTTP 200, `alterada: false` e `evento: null`, sem inserir outro evento. Payload inválido retorna 400, usuário sem autenticação 401, papel ou ausência de empresa 403 e obra inexistente ou fora da empresa 404. Falha de concorrência após novas tentativas retorna HTTP 409.
 
-A confirmação e o evento `AGENDAMENTO` são gravados na mesma transação. O evento identifica obra, empresa e administrador, é visível ao cliente na timeline e descreve os novos limites em UTC. Reagendamentos da mesma empresa usam advisory lock transacional por empresa e isolamento Serializable, com retry limitado de conflitos Prisma `P2034`; isso reduz disputas entre requisições concorrentes sem depender do frontend.
-
-O enum atual `StatusObra` contém `CONCLUIDA`, mas não contém estado `CANCELADA`; portanto, não foi inventado um estado novo. Se o modelo receber um estado de cancelamento em outra entrega, ele deve ser excluído da busca de conflito conforme a regra de negócio.
+As novas datas e o evento `AGENDAMENTO` são gravados na mesma transação. O evento identifica obra, empresa e administrador, é visível ao cliente na timeline e descreve o período no formato brasileiro. A transação usa isolamento Serializable e repete conflitos Prisma `P2034` até três tentativas.
 
 ### Registro de andamento
 

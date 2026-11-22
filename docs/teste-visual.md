@@ -17,7 +17,7 @@ Use as contas de demonstração. Senha: `Demo@12345`.
 7. Em **Clientes**, abra a confirmação de exclusão de um convite expirado e clique **Cancelar**. Um convite ainda válido deve oferecer **Gerar novo link**.
 8. Em **Funcionários**, cadastre e edite um funcionário sem escolher obra. Digite parte de um nome no campo de busca, abra uma obra na lista em cascata, marque dias e salve. Teste a máscara do telefone, selecione uma foto e salve.
 9. Em **Preços**, cadastre um serviço, desative e reative, depois clique **Excluir** e cancele o modal.
-10. Em **Calendário**, selecione uma obra, informe início e prazo com horário e salve. Tente um intervalo sobreposto e confira a recusa; depois confira a agenda na lista de obras.
+10. Em **Calendário**, selecione uma obra, informe início e prazo usando somente datas e salve. Agende outra obra para um período sobreposto e confira que as duas aparecem na agenda.
 11. Em **Pagamentos**, confira os estados: pago em verde, pendente em amarelo e atrasado em vermelho.
 12. Em **Notificações**, clique **Filtrar notificações** e selecione as categorias disponíveis para Admin.
 13. Nas telas de perfil, funcionário, obra, andamento e comprovante, selecione arquivos válidos e inválidos. Sem armazenamento configurado, confira a mensagem com os três nomes de variáveis Cloudinary.

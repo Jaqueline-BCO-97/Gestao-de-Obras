@@ -21,7 +21,7 @@ Use os comentários curtos abaixo ao fechar cada issue. As issues #15, #16, #65 
 | #14 | Concluída. Rotas por papel e proteção em `frontend/src/App.jsx` e `frontend/src/components/ProtectedRoute.jsx`. |
 | #15 | Substituída pelas telas integradas do cliente. `Cliente.jsx` e `ClienteObra.jsx` consomem a API; não dependem dos mocks antigos. |
 | #16 | Substituída pelos painéis integrados. `Admin.jsx`, `AdminObras.jsx` e `Colaborador.jsx` consomem a API. |
-| #19 | Concluída. `PATCH /obras/:id/agendamento` valida conflitos, registra evento e notifica; cobertura em `backend/tests/agendamentoObra.test.js`. |
+| #19 | Concluída conforme o escopo vigente: `PATCH /obras/:id/agendamento` recebe datas, permite períodos sobrepostos, registra evento e notifica; cobertura em `backend/tests/agendamentoObra.test.js`. |
 | #20 | Concluída. Acesso do gerente depende de escala ativa; remoção/movimentação registra histórico e notificação (`backend/src/repositories/obraRepository.js`). |
 | #21 | Concluída. Dashboard, detalhe e andamento do cliente usam serviços autenticados em `frontend/src/services/auth.js`. |
 | #24 | Concluída em código. Telas administrativas usam rotas e dados da API; `AdminObra.jsx` cobre edição, equipe, fotos, agenda e arquivamento. |
@@ -45,7 +45,7 @@ Cadastre cada item como issue separada, usando o título, critérios e label aba
 
 - **Label:** `performance`
 - **Critérios:** deduplicar GET idêntico em andamento; medir requisições concorrentes e bundle; conferir login, logout, mudança de perfil e telas principais em ambiente demo; registrar números com mesmo navegador e banco.
-- **Situação nesta branch:** duas chamadas GET idênticas simultâneas passaram a gerar uma requisição no teste `frontend/tests/authRequestDedupe.test.js` (2 → 1, redução de 50%). A listagem também limita histórico a 10 eventos e parcelas a duas, e deixa de carregar disponibilidades/contratos que a tela não usa. Benchmark de latência real continua pós-demo porque o banco não estava acessível nesta sessão.
+- **Situação nesta branch:** GET idênticos simultâneos são deduplicados no frontend; listagens limitam histórico e parcelas e evitam relações não usadas. O backend agora expõe `X-DB-Query-Count` e inclui teste e script para medir consultas por rota. Benchmark real e aceite visual continuam pós-demo porque dependem do ambiente.
 
 ### N2 — Exibir erros e confirmações junto da ação
 

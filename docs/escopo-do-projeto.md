@@ -10,13 +10,13 @@ Este documento descreve o estado do projeto nesta branch de revisão do PR #78. 
 - As telas de Clientes e Gerentes mostram os vínculos existentes e os convites pendentes; como não há serviço de e-mail configurado, a empreiteira copia e envia os links manualmente.
 - Autenticação por perfil e isolamento de obras por empresa; colaborador inativo ou sem vínculo válido é bloqueado.
 - Alocação e encerramento de escalas com histórico, autor da mudança e consulta restrita a ADMIN.
-- Reagendamento com checagem transacional de conflito; o evento visível aparece como aviso no painel e no detalhe do cliente.
+- Reagendamento por datas, sem solicitar ou exibir horários; obras podem ter períodos sobrepostos. O evento visível aparece como aviso no painel e no detalhe do cliente.
 - Registro de andamento por colaborador alocado ou ADMIN, com texto, visibilidade controlada pelo ADMIN e foto opcional enviada ao Cloudinary.
 - Cliente consulta obras e timeline filtrada, solicita/confirmar conclusão e acompanha pagamentos.
 - Checkout Pro Orders com idempotência, retomada de tentativas e webhook que verifica assinatura e consulta a Order no provedor.
 - A confirmação do cliente libera a segunda parcela; a obra só muda para Concluída depois que todas as parcelas estiverem pagas.
 - O detalhe administrativo permite editar dados básicos da obra, iniciar execução, solicitar conferência, registrar atualizações com visibilidade e consultar equipe e histórico de acesso.
-- A empreiteira pode cadastrar e editar preços de referência, ver a agenda e agendar ou reagendar obras com detecção de conflito.
+- A empreiteira pode cadastrar e editar preços de referência, ver a agenda e agendar ou reagendar obras; a sobreposição de períodos é permitida.
 
 ## Validação pendente de ambiente
 

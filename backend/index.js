@@ -94,7 +94,7 @@ function exigirEmpresaDoToken(req, res, next) {
   return next();
 }
 
-function converterDataHoraISO(valor) {
+function converterDataISO(valor) {
   if (typeof valor !== "string") return null;
   const dataSemHorario = valor.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (dataSemHorario) {
@@ -107,25 +107,7 @@ function converterDataHoraISO(valor) {
     if (dia < 1 || dia > diasNoMes[mes - 1]) return null;
     return new Date(Date.UTC(ano, mes - 1, dia, 12));
   }
-  const partes = valor.match(/^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/);
-  if (!partes) return null;
-
-  const ano = Number(partes[1]);
-  const mes = Number(partes[2]);
-  const dia = Number(partes[3]);
-  if (ano < 1 || mes < 1 || mes > 12) return null;
-  const anoBissexto = ano % 4 === 0 && (ano % 100 !== 0 || ano % 400 === 0);
-  const diasNoMes = [31, anoBissexto ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  if (dia < 1 || dia > diasNoMes[mes - 1]) return null;
-
-  if (partes[8] !== "Z") {
-    const horaOffset = Number(partes[10]);
-    const minutoOffset = Number(partes[11]);
-    if (horaOffset > 14 || minutoOffset > 59 || (horaOffset === 14 && minutoOffset !== 0)) return null;
-  }
-
-  const instante = new Date(valor);
-  return Number.isFinite(instante.getTime()) ? instante : null;
+  return null;
 }
 
 function somarMesesPreservandoDia(dataInicial, quantidadeMeses) {
@@ -450,7 +432,11 @@ app.get("/calendario", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"
       select: { id: true, nome: true, status: true, agendadaPara: true, prazoFinal: true, cliente: { select: { nome: true } } },
       orderBy: { agendadaPara: "asc" },
     });
-    return res.json(obras);
+    return res.json(obras.map((obra) => ({
+      ...obra,
+      agendadaPara: obra.agendadaPara?.toISOString().slice(0, 10) || null,
+      prazoFinal: obra.prazoFinal?.toISOString().slice(0, 10) || null,
+    })));
   } catch (erro) { console.error("Erro ao consultar calendário:", erro.code || erro.message); return res.status(500).json({ erro: "Erro ao consultar calendário" }); }
 });
 
@@ -1186,10 +1172,10 @@ app.patch("/obras/:id/agendamento", authMiddleware, exigirEmpresaDoToken, exigir
       return res.status(400).json({ erro: "Informe agendadaPara e prazoFinal" });
     }
 
-    const agendadaPara = converterDataHoraISO(corpo.agendadaPara);
-    const prazoFinal = converterDataHoraISO(corpo.prazoFinal);
+    const agendadaPara = converterDataISO(corpo.agendadaPara);
+    const prazoFinal = converterDataISO(corpo.prazoFinal);
     if (!agendadaPara || !prazoFinal) {
-      return res.status(400).json({ erro: "agendadaPara e prazoFinal devem ser datas ISO 8601 válidas com fuso horário" });
+      return res.status(400).json({ erro: "Informe datas válidas para o início e o prazo final" });
     }
     if (prazoFinal <= agendadaPara) {
       return res.status(400).json({ erro: "prazoFinal deve ser posterior a agendadaPara" });
@@ -1206,15 +1192,14 @@ app.patch("/obras/:id/agendamento", authMiddleware, exigirEmpresaDoToken, exigir
     return res.json({
       obra: {
         ...resultado.obra,
-        agendadaPara: resultado.agendadaPara.toISOString(),
-        prazoFinal: resultado.prazoFinal.toISOString(),
+        agendadaPara: resultado.agendadaPara.toISOString().slice(0, 10),
+        prazoFinal: resultado.prazoFinal.toISOString().slice(0, 10),
       },
       evento: resultado.evento,
       alterada: resultado.alterada,
     });
   } catch (erro) {
     if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
-    if (erro.code === "AGENDAMENTO_CONFLITO") return res.status(409).json({ erro: erro.message });
     if (erro.code === "AGENDAMENTO_CONCORRENTE" || erro.code === "P2034") {
       return res.status(409).json({ erro: erro.message || "O agendamento foi alterado por outra operação; atualize e tente novamente" });
     }

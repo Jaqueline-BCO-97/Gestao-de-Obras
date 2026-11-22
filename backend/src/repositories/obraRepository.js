@@ -408,16 +408,15 @@ function mesmoInstante(a, b) {
   return a instanceof Date && b instanceof Date && a.getTime() === b.getTime();
 }
 
-function formatarDataHoraAgendamento(data) {
-  return `${new Intl.DateTimeFormat("pt-BR", {
+function formatarDataAgendamento(data) {
+  const dataValida = normalizarData(data);
+  if (!dataValida) return null;
+  return new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
     timeZone: "UTC",
-  }).format(data)} UTC`;
+  }).format(dataValida);
 }
 
 function somarMesesPreservandoDia(dataInicial, quantidadeMeses) {
@@ -431,32 +430,15 @@ function somarMesesPreservandoDia(dataInicial, quantidadeMeses) {
 async function reagendarObra({ obraId, empresaId, administradorId, agendadaPara, prazoFinal }) {
   exigirBancoConfigurado();
   const prisma = getPrisma();
-  // O lock por empresa torna a checagem e a gravação uma seção crítica entre
-  // requisições simultâneas. Serializable também protege contra escritas externas.
+  // A data e o evento são gravados juntos para manter o histórico consistente.
   for (let tentativa = 1; tentativa <= 3; tentativa += 1) {
     try {
       return await prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT 1 FROM (SELECT pg_advisory_xact_lock(hashtextextended(${empresaId}, 0))) AS lock_empresa`;
-
         const obraAtual = await tx.obra.findFirst({
           where: { id: obraId, empresaId },
           select: { id: true, agendadaPara: true, prazoFinal: true },
         });
         if (!obraAtual) return null;
-
-        const conflito = await tx.obra.findFirst({
-          where: {
-            empresaId,
-            id: { not: obraId },
-            agendadaPara: { not: null, lt: prazoFinal },
-            prazoFinal: { not: null, gt: agendadaPara },
-            status: { not: "CONCLUIDA" },
-          },
-          select: { id: true, nome: true },
-        });
-        if (conflito) {
-          throw erroAgendamento("AGENDAMENTO_CONFLITO", "Conflito de agendamento: o intervalo se sobrepõe ao de outra obra desta empresa");
-        }
 
         if (mesmoInstante(obraAtual.agendadaPara, agendadaPara) && mesmoInstante(obraAtual.prazoFinal, prazoFinal)) {
           const semAlteracao = await tx.obra.findFirst({
@@ -479,7 +461,7 @@ async function reagendarObra({ obraId, empresaId, administradorId, agendadaPara,
             empresaId,
             usuarioId: administradorId,
             tipo: "AGENDAMENTO",
-            descricao: `Obra reagendada para ${formatarDataHoraAgendamento(agendadaPara)} até ${formatarDataHoraAgendamento(prazoFinal)}.`,
+            descricao: `Obra reagendada para ${formatarDataAgendamento(agendadaPara)} até ${formatarDataAgendamento(prazoFinal)}.`,
             visivelParaCliente: true,
           },
         });
@@ -650,18 +632,18 @@ function formatarObra(obra, tipo) {
     // Converte o estado para uma descrição legível.
     status: formatarStatus(obra.status),
     // Converte o prazo para o padrão de data do mock.
-    prazo: formatarData(obra.prazoFinal),
-    prazoISO: obra.prazoFinal ? new Date(obra.prazoFinal).toISOString().slice(0, 10) : "",
-    agendadaPara: obra.agendadaPara ? new Date(obra.agendadaPara).toISOString() : null,
-    agendadaParaISO: obra.agendadaPara ? new Date(obra.agendadaPara).toISOString().slice(0, 10) : "",
-    conclusaoConfirmadaEm: obra.conclusaoConfirmadaEm ? new Date(obra.conclusaoConfirmadaEm).toISOString() : null,
+    prazo: formatarData(prazoFinal),
+    prazoISO: prazoFinal?.toISOString().slice(0, 10) || "",
+    agendadaPara: agendadaPara?.toISOString().slice(0, 10) || null,
+    agendadaParaISO: agendadaPara?.toISOString().slice(0, 10) || "",
+    conclusaoConfirmadaEm: conclusaoConfirmadaEm?.toISOString() || null,
     // Adapta os eventos ao formato da linha do tempo do mock.
     timeline: formatarTimeline(obra.eventos || [], tipo),
   };
   if (tipo === "COLABORADOR" && obra.cliente?.empresaId === obra.empresaId) resposta.telefoneCliente = obra.cliente.telefone || null;
   if (tipo !== "CLIENTE") resposta.informacoesAdicionais = obra.informacoesAdicionais;
   if (tipo === "ADMIN") resposta.conviteClientePendente = Boolean(obra.convites?.length);
-  if (tipo !== "COLABORADOR") resposta.contrato = obra.contrato;
+  if (tipo !== "COLABORADOR") resposta.contrato = contrato;
   // Inclui dados financeiros apenas para clientes e administradores.
   if (tipo !== "COLABORADOR") {
     // Converte o valor Decimal para número compatível com JSON.
