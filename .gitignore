@@ -1,7 +1,7 @@
 node_modules/
-.env
-.env.*
+.env*
 !.env.example
+codex-session-*.md
 
 dist/
 build/
