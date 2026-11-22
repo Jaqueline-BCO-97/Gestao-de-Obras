@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import AdminMenu from '../components/AdminMenu.jsx'
 import Card from '../components/Card.jsx'
 import { listarObras } from '../services/auth.js'
 import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
@@ -24,7 +23,7 @@ export default function Admin() {
   const aReceber = obras.reduce((total, obra) => total + [obra.parcela1, obra.parcela2].reduce((soma, parcela) => soma + (parcela?.situacao === 'pendente' ? Number(parcela.saldoDisponivel ?? parcela.valor ?? 0) : 0), 0), 0)
 
   return <div className="min-h-screen bg-background text-ink">
-    <header className="sticky top-0 z-10 border-b border-slate-200 bg-white shadow-sm"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6"><div><strong className="text-lg font-bold text-navy">Obra<span className="text-primary">Master</span></strong><p className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Painel da empreiteira</p></div><AdminMenu /></div></header>
+
     <main className="mx-auto max-w-7xl space-y-7 px-4 py-7 sm:px-6">
       <section><p className="text-xs font-bold uppercase tracking-wider text-primary">Resumo da empresa</p><h1 className="mt-1 text-3xl font-bold text-navy">Início</h1><p className="mt-1 text-sm text-slate-600">Acompanhe as obras que sua empreiteira administra e compartilha com cada cliente.</p></section>
       {erro && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert"><p>{erro}</p><button onClick={atualizar} className="mt-2 font-semibold underline">Tentar novamente</button></div>}

@@ -1,4 +1,3 @@
-import AdminMenu from '../components/AdminMenu.jsx'
 // Importa o hook useState do React para controlar filtros e avisos na tela
 import { useCallback, useEffect, useState } from 'react'
 
@@ -143,35 +142,8 @@ export default function AdminObras() {
     // Contêiner de tela cheia com fundo claro padrão e tipografia padrão
     <div className="min-h-screen bg-background text-ink">
 
-      {/* Barra de cabeçalho superior unificada */}
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-10 shadow-sm">
-        {/* Contêiner interno com layout flexível */}
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
 
-          {/* Logotipo e identificador da rota */}
-          <div className="flex items-center gap-3">
-            {/* Ícone de prancheta */}
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-navy text-white text-lg font-bold" aria-hidden="true">
-              📋
-            </span>
-            {/* Título e subtítulo do sistema */}
-            <div>
-              {/* Nome da plataforma */}
-              <strong className="block text-base leading-tight font-bold text-navy">
-                Obra<span className="text-primary">Master</span>
-              </strong>
-              {/* Identificador do painel administrativo */}
-              <small className="block text-[10px] tracking-wider text-amber-600 uppercase font-bold">
-                Gestão de Obras
-              </small>
-            </div>
-          </div>
 
-          {/* Menu de navegação entre as telas */}
-          <AdminMenu />
-
-        </div>
-      </header>
 
       {/* Conteúdo principal */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">

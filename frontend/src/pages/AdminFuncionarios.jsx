@@ -1,4 +1,3 @@
-import AdminMenu from '../components/AdminMenu.jsx'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Button from '../components/Button.jsx'
@@ -68,7 +67,7 @@ export default function AdminFuncionarios() {
   }
 
   return <div className="min-h-screen bg-background text-ink">
-    <header className="sticky top-0 z-10 border-b border-slate-200 bg-white shadow-sm"><div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3"><div><strong className="text-lg text-navy">Obra<span className="text-primary">Master</span></strong><p className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Empreiteira</p></div><AdminMenu /></div></header>
+
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-8">
       <div><h1 className="text-3xl font-bold text-navy">Funcionários</h1><p className="mt-1 text-sm text-slate-600">Cadastre profissionais sem conta de acesso e organize os dias de trabalho em cada obra.</p><Link to="/admin/funcionarios/gerentes" className="mt-2 inline-block text-sm font-semibold text-sky-700 underline">Gerenciar gerentes com acesso →</Link></div>
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Cadastrar funcionário</h2><form onSubmit={enviar} className="mt-4 grid gap-4 sm:grid-cols-2">

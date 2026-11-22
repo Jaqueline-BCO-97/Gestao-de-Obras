@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import Card from '../components/Card.jsx'
 import Button from '../components/Button.jsx'
 import Avatar from '../components/Avatar.jsx'
-import { buscarUsuarioAtual, encerrarSessao, listarObras } from '../services/auth.js'
+import { buscarUsuarioAtual, listarObras } from '../services/auth.js'
 import { obterFotoPerfil } from '../utils/fotoPerfil.js'
 
 function mensagemErroObras(erro) {
@@ -52,30 +52,10 @@ export default function Colaborador() {
   const obrasAgendadas = obras.filter((obra) => obra.status === 'Agendada').length
   const obrasFinalizadas = obras.filter((obra) => ['Aguardando conferência', 'Concluída'].includes(obra.status)).length
 
-  function handleLogout() {
-    encerrarSessao()
-    navigate('/login')
-  }
 
   return (
     <div className="min-h-screen bg-background text-ink">
-      <header className="border-b border-slate-200 bg-white shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-emerald-600 text-white text-lg font-bold" aria-hidden="true">🔨</span>
-            <div>
-              <strong className="block text-base leading-tight font-bold text-navy">Obra<span className="text-primary">Master</span></strong>
-              <small className="block text-[10px] tracking-wider text-emerald-700 uppercase font-bold">Painel do Gerente de Obra</small>
-            </div>
-          </div>
-          <nav className="hidden" aria-label="Navegação do colaborador">
-            <Link to="/colaborador" className="py-1.5 px-3 rounded-md bg-emerald-700 text-white">Minhas Obras</Link>
-            <Link to="/colaborador/notificacoes" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100">Notificações</Link>
-            <Link to="/perfil" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100">Perfil</Link>
-            <Button variant="outline" onClick={handleLogout} className="text-xs py-1.5 px-3">Sair</Button>
-          </nav>
-        </div>
-      </header>
+
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="bg-white border border-slate-200 rounded-xl p-5 mb-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
