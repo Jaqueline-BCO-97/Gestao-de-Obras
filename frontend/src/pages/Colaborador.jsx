@@ -26,7 +26,6 @@ export default function Colaborador() {
   const [usuario, setUsuario] = useState(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
-  const [avisoCanteiro, setAvisoCanteiro] = useState(null)
   const [tentativas, setTentativas] = useState(0)
 
   useEffect(() => {
@@ -56,12 +55,6 @@ export default function Colaborador() {
   function handleLogout() {
     encerrarSessao()
     navigate('/login')
-  }
-
-  function handleVerCanteiro(obra) {
-    setAvisoCanteiro({
-      titulo: obra.titulo,
-    })
   }
 
   return (
@@ -108,15 +101,6 @@ export default function Colaborador() {
           <Card label="Finalizadas / Vistoria" value={obrasFinalizadas} accent="border-purple-500" />
         </section>
 
-        {avisoCanteiro && (
-          <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-900 shadow-xs">
-            <div className="text-xs sm:text-sm">
-              <p className="font-bold">Obra: {avisoCanteiro.titulo}</p>
-            </div>
-            <Button variant="outline" onClick={() => setAvisoCanteiro(null)} className="text-xs py-1 px-3 self-end sm:self-auto">Fechar detalhes</Button>
-          </div>
-        )}
-
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-navy">Obras Atribuídas{!carregando && !erro ? ` (${obras.length})` : ''}</h2>
           <span className="text-xs text-slate-500">Dados fornecidos pela API autenticada</span>
@@ -145,7 +129,6 @@ export default function Colaborador() {
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div>
                 <h3 className="text-base sm:text-lg font-bold text-navy leading-snug">Obra {obra.numeroObra || obras.indexOf(obra) + 1}: {obra.titulo}</h3>
-                        <p className="text-xs text-slate-500 mt-0.5">Cliente: <strong className="text-slate-700">{obra.cliente || 'Não informado'}</strong></p>
                       </div>
                       <span className={`inline-flex shrink-0 items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${cores.badge}`}>
                         <span className={`w-2 h-2 rounded-full ${cores.ponto}`} aria-hidden="true" />{obra.status}
@@ -168,10 +151,7 @@ export default function Colaborador() {
                   </div>
                   <div className="border-t border-slate-100 pt-3 mt-4 flex items-center justify-between gap-3">
                     <span className="text-[11px] text-slate-400">🏗️ Canteiro ativo</span>
-                    <div className="flex items-center gap-2">
-                      <Button variant="outline" onClick={() => handleVerCanteiro(obra)} className="text-xs py-1.5 px-3">Ver Canteiro</Button>
-                      <Button variant="compact" onClick={() => navigate(`/colaborador/obra/${encodeURIComponent(obra.id)}`)} className="text-xs py-1.5 px-3" icon="→">Gerenciar obra</Button>
-                    </div>
+                    <Button variant="compact" onClick={() => navigate(`/colaborador/obra/${encodeURIComponent(obra.id)}`)} className="text-xs py-1.5 px-3" icon="→">Gerenciar canteiro</Button>
                   </div>
                 </Card>
               )

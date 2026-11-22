@@ -24,7 +24,10 @@ export default function MenuPerfil() {
   const location = useLocation()
   const navigate = useNavigate()
   const usuario = obterUsuarioDaSessao()
-  const links = linksPorPerfil[usuario?.tipo] || []
+  const linksIniciais = linksPorPerfil[usuario?.tipo] || []
+  const links = usuario?.tipo === 'ADMIN' && location.pathname.startsWith('/admin/obra/')
+    ? linksIniciais.filter(([to]) => to !== '/admin/funcionarios/gerentes')
+    : linksIniciais
 
   return <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm">
     <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-5">

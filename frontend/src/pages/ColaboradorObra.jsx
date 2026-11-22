@@ -188,6 +188,7 @@ function DetalhesObra({ id }) {
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-navy mb-2">{obra.titulo}</h1>
           <p className="flex items-start gap-2 text-sm text-slate-600 mb-2"><span aria-hidden="true">📍</span>{obra.endereco || 'Endereço não informado'}</p>
+          {obra.telefoneCliente && <p className="flex items-center gap-2 text-sm text-slate-600 mb-2"><span aria-hidden="true">☎</span>Contato do cliente: <a className="font-semibold text-emerald-700 underline" href={`tel:${obra.telefoneCliente.replace(/[^\d+]/g, '')}`}>{obra.telefoneCliente}</a></p>}
           <p className="flex items-center gap-2 text-xs text-slate-500"><span aria-hidden="true">📅</span>Previsão de entrega: <strong className="text-slate-700">{obra.prazo || 'Não informado'}</strong></p>
         </section>
 
