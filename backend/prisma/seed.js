@@ -83,7 +83,7 @@ const OBRAS = [
     { data: "19/11/2026", hora: "12:00", autor: "admin", tipo: "STATUS", visivel: true, descricao: "Obra de demonstração agendada para 20/02/2027." },
   ] },
   // Obra nova para validar a confirmação final no perfil do cliente demo.
-  { titulo: "Conferência de Conclusão Demo", endereco: "Rua da Demonstração, 120 - Gonzaga, Santos - SP", estado: "SP", cidade: "Santos", bairro: "Gonzaga", rua: "Rua da Demonstração", numero: "120", semApartamento: true, semBloco: true, detalhes: "Obra de demonstração pronta para conferência e aceite final pelo cliente.", status: "Aguardando conferência", valorTotal: 24000, prazo: "30/11/2026", colaboradores: [], parcelas: [{ situacao: "PAGA", pagamento: "05/11/2026", vencimento: "05/11/2026" }, { situacao: "PAGA", pagamento: "15/11/2026", vencimento: "15/11/2026" }], timeline: [
+  { titulo: "Edifício Teste", endereco: "Rua da Demonstração, 120 - Gonzaga, Santos - SP", estado: "SP", cidade: "Santos", bairro: "Gonzaga", rua: "Rua da Demonstração", numero: "120", semApartamento: true, semBloco: true, detalhes: "Obra de demonstração pronta para conferência e aceite final pelo cliente.", status: "Aguardando conferência", valorTotal: 24000, prazo: "30/11/2026", colaboradores: [], parcelas: [{ situacao: "PAGA", pagamento: "05/11/2026", vencimento: "05/11/2026" }, { situacao: "PAGA", pagamento: "15/11/2026", vencimento: "15/11/2026" }], timeline: [
     { data: "18/11/2026", hora: "12:00", autor: "admin", tipo: "STATUS", visivel: true, descricao: "Obra enviada para conferência final do cliente demo." },
   ] },
 ];
