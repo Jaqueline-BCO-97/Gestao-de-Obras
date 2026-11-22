@@ -1,47 +1,34 @@
 // Importa os componentes principais de roteamento da biblioteca react-router-dom
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 
 // Importa o componente ProtectedRoute responsável por barrar usuários não logados
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 
 // Importa o componente da tela de Login
-import Login from './pages/Login.jsx'
-
-// Importa a página temporária do painel do cliente
-import Cliente from './pages/Cliente.jsx'
-
-// Importa a página temporária de detalhes da obra com parâmetro :id
-import ClienteObra from './pages/ClienteObra.jsx'
-import ClienteAndamento from './pages/ClienteAndamento.jsx'
-// Importa a página temporária de pagamento final do cliente.
-import ClientePagamento from './pages/ClientePagamento.jsx'
-
-// Importa a página temporária do painel do administrador
-import Admin from './pages/Admin.jsx'
-
-// Importa a página temporária da listagem de obras do administrador
-import AdminObras from './pages/AdminObras.jsx'
-
-// Importa a página temporária do painel do colaborador
-import Colaborador from './pages/Colaborador.jsx'
-
-// Importa a página de registro de andamento da obra pelo colaborador
-import ColaboradorObra from './pages/ColaboradorObra.jsx'
-
-// Importa a página de Perfil para manter a funcionalidade já existente no sistema
-import Perfil from './pages/Perfil/Perfil.jsx'
-import RegistroEmpreiteira from './pages/RegistroEmpreiteira.jsx'
-import AceitarConvite from './pages/AceitarConvite.jsx'
-import AdminFuncionarios from './pages/AdminFuncionarios.jsx'
-import AdminClientes from './pages/AdminClientes.jsx'
-import AdminObra from './pages/AdminObra.jsx'
-import AdminPrecos from './pages/AdminPrecos.jsx'
-import AdminCalendario from './pages/AdminCalendario.jsx'
-import AdminGerentes from './pages/AdminGerentes.jsx'
-import AdminFuncionario from './pages/AdminFuncionario.jsx'
-import Notificacoes from './pages/Notificacoes.jsx'
-import Pagamentos from './pages/Pagamentos.jsx'
-import ClienteContratos from './pages/ClienteContratos.jsx'
+const Login = lazy(() => import('./pages/Login.jsx'))
+const Cliente = lazy(() => import('./pages/Cliente.jsx'))
+const ClienteObra = lazy(() => import('./pages/ClienteObra.jsx'))
+const ClienteAndamento = lazy(() => import('./pages/ClienteAndamento.jsx'))
+const ClientePagamento = lazy(() => import('./pages/ClientePagamento.jsx'))
+const Admin = lazy(() => import('./pages/Admin.jsx'))
+const AdminObras = lazy(() => import('./pages/AdminObras.jsx'))
+const Colaborador = lazy(() => import('./pages/Colaborador.jsx'))
+const ColaboradorObra = lazy(() => import('./pages/ColaboradorObra.jsx'))
+const Perfil = lazy(() => import('./pages/Perfil/Perfil.jsx'))
+const RegistroEmpreiteira = lazy(() => import('./pages/RegistroEmpreiteira.jsx'))
+const AceitarConvite = lazy(() => import('./pages/AceitarConvite.jsx'))
+const AdminFuncionarios = lazy(() => import('./pages/AdminFuncionarios.jsx'))
+const AdminClientes = lazy(() => import('./pages/AdminClientes.jsx'))
+const AdminObra = lazy(() => import('./pages/AdminObra.jsx'))
+const AdminPrecos = lazy(() => import('./pages/AdminPrecos.jsx'))
+const AdminCalendario = lazy(() => import('./pages/AdminCalendario.jsx'))
+const AdminGerentes = lazy(() => import('./pages/AdminGerentes.jsx'))
+const AdminFuncionario = lazy(() => import('./pages/AdminFuncionario.jsx'))
+const Notificacoes = lazy(() => import('./pages/Notificacoes.jsx'))
+const Pagamentos = lazy(() => import('./pages/Pagamentos.jsx'))
+const ClienteContratos = lazy(() => import('./pages/ClienteContratos.jsx'))
+const ClientePrecos = lazy(() => import('./pages/ClientePrecos.jsx'))
 
 // Componente raiz da aplicação (App) que define a estrutura de rotas do frontend
 export default function App() {
@@ -50,6 +37,7 @@ export default function App() {
     // O BrowserRouter gerencia o histórico de navegação baseado na URL do navegador
     <BrowserRouter>
       {/* O componente Routes agrupa as rotas e renderiza a primeira que coincidir com a URL atual */}
+      <Suspense fallback={<main role="status" className="min-h-screen bg-background p-6"><div className="mx-auto max-w-5xl animate-pulse space-y-4"><div className="h-12 rounded-lg bg-white" /><div className="h-8 w-1/3 rounded bg-slate-200" /><div className="h-36 rounded-xl bg-white" /><div className="h-36 rounded-xl bg-white" /></div></main>}>
       <Routes>
         {/* Rota inicial (/): Redireciona automaticamente para a tela de login */}
         <Route path="/" element={<Navigate to="/login" replace />} />
@@ -101,6 +89,7 @@ export default function App() {
         <Route path="/cliente/pagamentos" element={<ProtectedRoute perfisPermitidos={['CLIENTE']}><Pagamentos /></ProtectedRoute>} />
         <Route path="/cliente/notificacoes" element={<ProtectedRoute perfisPermitidos={['CLIENTE']}><Notificacoes /></ProtectedRoute>} />
         <Route path="/cliente/contratos" element={<ProtectedRoute perfisPermitidos={['CLIENTE']}><ClienteContratos /></ProtectedRoute>} />
+        <Route path="/cliente/precos" element={<ProtectedRoute perfisPermitidos={['CLIENTE']}><ClientePrecos /></ProtectedRoute>} />
 
         {/* Rota protegida do painel administrativo (/admin): Exige perfil ADMIN */}
         <Route
@@ -190,6 +179,7 @@ export default function App() {
         {/* Rota coringa (*): Qualquer caminho digitado que não exista redireciona para /login */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }

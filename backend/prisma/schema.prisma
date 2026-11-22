@@ -26,6 +26,11 @@ model Empresa {
   telefoneSecundario String?
   enderecoResponsavel String?
   endereco     String?
+  estado       String?
+  cidade       String?
+  bairro       String?
+  numero       String?
+  complemento  String?
   // Data de criação automática do registro.
   criadoEm     DateTime      @default(now())
   // Usuários que pertencem à empresa.
@@ -66,6 +71,16 @@ model Usuario {
   telefoneSecundario String?
   fotoUrl          String?
   endereco         String?
+  estado           String?
+  cidade           String?
+  bairro           String?
+  numero           String?
+  complemento      String?
+  apartamento      String?
+  bloco            String?
+  semApartamento   Boolean?
+  semBloco         Boolean?
+  cpf              String?
   // Data de criação automática do registro.
   criadoEm         DateTime         @default(now())
   // Obras em que este usuário é cliente.
@@ -82,6 +97,8 @@ model Usuario {
   pagamentos       Pagamento[]
   convitesCriados  Convite[]        @relation("ConviteCriadoPor")
   notificacoes     Notificacao[]
+
+  @@index([empresaId])
 }
 
 // Representa uma obra pertencente a uma empresa.
@@ -145,6 +162,10 @@ model Obra {
   convites              Convite[]
   notificacoes          Notificacao[]
   disponibilidades      DisponibilidadeFuncionario[]
+
+  @@index([empresaId, excluidaEm, criadoEm])
+  @@index([empresaId, clienteId, excluidaEm, criadoEm])
+  @@index([empresaId, excluidaEm, agendadaPara])
 }
 
 // Representa um profissional associado a uma empresa.
@@ -195,6 +216,14 @@ model Convite {
   funcao      String?
   telefone    String?
   endereco    String?
+  estado      String?
+  cidade      String?
+  bairro      String?
+  numero      String?
+  apartamento String?
+  bloco       String?
+  semApartamento Boolean?
+  semBloco    Boolean?
   quantidadeParcelas Int?
   vencimentoInicial DateTime?
   contratoUrl String?
@@ -231,6 +260,7 @@ model ObraEscala {
 
   // Acelera consultas de escalas por obra.
   @@index([obraId])
+  @@index([funcionarioId, dataFim])
 }
 
 // Guarda os acontecimentos exibidos na linha do tempo da obra.
@@ -265,6 +295,7 @@ model ObraEvento {
   @@index([obraId, criadoEm])
   // Acelera consultas de eventos por empresa.
   @@index([empresaId])
+  @@index([usuarioId, criadoEm])
 }
 
 // Representa uma parcela cobrada em uma obra.

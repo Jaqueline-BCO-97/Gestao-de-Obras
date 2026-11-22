@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { registrarEmpreiteira, salvarSessao } from '../services/auth.js'
+import { cpfValido, formatarCpf } from '../utils/cpf.js'
+import { cnpjValido, formatarCnpj } from '../utils/cnpj.js'
+import { formatarTelefoneBR } from '../utils/telefone.js'
 
 const campos = [
   ['empresa', 'Nome da empresa', 'text'],
-  ['cnpj', 'CNPJ (14 números)', 'text'],
+  ['cnpj', 'CNPJ', 'text'],
   ['nome', 'Nome completo do responsável', 'text'],
-  ['cpfResponsavel', 'CPF do responsável (11 números)', 'text'],
+  ['cpfResponsavel', 'CPF do responsável', 'text'],
   ['email', 'E-mail', 'email'],
   ['telefone', 'Telefone principal', 'tel'],
   ['telefoneSecundario', 'Telefone adicional (opcional)', 'tel'],
@@ -22,12 +25,16 @@ export default function RegistroEmpreiteira() {
   const navigate = useNavigate()
   function alterar(event) {
     const { name, value } = event.target
-    const texto = ['cnpj', 'cpfResponsavel'].includes(name) ? value.replace(/\D/g, '') : value
+    const texto = name === 'cnpj' ? formatarCnpj(value) : name === 'cpfResponsavel' ? formatarCpf(value) : name.startsWith('telefone') ? formatarTelefoneBR(value) : value
     setDados({ ...dados, [name]: texto })
   }
   async function enviar(event) {
     event.preventDefault(); setErro(''); setCarregando(true)
-    try { const sessao = await registrarEmpreiteira(dados); salvarSessao(sessao, true); navigate('/admin') }
+    try {
+      if (!cnpjValido(dados.cnpj)) throw new Error('CNPJ inválido. Digite os 14 números sem pontos ou traços; a formatação é aplicada automaticamente.')
+      if (!cpfValido(dados.cpfResponsavel)) throw new Error('CPF inválido. Digite os 11 números sem pontos ou traços; a formatação é aplicada automaticamente.')
+      const sessao = await registrarEmpreiteira(dados); salvarSessao(sessao, true); navigate('/admin')
+    }
     catch (falha) { setErro(falha.message) }
     finally { setCarregando(false) }
   }
@@ -35,8 +42,8 @@ export default function RegistroEmpreiteira() {
     <Link to="/login" className="text-sm text-sky-700">← Voltar ao login</Link>
     <h1 className="text-2xl font-bold text-[#0c2d43]">Cadastrar Empresa</h1>
     <p className="text-sm text-slate-600">Informe os dados da empresa e do responsável pela conta.</p>
-    {erro && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{erro}</p>}
-    <div className="grid gap-3 sm:grid-cols-2">{campos.map(([name, label, type]) => <label key={name} className={`block text-sm font-medium ${['empresa', 'enderecoResponsavel', 'endereco'].includes(name) ? 'sm:col-span-2' : ''}`}>{label}<input required={name !== 'telefoneSecundario'} maxLength={name === 'cnpj' ? 14 : name === 'cpfResponsavel' ? 11 : undefined} minLength={name === 'cnpj' ? 14 : name === 'cpfResponsavel' ? 11 : name === 'senha' ? 8 : undefined} inputMode={['cnpj', 'cpfResponsavel'].includes(name) ? 'numeric' : undefined} type={type} name={name} autoComplete={name === 'senha' ? 'new-password' : undefined} value={dados[name]} onChange={alterar} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>)}</div>
+    <div className="grid gap-3 sm:grid-cols-2">{campos.map(([name, label, type]) => <label key={name} className={`block text-sm font-medium ${['empresa', 'enderecoResponsavel', 'endereco'].includes(name) ? 'sm:col-span-2' : ''}`}>{label}{['cnpj', 'cpfResponsavel'].includes(name) && <span className="mt-1 block text-xs font-normal text-slate-500">Digite apenas números; pontos, barra e traço aparecem automaticamente.</span>}<input required={name !== 'telefoneSecundario'} maxLength={name === 'cnpj' ? 18 : name === 'cpfResponsavel' ? 14 : undefined} minLength={name === 'cnpj' ? 18 : name === 'cpfResponsavel' ? 14 : name === 'senha' ? 8 : undefined} inputMode={['cnpj', 'cpfResponsavel'].includes(name) ? 'numeric' : undefined} type={type} name={name} autoComplete={name === 'senha' ? 'new-password' : undefined} value={dados[name]} onChange={alterar} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>)}</div>
+    {erro && <p role="alert" className="rounded bg-red-50 p-3 text-sm font-semibold text-red-800">{erro}</p>}
     <button disabled={carregando} className="w-full rounded-lg bg-[#0c2d43] p-3 font-semibold text-white">{carregando ? 'Cadastrando…' : 'Cadastrar empresa'}</button>
   </form></main>
 }

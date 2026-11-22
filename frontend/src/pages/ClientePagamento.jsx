@@ -12,6 +12,7 @@ export default function ClientePagamento() {
   const [obra, setObra] = useState(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
+  const [erroAcao, setErroAcao] = useState({})
   const [pagando, setPagando] = useState('')
   const [mensagem, setMensagem] = useState('')
   const checkoutEmAndamento = useRef(false)
@@ -55,7 +56,7 @@ export default function ClientePagamento() {
     const valor = Number(valorEscolhido)
     checkoutEmAndamento.current = true
     setPagando(parcela.id)
-    setErro('')
+    setErroAcao((atuais) => ({ ...atuais, [parcela.id]: '' }))
     setMensagem('')
     try {
       const dadosTentativa = { obraId: id, parcelaId: parcela.id, valor }
@@ -64,7 +65,7 @@ export default function ClientePagamento() {
       if (!resposta.checkoutUrl) throw new Error('A API não retornou o endereço do checkout.')
       window.location.assign(resposta.checkoutUrl)
     } catch (falha) {
-      setErro(falha.message)
+      setErroAcao((atuais) => ({ ...atuais, [parcela.id]: falha.message }))
       // Erros de validação são definitivos; rede e 5xx conservam a chave para recuperar a tentativa.
       if ((falha.status && falha.status < 500) || falha.tentativaFinalizada) limparChavePagamento(sessionStorage, { obraId: id, parcelaId: parcela.id, valor })
       setPagando('')
@@ -76,14 +77,14 @@ export default function ClientePagamento() {
     if (!parcela?.id || !tentativa?.id || checkoutEmAndamento.current) return
     checkoutEmAndamento.current = true
     setPagando(parcela.id)
-    setErro('')
+    setErroAcao((atuais) => ({ ...atuais, [parcela.id]: '' }))
     setMensagem('')
     try {
       const resposta = await retomarPagamento(id, tentativa.id)
       if (!resposta.checkoutUrl) throw new Error('A API não retornou o endereço do checkout.')
       window.location.assign(resposta.checkoutUrl)
     } catch (falha) {
-      setErro(falha.message)
+      setErroAcao((atuais) => ({ ...atuais, [parcela.id]: falha.message }))
       setPagando('')
       checkoutEmAndamento.current = false
     }
@@ -114,6 +115,7 @@ export default function ClientePagamento() {
                   <Button variant="primary" disabled={indisponivel || Boolean(pagando) || Number(parcela.saldoDisponivel ?? parcela.valor) <= 0} onClick={() => pagar(parcela)}>{pagando === parcela.id ? 'Iniciando checkout…' : 'Pagar saldo disponível'}</Button>
                 </>}
               </div>
+              {erroAcao[parcela.id] && <p role="alert" className="w-full rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">{erroAcao[parcela.id]}</p>}
             </article>
           })}
           {!parcelas.length && <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">Esta obra ainda não possui parcelas cadastradas.</p>}

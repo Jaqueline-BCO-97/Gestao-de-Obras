@@ -2,8 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Button from '../../components/Button.jsx'
 import Input from '../../components/Input.jsx'
+import Avatar from '../../components/Avatar.jsx'
 import { atualizarPerfil, buscarUsuarioAtual, alterarSenha, encerrarSessao, salvarSessao } from '../../services/auth.js'
 import { obterRotaDashboard } from '../../routes/dashboardRoutes.js'
+import { obterFotoPerfil } from '../../utils/fotoPerfil.js'
+import { cpfValido, formatarCpf } from '../../utils/cpf.js'
+import { formatarTelefoneBR } from '../../utils/telefone.js'
 
 // Função auxiliar para recuperar dados do usuário mock/local quando a API estiver offline
 function obterUsuarioLocal() {
@@ -13,6 +17,14 @@ function obterUsuarioLocal() {
   } catch {
     return null
   }
+}
+
+function dadosPessoais(usuario = {}) {
+  return { email: usuario.email || '', telefone: formatarTelefoneBR(usuario.telefone || ''), telefoneSecundario: formatarTelefoneBR(usuario.telefoneSecundario || ''), endereco: usuario.endereco || '', estado: usuario.estado || '', cidade: usuario.cidade || '', bairro: usuario.bairro || '', numero: usuario.numero || '', complemento: usuario.complemento || '', apartamento: usuario.apartamento || '', bloco: usuario.bloco || '', semApartamento: usuario.semApartamento ?? false, semBloco: usuario.semBloco ?? false, cpf: formatarCpf(usuario.cpf || '') }
+}
+
+function dadosEmpresa(empresa = {}) {
+  return { endereco: empresa.endereco || '', estado: empresa.estado || '', cidade: empresa.cidade || '', bairro: empresa.bairro || '', numero: empresa.numero || '', complemento: empresa.complemento || '', telefone: formatarTelefoneBR(empresa.telefone || ''), telefoneSecundario: formatarTelefoneBR(empresa.telefoneSecundario || ''), enderecoResponsavel: empresa.enderecoResponsavel || '' }
 }
 
 // Chave usada no localStorage pra guardar o token JWT do usuário logado.
@@ -28,6 +40,7 @@ export default function Perfil() {
 
   // Identifica o perfil do usuário atual para descobrir a rota do seu dashboard
   const tipoPerfil = usuario?.tipo || obterUsuarioLocal()?.tipo
+  const fotoPerfil = obterFotoPerfil(usuario)
   // Rota de retorno correspondente ao perfil logado (Admin -> /admin, Cliente -> /cliente, Colaborador -> /colaborador)
   const rotaDashboard = obterRotaDashboard(tipoPerfil) || '/login'
 
@@ -42,13 +55,17 @@ export default function Perfil() {
 
   // Mensagem de sucesso ou erro mostrada depois de tentar trocar a senha.
   // Formato: { tipo: 'erro' | 'sucesso', texto: '...' }
-  const [mensagem, setMensagem] = useState(null)
+  const [mensagemSenha, setMensagemSenha] = useState(null)
+  const [mensagemContato, setMensagemContato] = useState(null)
 
   // true enquanto a requisição de troca de senha está em andamento
   // (usado pra desabilitar o botão e mostrar "Salvando…").
   const [salvando, setSalvando] = useState(false)
-  const [dadosContato, setDadosContato] = useState({ email: '', telefone: '', telefoneSecundario: '' })
+  const [dadosContato, setDadosContato] = useState(() => dadosPessoais(obterUsuarioLocal() || {}))
+  const [dadosEmpresaForm, setDadosEmpresaForm] = useState(() => dadosEmpresa(obterUsuarioLocal()?.empresa || {}))
+  const [mostrarTelefoneAdicional, setMostrarTelefoneAdicional] = useState(false)
   const [fotoSelecionada, setFotoSelecionada] = useState(null)
+  const [erroFoto, setErroFoto] = useState('')
 
   // Roda uma única vez, quando o componente é montado na tela,
   // pra buscar os dados do usuário logado.
@@ -59,7 +76,7 @@ export default function Perfil() {
 
     buscarUsuarioAtual()
       .then((dados) => {
-        if (ativo) { setUsuario(dados); setDadosContato({ email: dados.email || '', telefone: dados.telefone || '', telefoneSecundario: dados.telefoneSecundario || '' }) }
+        if (ativo) { setUsuario(dados); setDadosContato(dadosPessoais(dados)); setDadosEmpresaForm(dadosEmpresa(dados.empresa)); setMostrarTelefoneAdicional(Boolean(dados.telefoneSecundario)) }
       })
       .catch((erro) => {
         if (ativo) {
@@ -88,21 +105,21 @@ export default function Perfil() {
     setCampos((atuais) => ({ ...atuais, [event.target.name]: event.target.value }))
     // Limpa qualquer mensagem de erro/sucesso antiga assim que o usuário
     // começa a digitar de novo.
-    setMensagem(null)
+    setMensagemSenha(null)
   }
 
   // Chamado quando o formulário de troca de senha é enviado.
   async function enviarTrocaSenha(event) {
     event.preventDefault() // impede o navegador de recarregar a página
-    setMensagem(null)
+    setMensagemSenha(null)
 
     // Validação básica no front, antes de gastar uma chamada ao backend.
     if (!campos.senhaAtual || !campos.novaSenha || !campos.confirmarSenha) {
-      setMensagem({ tipo: 'erro', texto: 'Preencha todos os campos de senha.' })
+      setMensagemSenha({ tipo: 'erro', texto: 'Preencha todos os campos de senha.' })
       return
     }
     if (campos.novaSenha !== campos.confirmarSenha) {
-      setMensagem({ tipo: 'erro', texto: 'A nova senha e a confirmação precisam ser iguais.' })
+      setMensagemSenha({ tipo: 'erro', texto: 'A nova senha e a confirmação precisam ser iguais.' })
       return
     }
 
@@ -110,12 +127,12 @@ export default function Perfil() {
     try {
       // Chama o endpoint PATCH /usuarios/me/senha (dentro de auth.js).
       const resultado = await alterarSenha(campos.senhaAtual, campos.novaSenha)
-      setMensagem({ tipo: 'sucesso', texto: resultado.mensagem || 'Senha alterada com sucesso.' })
+      setMensagemSenha({ tipo: 'sucesso', texto: resultado.mensagem || 'Senha alterada com sucesso.' })
       // Limpa os campos depois de trocar com sucesso, por segurança.
       setCampos({ senhaAtual: '', novaSenha: '', confirmarSenha: '' })
     } catch (erro) {
       // Se o backend recusar (ex: senha atual errada), mostra a mensagem dele.
-      setMensagem({ tipo: 'erro', texto: erro.message || 'Não foi possível alterar a senha.' })
+      setMensagemSenha({ tipo: 'erro', texto: erro.message || 'Não foi possível alterar a senha.' })
     } finally {
       setSalvando(false)
     }
@@ -123,10 +140,11 @@ export default function Perfil() {
 
   async function salvarContato(event) {
     event.preventDefault()
-    setMensagem(null)
+    setMensagemContato(null)
+    if (dadosContato.cpf && !cpfValido(dadosContato.cpf)) { setMensagemContato({ tipo: 'erro', texto: 'Informe um CPF válido.' }); return }
     setSalvando(true)
     try {
-      const dados = { ...dadosContato }
+      const dados = { ...dadosContato, ...(usuario.tipo === 'ADMIN' ? { empresa: dadosEmpresaForm } : {}) }
       if (fotoSelecionada) {
         if (!['image/jpeg', 'image/png', 'image/webp'].includes(fotoSelecionada.type) || fotoSelecionada.size > 5 * 1024 * 1024) throw new Error('Escolha uma foto JPG, PNG ou WebP de até 5 MB.')
         dados.foto = await new Promise((resolve, reject) => { const leitor = new FileReader(); leitor.onload = () => resolve({ data: leitor.result, mimeType: fotoSelecionada.type }); leitor.onerror = () => reject(new Error('Não foi possível ler a foto.')); leitor.readAsDataURL(fotoSelecionada) })
@@ -135,17 +153,35 @@ export default function Perfil() {
       const lembrar = Boolean(localStorage.getItem('token'))
       salvarSessao(resposta, lembrar)
       setUsuario(resposta.usuario)
-      setDadosContato({ email: resposta.usuario.email || '', telefone: resposta.usuario.telefone || '', telefoneSecundario: resposta.usuario.telefoneSecundario || '' })
+      setDadosContato(dadosPessoais(resposta.usuario))
+      if (resposta.usuario.empresa) setDadosEmpresaForm((atual) => ({ ...atual, ...dadosEmpresa({ ...atual, ...resposta.usuario.empresa }) }))
+      setMostrarTelefoneAdicional(Boolean(resposta.usuario.telefoneSecundario))
       setFotoSelecionada(null)
-      setMensagem({ tipo: 'sucesso', texto: resposta.mensagem || 'Perfil atualizado.' })
-    } catch (erro) { setMensagem({ tipo: 'erro', texto: erro.message || 'Não foi possível atualizar o perfil.' }) }
+      setMensagemContato({ tipo: 'sucesso', texto: resposta.mensagem || 'Perfil atualizado.' })
+    } catch (erro) {
+      const texto = erro.message || 'Não foi possível atualizar o perfil.'
+      if (fotoSelecionada && /foto|imagem|cloudinary|upload/i.test(texto)) setErroFoto(texto)
+      else setMensagemContato({ tipo: 'erro', texto })
+    }
     finally { setSalvando(false) }
+  }
+
+  function selecionarFoto(event) {
+    const arquivo = event.target.files?.[0] || null
+    setErroFoto('')
+    if (arquivo && (!['image/jpeg', 'image/png', 'image/webp'].includes(arquivo.type) || arquivo.size > 5 * 1024 * 1024)) {
+      setFotoSelecionada(null)
+      event.target.value = ''
+      setErroFoto('Escolha uma foto JPG, PNG ou WebP de até 5 MB.')
+      return
+    }
+    setFotoSelecionada(arquivo)
   }
 
   const itensMenu = tipoPerfil === 'ADMIN'
     ? [{ to: '/admin/notificacoes', label: 'Notificações', icon: '♧' }, { to: '/admin/pagamentos', label: 'Pagamentos', icon: '◉' }, { to: '/perfil', label: 'Perfil', icon: '◎' }]
     : tipoPerfil === 'CLIENTE'
-      ? [{ to: '/cliente', label: 'Minhas Obras', icon: '▣' }, { to: '/cliente/pagamentos', label: 'Pagamentos', icon: '◉' }, { to: '/cliente/notificacoes', label: 'Notificações', icon: '♧' }, { to: '/cliente/contratos', label: 'Contrato', icon: '▤' }, { to: '/perfil', label: 'Perfil', icon: '◎' }]
+      ? [{ to: '/cliente', label: 'Minhas Obras', icon: '▣' }, { to: '/cliente/pagamentos', label: 'Pagamentos', icon: '◉' }, { to: '/cliente/precos', label: 'Preços', icon: '$' }, { to: '/cliente/notificacoes', label: 'Notificações', icon: '♧' }, { to: '/cliente/contratos', label: 'Contrato', icon: '▤' }, { to: '/perfil', label: 'Perfil', icon: '◎' }]
       : [{ to: '/colaborador', label: 'Minhas Obras', icon: '▣' }, { to: '/colaborador/notificacoes', label: 'Notificações', icon: '♧' }, { to: '/perfil', label: 'Perfil', icon: '◎' }]
 
   return (
@@ -161,6 +197,10 @@ export default function Perfil() {
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-xl font-bold" aria-hidden="true">⌂</span>
           <span className="min-w-0"><strong className="block text-[17px] leading-[1.1] tracking-[-.04em]">Obra<span className="text-sky-300">Master</span></strong><small className="mt-1 block text-[8px] tracking-[.12em] text-slate-400">GESTÃO DE OBRAS</small></span>
         </Link>
+
+        <div className="mt-7 flex justify-center max-[620px]:mt-4">
+          <Avatar nome={usuario?.nome} src={fotoPerfil} className="h-16 w-16 border-white/30" fallbackClassName="bg-white/10 text-white" />
+        </div>
 
         <nav className="mt-[34px] grid gap-[5px] max-[620px]:mt-[14px] max-[620px]:grid-cols-3 max-[620px]:gap-1 max-[360px]:grid-cols-2" aria-label="Navegação da conta">
           {itensMenu.map((item) => <Link key={item.to} to={item.to} aria-current={item.to === '/perfil' ? 'page' : undefined} className={`flex min-h-[39px] items-center gap-[11px] whitespace-nowrap rounded-[9px] px-[11px] text-xs max-[620px]:min-w-0 max-[620px]:min-h-[35px] max-[620px]:gap-1.5 max-[620px]:px-[7px] max-[620px]:text-[10px] ${item.to === '/perfil' ? 'bg-primary font-bold text-white' : 'font-medium text-slate-300 hover:bg-white/10'}`}><span className="grid w-[17px] shrink-0 place-items-center text-base leading-none">{item.icon}</span>{item.label}</Link>)}
@@ -184,10 +224,13 @@ export default function Perfil() {
         </header>
 
         <main className="mx-auto w-[min(1120px,calc(100%-64px))] py-7 max-[920px]:w-[min(720px,calc(100%-44px))] max-[620px]:w-[calc(100%-32px)] max-[620px]:py-[23px] max-[360px]:w-[calc(100%-24px)]">
-          <div className="mb-[19px] max-[620px]:mb-4">
-            <p className="mb-1.5 text-[9px] font-bold tracking-[.12em] text-slate-500">CONTA</p>
-            <h1 className="m-0 text-[clamp(26px,3vw,30px)] font-bold leading-[1.2] tracking-[-.045em] text-navy">Meu perfil</h1>
-            <p className="mt-[5px] text-xs text-slate-500">Consulte seus dados e mantenha sua conta segura.</p>
+          <div className="mb-[19px] flex items-center gap-4 max-[620px]:mb-4">
+            <Avatar nome={usuario?.nome} src={fotoPerfil} className="h-16 w-16 border-slate-200 max-[360px]:h-14 max-[360px]:w-14" />
+            <div>
+              <p className="mb-1.5 text-[9px] font-bold tracking-[.12em] text-slate-500">CONTA</p>
+              <h1 className="m-0 text-[clamp(26px,3vw,30px)] font-bold leading-[1.2] tracking-[-.045em] text-navy">Meu perfil</h1>
+              <p className="mt-[5px] text-xs text-slate-500">Consulte seus dados e mantenha sua conta segura.</p>
+            </div>
           </div>
 
           {/* Renderização condicional: mostra "carregando", depois erro
@@ -211,13 +254,19 @@ export default function Perfil() {
                 </div>
                 <form onSubmit={salvarContato} className="mt-4 space-y-3">
                   <p className="text-sm font-semibold text-navy">{usuario.nome}</p>
-                  {usuario.fotoUrl && <img src={usuario.fotoUrl} alt={`Foto de ${usuario.nome}`} className="h-20 w-20 rounded-full object-cover" />}
-                  <label className="block text-[11px] font-semibold text-slate-700">Foto de perfil (JPG, PNG ou WebP)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setFotoSelecionada(event.target.files?.[0] || null)} className="mt-1 block w-full rounded border border-slate-300 p-2 text-xs font-normal" /></label>
+                  <Avatar nome={usuario.nome} src={fotoPerfil} className="h-24 w-24 border-slate-200" />
+                  <label className="block text-[11px] font-semibold text-slate-700">Foto de perfil (JPG, PNG ou WebP)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={selecionarFoto} aria-describedby={erroFoto ? 'erro-foto-perfil' : undefined} className="mt-1 block w-full rounded border border-slate-300 p-2 text-xs font-normal" />{erroFoto && <span id="erro-foto-perfil" role="alert" className="mt-2 block rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-800">{erroFoto}</span>}</label>
                   <label className="block text-[11px] font-semibold text-slate-700">E-mail<input required type="email" value={dadosContato.email} onChange={(event) => setDadosContato({ ...dadosContato, email: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label>
-                  <label className="block text-[11px] font-semibold text-slate-700">Telefone<input type="tel" value={dadosContato.telefone} onChange={(event) => setDadosContato({ ...dadosContato, telefone: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label>
-                  <label className="block text-[11px] font-semibold text-slate-700">Telefone adicional<input type="tel" value={dadosContato.telefoneSecundario} onChange={(event) => setDadosContato({ ...dadosContato, telefoneSecundario: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label>
+                  <label className="block text-[11px] font-semibold text-slate-700">Telefone<input type="tel" value={dadosContato.telefone} onChange={(event) => setDadosContato({ ...dadosContato, telefone: formatarTelefoneBR(event.target.value) })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label>
+                  {mostrarTelefoneAdicional ? <label className="block text-[11px] font-semibold text-slate-700">Telefone adicional<input type="tel" value={dadosContato.telefoneSecundario} onChange={(event) => setDadosContato({ ...dadosContato, telefoneSecundario: formatarTelefoneBR(event.target.value) })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label> : <Button type="button" variant="outline" className="text-xs" onClick={() => setMostrarTelefoneAdicional(true)}>Adicionar telefone</Button>}
+                  <label className="block text-[11px] font-semibold text-slate-700">Rua ou avenida<input required={usuario.tipo === 'CLIENTE'} type="text" maxLength={240} value={dadosContato.endereco} onChange={(event) => setDadosContato({ ...dadosContato, endereco: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label>
+                  <div className="grid grid-cols-2 gap-3"><label className="block text-[11px] font-semibold text-slate-700">Estado<input required={usuario.tipo === 'CLIENTE'} value={dadosContato.estado} onChange={(event) => setDadosContato({ ...dadosContato, estado: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label><label className="block text-[11px] font-semibold text-slate-700">Cidade<input required={usuario.tipo === 'CLIENTE'} value={dadosContato.cidade} onChange={(event) => setDadosContato({ ...dadosContato, cidade: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label><label className="block text-[11px] font-semibold text-slate-700">Bairro<input required={usuario.tipo === 'CLIENTE'} value={dadosContato.bairro} onChange={(event) => setDadosContato({ ...dadosContato, bairro: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label><label className="block text-[11px] font-semibold text-slate-700">Número<input required={usuario.tipo === 'CLIENTE'} inputMode="numeric" value={dadosContato.numero} onChange={(event) => setDadosContato({ ...dadosContato, numero: event.target.value.replace(/\D/g, '') })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label></div>
+                  <label className="block text-[11px] font-semibold text-slate-700">Complemento<input maxLength={240} value={dadosContato.complemento} onChange={(event) => setDadosContato({ ...dadosContato, complemento: event.target.value })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label>
+                  <div className="grid grid-cols-2 gap-3"><label className="block text-[11px] font-semibold text-slate-700">Apartamento<input disabled={dadosContato.semApartamento} required={usuario.tipo === 'CLIENTE' && !dadosContato.semApartamento} inputMode="numeric" value={dadosContato.apartamento} onChange={(event) => setDadosContato({ ...dadosContato, apartamento: event.target.value.replace(/\D/g, '') })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal disabled:bg-slate-100" /><span className="mt-2 flex items-center gap-1 text-[10px]"><input type="checkbox" checked={dadosContato.semApartamento} onChange={(event) => setDadosContato({ ...dadosContato, semApartamento: event.target.checked, apartamento: '' })} />Não tem apartamento</span></label><label className="block text-[11px] font-semibold text-slate-700">Bloco<input disabled={dadosContato.semBloco} required={usuario.tipo === 'CLIENTE' && !dadosContato.semBloco} value={dadosContato.bloco} onChange={(event) => setDadosContato({ ...dadosContato, bloco: event.target.value.replace(/[^a-z\d]/gi, '') })} className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal disabled:bg-slate-100" /><span className="mt-2 flex items-center gap-1 text-[10px]"><input type="checkbox" checked={dadosContato.semBloco} onChange={(event) => setDadosContato({ ...dadosContato, semBloco: event.target.checked, bloco: '' })} />Não tem bloco</span></label></div>
+                  <label className="block text-[11px] font-semibold text-slate-700">CPF<input type="text" inputMode="numeric" autoComplete="off" maxLength={14} value={dadosContato.cpf} onChange={(event) => setDadosContato({ ...dadosContato, cpf: formatarCpf(event.target.value) })} placeholder="000.000.000-00" className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal" /></label>
+                  {usuario.tipo === 'ADMIN' && <fieldset className="rounded-lg border border-slate-200 p-3"><legend className="px-1 text-xs font-bold text-navy">Endereço da empresa</legend><div className="grid grid-cols-2 gap-3"><label className="text-[11px] font-semibold">Rua/avenida<input value={dadosEmpresaForm.endereco} onChange={(event) => setDadosEmpresaForm({ ...dadosEmpresaForm, endereco: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-xs font-normal" /></label><label className="text-[11px] font-semibold">Número<input inputMode="numeric" value={dadosEmpresaForm.numero} onChange={(event) => setDadosEmpresaForm({ ...dadosEmpresaForm, numero: event.target.value.replace(/\D/g, '') })} className="mt-1 w-full rounded border border-slate-300 p-2 text-xs font-normal" /></label><label className="text-[11px] font-semibold">Estado<input value={dadosEmpresaForm.estado} onChange={(event) => setDadosEmpresaForm({ ...dadosEmpresaForm, estado: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-xs font-normal" /></label><label className="text-[11px] font-semibold">Cidade<input value={dadosEmpresaForm.cidade} onChange={(event) => setDadosEmpresaForm({ ...dadosEmpresaForm, cidade: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-xs font-normal" /></label><label className="text-[11px] font-semibold">Bairro<input value={dadosEmpresaForm.bairro} onChange={(event) => setDadosEmpresaForm({ ...dadosEmpresaForm, bairro: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-xs font-normal" /></label><label className="text-[11px] font-semibold">Complemento<input value={dadosEmpresaForm.complemento} onChange={(event) => setDadosEmpresaForm({ ...dadosEmpresaForm, complemento: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-xs font-normal" /></label></div></fieldset>}
                   {usuario.tipo === 'COLABORADOR' && usuario.funcionario?.funcao && <p className="text-xs text-slate-600">Função: <strong>{usuario.funcionario.funcao}</strong></p>}
-                  {mensagem && <p className={`rounded-[7px] px-[10px] py-[9px] text-[11px] ${mensagem.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`} role={mensagem.tipo === 'erro' ? 'alert' : 'status'}>{mensagem.texto}</p>}
+                  {mensagemContato && <p className={`rounded-[7px] px-[10px] py-[9px] text-sm font-semibold ${mensagemContato.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`} role={mensagemContato.tipo === 'erro' ? 'alert' : 'status'}>{mensagemContato.texto}</p>}
                   <Button type="submit" variant="compact" disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar dados de contato'}</Button>
                 </form>
               </section>
@@ -273,7 +322,7 @@ export default function Perfil() {
                   {/* Mensagem de sucesso ou erro da troca de senha —
                       a cor muda dependendo do tipo (vermelho pra erro,
                       verde pra sucesso). */}
-                  {mensagem && <p className={`mb-3 rounded-[7px] px-[10px] py-[9px] text-[11px] leading-[1.45] ${mensagem.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`} role={mensagem.tipo === 'erro' ? 'alert' : 'status'}>{mensagem.texto}</p>}
+                  {mensagemSenha && <p className={`mb-3 rounded-[7px] px-[10px] py-[9px] text-[11px] leading-[1.45] ${mensagemSenha.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`} role={mensagemSenha.tipo === 'erro' ? 'alert' : 'status'}>{mensagemSenha.texto}</p>}
 
                   {/* Antes usava um monte de "!important" pra forçar o
                       visual. Agora usa a variante "compact" que já existe

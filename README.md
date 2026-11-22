@@ -66,12 +66,13 @@ As contas abaixo pertencem à empresa **Empresa Demo** e usam a senha `Demo@1234
 
 A tela de Login tem atalhos para ADMIN, CLIENTE e COLABORADOR. O seed cria esses três usuários de demonstração e seus dados de exemplo.
 
-> **Aviso:** crie essas contas somente em banco de desenvolvimento ou demonstração. As credenciais são públicas e não devem ser usadas em produção. O seed se recusa a rodar quando `NODE_ENV=production`.
+> **Aviso:** crie essas contas somente em um banco isolado de demonstração. As credenciais são públicas e não devem ser usadas em produção. O seed exige `OBRAMASTER_DEMO_SEED=true` e se recusa a rodar quando `NODE_ENV=production`.
 
 Para criar ou redefinir as contas:
 ```
-cd backend && npx prisma db seed
+cd backend && OBRAMASTER_DEMO_SEED=true npx prisma db seed
 ```
+Use esse comando somente com `DATABASE_URL` apontando para um banco descartável de demonstração, nunca para o banco compartilhado ou de produção.
 
 **Frontend** (Vite + React):
 ```
@@ -104,14 +105,14 @@ npm test
 - Combinados feitos só por WhatsApp
 - Cliente sem visibilidade da obra
 - Cobrança e reajustes sem registro formal
-- Conflitos de agenda por falta de controle
+- Planejamento de obras por datas no calendário
 
 ### Depois:
 - Histórico único e auditável por obra
 - Fotos e atualizações de andamento em tempo real
 - Pagamento parcelado dentro do próprio app
 - Comprovante gerado a partir do histórico registrado
-- Validação automática de conflito de agendamento
+- Agendamento por data, com períodos sobrepostos permitidos
 
 ---
 
@@ -253,14 +254,14 @@ sequenceDiagram
 
 - **RN1** — Pagamento só é registrado se valor ≤ saldo pendente; sem duplicidade de transação
 - **RN2** — Status segue sequência obrigatória Agendada → Em andamento → Concluída, sem retrocesso; só o Admin oficializa a mudança
-- **RN3** — Reagendamento só é confirmado se não houver conflito de data/hora com outra obra
+- **RN3** — O reagendamento usa datas, sem horários; períodos de obras podem se sobrepor
 - **RN4** — Toda alteração (status, pagamento, agendamento) é registrada em histórico com usuário e data/hora
 - **RN6** — Obra não pode ser marcada como "Concluída" com pagamento pendente
 - **RN7** — Alteração de status ou agendamento dispara notificação automática ao cliente
 - **RN8** — Pagamento padrão dividido em 2 parcelas: 50% na aprovação do orçamento, 50% na conclusão da obra
 - **RN9** — Isolamento total de dados entre empresas (multiempresa)
 
-> RN1 é aplicada pelo endpoint de pagamento. RN3 é validada no endpoint de reagendamento por intervalos completos da mesma empresa, e RN7 registra confirmação visível ao cliente na timeline. As demais regras ainda dependem de funcionalidades próprias.
+> RN1 é aplicada pelo endpoint de pagamento. RN3 é aplicada no endpoint de reagendamento, e RN7 registra confirmação visível ao cliente na timeline. As demais regras ainda dependem de funcionalidades próprias.
 
 ---
 
@@ -291,7 +292,7 @@ POST  /colaboradores             (cadastra colaborador — ADMIN)
 POST  /obras                     (cria obra na empresa do token — ADMIN)
 GET   /obras                     (lista obras da empresa — protegida)
 GET   /obras/:id                 (detalhe da obra, filtrado por empresa — protegida)
-PATCH /obras/:id/agendamento    (reagenda obra sem conflito — ADMIN; evento na timeline do cliente)
+PATCH /obras/:id/agendamento    (reagenda por datas, com sobreposição permitida — ADMIN; evento na timeline do cliente)
 POST  /obras/:id/andamento       (texto/foto — Colaborador alocado ou ADMIN; foto via Cloudinary)
 POST  /obras/:id/pagamento       (checkout sandbox — Cliente proprietário; confirmação por webhook)
 POST  /obras/:id/pagamentos/:pagamentoId/retomar (retoma checkout pendente)

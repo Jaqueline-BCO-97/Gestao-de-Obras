@@ -1,9 +1,10 @@
 // Importa o componente Navigate para redirecionamento e Outlet para rotas aninhadas do react-router-dom
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 // Importa a função que verifica se o usuário possui sessão ou token ativo
 import { estaAutenticado } from '../services/auth.js'
 // Importa a função auxiliar que resolve a rota do dashboard de acordo com o perfil
 import { obterRotaDashboard } from '../routes/dashboardRoutes.js'
+import MenuPerfil from './MenuPerfil.jsx'
 
 // Função auxiliar interna para recuperar o usuário salvo no armazenamento do navegador
 function obterUsuarioSessao() {
@@ -23,6 +24,7 @@ function obterUsuarioSessao() {
 // Componente ProtectedRoute (Rota Protegida com controle de perfis permitidos)
 // Tem a função de verificar se o usuário está logado e se seu perfil possui permissão para acessar a rota.
 export default function ProtectedRoute({ children, perfisPermitidos }) {
+  const location = useLocation()
   // Executa a verificação de autenticação (procura token ou sessão mock)
   const usuarioEstaAutenticado = estaAutenticado()
 
@@ -49,11 +51,12 @@ export default function ProtectedRoute({ children, perfisPermitidos }) {
   }
 
   // Se o componente recebeu elementos filhos (children) via propriedade, renderiza esses filhos
-  if (children) {
-    // Retorna os filhos protegidos
-    return children
-  }
+  const conteudo = children || <Outlet />
+  const pagamentoOnline = /^\/cliente\/obra\/[^/]+\/pagamento$/.test(location.pathname)
+  const telaPerfil = location.pathname === '/perfil'
 
-  // Se não houver children direto, renderiza o Outlet (usado quando a rota protegida atua como layout de sub-rotas)
-  return <Outlet />
+  return <>
+    {!pagamentoOnline && !telaPerfil && <MenuPerfil />}
+    {conteudo}
+  </>
 }

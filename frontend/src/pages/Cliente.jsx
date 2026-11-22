@@ -1,5 +1,5 @@
-// Importa os hooks useNavigate e Link do react-router-dom para navegação interna entre páginas
-import { useNavigate, Link } from 'react-router-dom'
+// Importa o hook useNavigate do react-router-dom para navegação interna
+import { useNavigate } from 'react-router-dom'
 import { useEffect, useRef, useState } from 'react'
 
 // Importa o componente reutilizável Card do sistema de design
@@ -11,8 +11,7 @@ import Button from '../components/Button.jsx'
 // Importa a lista de dados mockados e as funções auxiliares de formatação e cores
 import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
-// Importa a função de logout para permitir que o cliente encerre a sua sessão
-import { encerrarSessao, listarObras } from '../services/auth.js'
+import { listarObras } from '../services/auth.js'
 import { detectarNovosAgendamentos, registrarEventosConhecidos, registrarListenerOnline } from '../utils/eventosAgendamento.js'
 
 // Componente principal da página do Painel do Cliente (/cliente)
@@ -73,13 +72,6 @@ export default function Cliente() {
 
   const totalObras = obras.length
 
-  // Função disparada quando o usuário clica no botão de sair (logout)
-  function handleLogout() {
-    // Executa a função que limpa o token de autenticação e os dados salvos
-    encerrarSessao()
-    // Redireciona o usuário de volta para a tela de login
-    navigate('/login')
-  }
 
   // Função responsável por navegar para os detalhes da obra ao clicar em um card
   function irParaDetalhes(id) {
@@ -92,50 +84,8 @@ export default function Cliente() {
     // Contêiner principal com cor de fundo padrão e altura mínima cobrindo toda a tela
     <div className="min-h-screen bg-background text-ink">
 
-      {/* Barra de navegação superior (Header) */}
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-10 shadow-sm">
-        {/* Contêiner interno do cabeçalho com alinhamento flexível e espaçamento responsivo */}
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
 
-          {/* Logotipo e identificador da aplicação */}
-          <div className="flex items-center gap-3">
-            {/* Ícone de casinha com fundo azul representando a marca */}
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary text-white text-lg font-bold" aria-hidden="true">
-              ⌂
-            </span>
-            {/* Título e subtítulo do sistema */}
-            <div>
-              {/* Nome da plataforma com destaque na segunda palavra */}
-              <strong className="block text-base leading-tight font-bold text-navy">
-                Obra<span className="text-primary">Master</span>
-              </strong>
-              {/* Etiqueta pequena indicando a área do cliente */}
-              <small className="block text-[10px] tracking-wider text-slate-500 uppercase font-semibold">
-                Painel do Cliente
-              </small>
-            </div>
-          </div>
 
-          {/* Área de ações do usuário no cabeçalho */}
-          <nav className="flex flex-wrap items-center gap-1.5" aria-label="Navegação do cliente">
-            {/* Link direto para a página de perfil do usuário logado */}
-            <Link to="/cliente" className="rounded-md bg-navy px-2.5 py-2 text-xs font-semibold text-white">Minhas Obras</Link>
-            <Link to="/cliente/pagamentos" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Pagamentos</Link>
-            <Link to="/cliente/notificacoes" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Notificações</Link>
-            <Link to="/cliente/contratos" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Contrato</Link>
-            <Link to="/perfil" className="rounded-md px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Perfil</Link>
-            {/* Botão de encerrar sessão reutilizando o componente Button com variante outline */}
-            <Button
-              variant="outline"
-              onClick={handleLogout}
-              className="text-xs py-1.5 px-3"
-            >
-              Sair
-            </Button>
-          </nav>
-
-        </div>
-      </header>
 
       {/* Conteúdo principal da página */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -166,7 +116,6 @@ export default function Cliente() {
           </span>
         </div>
 
-        {erro && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{erro}</p>}
         {carregando && <p className="mb-4 text-sm text-slate-500" role="status">Carregando suas obras…</p>}
         {avisoAgendamento && (
           <aside className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950" role="status" aria-live="polite">
@@ -179,6 +128,7 @@ export default function Cliente() {
 
         {/* Grade responsiva de cartões de obras (mobile-first: 1 coluna no mobile, 2 em tablets e desktops) */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6" aria-label="Lista de obras">
+          {erro && <p className="md:col-span-2 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800" role="alert">{erro}</p>}
           {/* Itera sobre o array de obras fake para gerar cada card */}
           {obras.map((obra) => {
             // Obtém as cores personalizadas do status para aplicar na borda e badge

@@ -24,7 +24,9 @@ function criarPrisma() {
   const prisma = {
     usuario: {
       findUnique: async ({ where, select }) => selecionar(usuarios.find((item) => Object.entries(where).every(([chave, valor]) => item[chave] === valor)) || null, select),
+      findMany: async ({ where }) => usuarios.filter((item) => item.empresaId === where.empresaId && item.tipo === where.tipo).map(({ id }) => ({ id })),
       create: async ({ data }) => { const item = { id: `usuario-${usuarios.length}`, criadoEm: new Date(), ...data }; usuarios.push(item); return item; },
+      update: async ({ where, data }) => { const item = usuarios.find((usuario) => usuario.id === where.id); Object.assign(item, data); return item; },
     },
     obra: {
       findFirst: async ({ where, include }) => {
@@ -89,7 +91,10 @@ function criarPrisma() {
       upsert: async ({ where, create, update }) => { let item = contratos.find((contrato) => contrato.obraId === where.obraId); if (item) Object.assign(item, update); else { item = { id: `contrato-${contratos.length + 1}`, ...create }; contratos.push(item); } return item; },
     },
     pagamento: { count: async () => 0 },
-    notificacao: { create: async ({ data }) => { const item = { id: `notificacao-${notificacoes.length + 1}`, ...data }; notificacoes.push(item); return item; } },
+    notificacao: {
+      create: async ({ data }) => { const item = { id: `notificacao-${notificacoes.length + 1}`, ...data }; notificacoes.push(item); return item; },
+      createMany: async ({ data }) => { notificacoes.push(...data); return { count: data.length }; },
+    },
     $transaction: async (callback) => callback(prisma),
   };
   return prisma;
@@ -105,6 +110,12 @@ require.cache[usuarioRepositoryPath] = {
   id: usuarioRepositoryPath, filename: usuarioRepositoryPath, loaded: true,
   exports: {
     listarUsuarios: async () => [], buscarUsuarioPorEmail: async () => null, buscarUsuarioPorId: async () => null,
+    buscarAutenticacaoUsuarioPorId: async (id) => {
+      const usuario = usuarios.find((item) => item.id === id);
+      if (!usuario) return null;
+      const funcionario = funcionarios.find((item) => item.usuarioId === id);
+      return { id: usuario.id, email: usuario.email, tipo: usuario.tipo, empresaId: usuario.empresaId, funcionario: funcionario ? { empresaId: funcionario.empresaId, ativo: funcionario.ativo } : null };
+    },
     buscarPerfilUsuarioPorId: async (id) => selecionar(usuarios.find((item) => item.id === id) || null, { id: true, empresaId: true, nome: true, email: true, tipo: true }),
     buscarFuncionarioPorUsuarioId: async (usuarioId) => funcionarios.find((item) => item.usuarioId === usuarioId) || null,
     atualizarSenhaUsuario: async () => null, criarUsuarioColaborador: async () => null,
@@ -150,7 +161,7 @@ describe("Convites de cliente e gerente por obra", () => {
   });
 
   it("cria conta de cliente, limita o vínculo à obra convidada e consome o link uma vez", async () => {
-    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente A", email: "cliente@teste.local", telefone: "11987654321", endereco: "Rua A, 100", quantidadeParcelas: 3, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente A", email: "cliente@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, quantidadeParcelas: 3, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
     assert.equal(criado.statusCode, 201);
     assert.match(criado.body.convite.link, /^http:\/\/localhost:5173\/convite\//);
     const codigo = criado.body.convite.link.split("/").at(-1);
@@ -161,6 +172,7 @@ describe("Convites de cliente e gerente por obra", () => {
     const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
     assert.equal(aceite.statusCode, 200);
     assert.equal(aceite.body.usuario.tipo, "CLIENTE");
+    assert.equal(usuarios.find((item) => item.id === aceite.body.usuario.id).cidade, "Santos");
     assert.equal(obras[0].clienteId, aceite.body.usuario.id);
     assert.equal(obras[0].quantidadeParcelas, 3);
     assert.equal(parcelas.length, 3);
@@ -188,11 +200,11 @@ describe("Convites de cliente e gerente por obra", () => {
     assert.equal(eventos.length, 1);
     assert.equal(eventos[0].tipo, "EQUIPE");
     assert.equal(eventos[0].visivelParaCliente, false);
-    assert.equal(notificacoes.length, 1);
+    assert.equal(notificacoes.length, 2);
   });
 
   it("exige que o cliente esteja vinculado a uma obra e tenha contrato e parcelas", async () => {
-    const dados = { nome: "Cliente A", email: "cliente@teste.local", telefone: "11987654321", endereco: "Rua do Cliente, 90", quantidadeParcelas: 2, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } };
+    const dados = { nome: "Cliente A", email: "cliente@teste.local", telefone: "11987654321", endereco: "Rua do Cliente", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "90", apartamento: "1", bloco: "A", semApartamento: false, semBloco: false, quantidadeParcelas: 2, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } };
     const semObra = await chamar("POST", "/convites/cliente", { body: { ...dados, obraId: "" } });
     assert.equal(semObra.statusCode, 400);
     const semContrato = await chamar("POST", "/convites/cliente", { body: { ...dados, obraId: "obra-convite-a", contrato: undefined } });
@@ -201,7 +213,7 @@ describe("Convites de cliente e gerente por obra", () => {
   });
 
   it("nega criação de convite sem sessão administrativa e convite para outra empresa", async () => {
-    const body = { obraId: "obra-convite-a", nome: "Cliente", email: "cliente@teste.local", telefone: "11987654321", endereco: "Rua A", quantidadeParcelas: 2, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } };
+    const body = { obraId: "obra-convite-a", nome: "Cliente", email: "cliente@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "1", bloco: "A", semApartamento: false, semBloco: false, quantidadeParcelas: 2, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } };
     const semSessao = await chamar("POST", "/convites/cliente", { body, usuario: null });
     assert.equal(semSessao.statusCode, 401);
     const obraAlheia = await chamar("POST", "/convites/cliente", { body: { ...body, obraId: "obra-fora-da-empresa" } });

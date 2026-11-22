@@ -59,6 +59,12 @@ require.cache[usuarioRepositoryPath] = {
   filename: usuarioRepositoryPath,
   loaded: true,
   exports: {
+    buscarAutenticacaoUsuarioPorId: async (id) => {
+      const usuario = perfis.find((item) => item.id === id);
+      if (!usuario) return null;
+      const funcionario = funcionarios.find((item) => item.usuarioId === id);
+      return { id: usuario.id, email: usuario.email, tipo: usuario.tipo, empresaId: usuario.empresaId, funcionario: funcionario ? { empresaId: funcionario.empresaId, ativo: funcionario.ativo } : null };
+    },
     buscarPerfilUsuarioPorId: async (id) => localizar(perfis, { id }),
     buscarFuncionarioPorUsuarioId: async (usuarioId) => localizar(funcionarios, { usuarioId }),
     listarUsuarios: async () => [],

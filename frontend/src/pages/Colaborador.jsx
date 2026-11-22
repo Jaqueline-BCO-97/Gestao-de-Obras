@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import Card from '../components/Card.jsx'
 import Button from '../components/Button.jsx'
-import { buscarUsuarioAtual, encerrarSessao, listarObras } from '../services/auth.js'
+import Avatar from '../components/Avatar.jsx'
+import { buscarUsuarioAtual, listarObras } from '../services/auth.js'
+import { obterFotoPerfil } from '../utils/fotoPerfil.js'
 
 function mensagemErroObras(erro) {
   if (erro.status === 401) return 'Sua sessão expirou. Entre novamente para consultar suas obras.'
@@ -24,7 +26,6 @@ export default function Colaborador() {
   const [usuario, setUsuario] = useState(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
-  const [avisoCanteiro, setAvisoCanteiro] = useState(null)
   const [tentativas, setTentativas] = useState(0)
 
   useEffect(() => {
@@ -51,56 +52,19 @@ export default function Colaborador() {
   const obrasAgendadas = obras.filter((obra) => obra.status === 'Agendada').length
   const obrasFinalizadas = obras.filter((obra) => ['Aguardando conferência', 'Concluída'].includes(obra.status)).length
 
-  function handleLogout() {
-    encerrarSessao()
-    navigate('/login')
-  }
-
-  function handleVerCanteiro(obra) {
-    setAvisoCanteiro({
-      id: obra.id,
-      titulo: obra.titulo,
-      endereco: obra.endereco,
-      status: obra.status,
-      prazo: obra.prazo,
-      ultimaEtapa: obra.timeline?.[obra.timeline.length - 1]?.descricao || 'Nenhuma etapa registrada ainda.',
-    })
-  }
 
   return (
     <div className="min-h-screen bg-background text-ink">
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-10 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-emerald-600 text-white text-lg font-bold" aria-hidden="true">🔨</span>
-            <div>
-              <strong className="block text-base leading-tight font-bold text-navy">Obra<span className="text-primary">Master</span></strong>
-              <small className="block text-[10px] tracking-wider text-emerald-700 uppercase font-bold">Painel do Gerente de Obra</small>
-            </div>
-          </div>
-          <nav className="flex items-center flex-wrap gap-2 text-xs font-semibold" aria-label="Navegação do colaborador">
-            <Link to="/colaborador" className="py-1.5 px-3 rounded-md bg-emerald-700 text-white">Minhas Obras</Link>
-            <Link to="/colaborador/notificacoes" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100">Notificações</Link>
-            <Link to="/perfil" className="py-1.5 px-3 rounded-md text-slate-600 hover:text-primary hover:bg-slate-100">Perfil</Link>
-            <Button variant="outline" onClick={handleLogout} className="text-xs py-1.5 px-3">Sair</Button>
-          </nav>
-        </div>
-      </header>
+
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="bg-white border border-slate-200 rounded-xl p-5 mb-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-base border border-emerald-200 shrink-0" aria-hidden="true">
-              {usuario?.nome?.split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase() || '…'}
-            </div>
+            <Avatar nome={usuario?.nome} src={obterFotoPerfil(usuario)} className="h-20 w-20 shrink-0 border-slate-200" fallbackClassName="bg-emerald-100 text-emerald-800" />
             <div>
               <h2 className="text-base sm:text-lg font-bold text-navy">{usuario?.nome || 'Gerente de obra'}</h2>
               <p className="text-xs text-slate-500 mt-0.5">{usuario?.funcionario?.funcao && <>Função: <strong className="text-emerald-700">{usuario.funcionario.funcao}</strong> · </>}{usuario?.telefone || usuario?.funcionario?.telefone ? `Telefone: ${usuario.telefone || usuario.funcionario.telefone} · ` : ''}{usuario?.email || 'Dados carregados da sua sessão autenticada'}</p>
             </div>
-          </div>
-          <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 self-start sm:self-auto">
-            <span className="block font-semibold text-slate-700">🔒 Acesso Operacional</span>
-            <span className="text-[11px] text-slate-500">A API libera somente obras com alocação ativa.</span>
           </div>
         </div>
 
@@ -116,18 +80,6 @@ export default function Colaborador() {
           <Card label="Agendadas" value={obrasAgendadas} accent="border-sky-500" />
           <Card label="Finalizadas / Vistoria" value={obrasFinalizadas} accent="border-purple-500" />
         </section>
-
-        {avisoCanteiro && (
-          <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-900 shadow-xs">
-            <div className="text-xs sm:text-sm">
-              <p className="font-bold">📍 Obra #{avisoCanteiro.id}: {avisoCanteiro.titulo}</p>
-              <p className="mt-1">Local: <strong>{avisoCanteiro.endereco || 'Endereço não informado'}</strong></p>
-              <p className="mt-0.5">Status: <strong>{avisoCanteiro.status}</strong> • Prazo: <strong>{avisoCanteiro.prazo || 'Não informado'}</strong></p>
-              <p className="mt-1 text-slate-600">Último registro: {avisoCanteiro.ultimaEtapa}</p>
-            </div>
-            <Button variant="outline" onClick={() => setAvisoCanteiro(null)} className="text-xs py-1 px-3 self-end sm:self-auto">Fechar detalhes</Button>
-          </div>
-        )}
 
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-navy">Obras Atribuídas{!carregando && !erro ? ` (${obras.length})` : ''}</h2>
@@ -156,8 +108,7 @@ export default function Colaborador() {
                   <div>
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div>
-                        <h3 className="text-base sm:text-lg font-bold text-navy leading-snug">{obra.titulo}</h3>
-                        <p className="text-xs text-slate-500 mt-0.5">Cliente: <strong className="text-slate-700">{obra.cliente || 'Não informado'}</strong></p>
+                <h3 className="text-base sm:text-lg font-bold text-navy leading-snug">Obra {obra.numeroObra || obras.indexOf(obra) + 1}: {obra.titulo}</h3>
                       </div>
                       <span className={`inline-flex shrink-0 items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${cores.badge}`}>
                         <span className={`w-2 h-2 rounded-full ${cores.ponto}`} aria-hidden="true" />{obra.status}
@@ -180,10 +131,7 @@ export default function Colaborador() {
                   </div>
                   <div className="border-t border-slate-100 pt-3 mt-4 flex items-center justify-between gap-3">
                     <span className="text-[11px] text-slate-400">🏗️ Canteiro ativo</span>
-                    <div className="flex items-center gap-2">
-                      <Button variant="outline" onClick={() => handleVerCanteiro(obra)} className="text-xs py-1.5 px-3">Ver Canteiro</Button>
-                      <Button variant="compact" onClick={() => navigate(`/colaborador/obra/${encodeURIComponent(obra.id)}`)} className="text-xs py-1.5 px-3" icon="→">Gerenciar obra</Button>
-                    </div>
+                    <Button variant="compact" onClick={() => navigate(`/colaborador/obra/${encodeURIComponent(obra.id)}`)} className="text-xs py-1.5 px-3" icon="→">Gerenciar canteiro</Button>
                   </div>
                 </Card>
               )

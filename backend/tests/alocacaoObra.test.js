@@ -1,6 +1,7 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const jwt = require("jsonwebtoken");
+const { invalidarCacheEmpresa } = require("../src/services/cacheConsultas");
 
 const empresaA = "empresa-a";
 const empresaB = "empresa-b";
@@ -11,7 +12,8 @@ const usuarios = [
   { id: "cliente-a", empresaId: empresaA, tipo: "CLIENTE", email: "cliente-a@teste.local", nome: "Cliente A" },
 ];
 const obras = [
-  { id: "obra-a", empresaId: empresaA, nome: "Obra A", parcelas: [], eventos: [], escalas: [] },
+  { id: "obra-a", empresaId: empresaA, nome: "Obra A", clienteId: null, parcelas: [], eventos: [], escalas: [] },
+  { id: "obra-a-destino", empresaId: empresaA, nome: "Obra A destino", clienteId: null, parcelas: [], eventos: [], escalas: [] },
   { id: "obra-b", empresaId: empresaB, nome: "Obra B", parcelas: [], eventos: [], escalas: [] },
 ];
 const funcionarios = [
@@ -23,6 +25,7 @@ const funcionarios = [
 let escalas = [];
 let proximoId = 1;
 const eventosEquipe = [];
+const notificacoesEquipe = [];
 
 function encontrar(list, where) {
   return list.find((item) => Object.entries(where).every(([chave, valor]) => {
@@ -34,31 +37,85 @@ function encontrar(list, where) {
 
 function prismaMock() {
   const tx = {
+    $queryRaw: async (consulta) => {
+      const sql = consulta.text;
+      const valores = consulta.values;
+      let resultados = obras.filter((obra) => obra.empresaId === (valores.includes(empresaA) ? empresaA : empresaB));
+      if (sql.includes("WHERE o.id =")) {
+        const obraId = valores.find((valor) => obras.some((obra) => obra.id === valor));
+        resultados = resultados.filter((obra) => obra.id === obraId);
+      }
+      if (sql.includes('o."clienteId" =')) {
+        const clienteId = valores.find((valor) => usuarios.some((usuario) => usuario.id === valor && usuario.tipo === "CLIENTE"));
+        resultados = resultados.filter((obra) => obra.clienteId === clienteId);
+      }
+      if (sql.includes('funcionario."usuarioId" =')) {
+        const usuarioId = valores.find((valor) => usuarios.some((usuario) => usuario.id === valor && usuario.tipo === "COLABORADOR"));
+        resultados = resultados.filter((obra) => escalas.some((escala) => {
+          const funcionario = encontrar(funcionarios, { id: escala.funcionarioId });
+          return escala.obraId === obra.id && escala.dataFim === null && funcionario?.usuarioId === usuarioId && funcionario.empresaId === obra.empresaId;
+        }));
+      }
+      return resultados.map((obra) => ({
+        ...obra,
+        cliente: null,
+        contrato: null,
+        disponibilidades: [],
+        parcelas: obra.parcelas || [],
+        eventos: [],
+        escalas: escalas.filter((escala) => escala.obraId === obra.id && escala.dataFim === null).map((escala) => ({
+          ...escala,
+          funcionario: encontrar(funcionarios, { id: escala.funcionarioId }),
+        })),
+      }));
+    },
     obra: {
-      findFirst: async ({ where }) => encontrar(obras, where) || null,
+      findFirst: async ({ where, include, select }) => {
+        const obra = obras.find((item) => Object.entries(where).every(([campo, valor]) => campo === "escalas" || campo === "excluidaEm" ? true : item[campo] === valor));
+        if (!obra) return null;
+        if (where.escalas?.some) {
+          const filtro = where.escalas.some;
+          const temAcesso = escalas.some((escala) => escala.obraId === obra.id && escala.dataFim === filtro.dataFim && encontrar(funcionarios, filtro.funcionario));
+          if (!temAcesso) return null;
+        }
+        if (select) return {
+          id: obra.id,
+          escalas: escalas.filter((escala) => escala.obraId === obra.id).map((escala) => ({ ...escala, funcionario: encontrar(funcionarios, { id: escala.funcionarioId }), alteradoPor: encontrar(usuarios, { id: escala.alteradoPorId }) })),
+          empresa: { funcionarios: funcionarios.filter((funcionario) => funcionario.empresaId === obra.empresaId && funcionario.nivel === "RESPONSAVEL" && funcionario.ativo && funcionario.usuarioId && funcionario.usuario?.tipo === "COLABORADOR").map(({ id, nome, funcao, usuarioId }) => ({ id, nome, funcao, usuarioId })) },
+        };
+        if (!include) return obra;
+        return { ...obra, cliente: null, contrato: null, disponibilidades: [], parcelas: obra.parcelas, eventos: [], escalas: escalas.filter((escala) => escala.obraId === obra.id && escala.dataFim === null).map((escala) => ({ ...escala, funcionario: encontrar(funcionarios, { id: escala.funcionarioId }) })) };
+      },
       findMany: async ({ where }) => {
         let resultados = obras.filter((obra) => !where.empresaId || obra.empresaId === where.empresaId);
         if (where.escalas?.some) {
           const requisito = where.escalas.some;
           resultados = resultados.filter((obra) => escalas.some((escala) => escala.obraId === obra.id && escala.dataFim === requisito.dataFim && encontrar(funcionarios, requisito.funcionario)));
         }
-        return resultados.map((obra) => ({ ...obra, escalas: escalas.filter((escala) => escala.obraId === obra.id && escala.dataFim === null).map((escala) => ({ ...escala, funcionario: encontrar(funcionarios, { id: escala.funcionarioId }) })) }));
+        return resultados.map((obra) => ({ ...obra, cliente: null, contrato: null, disponibilidades: [], parcelas: obra.parcelas, eventos: [], escalas: escalas.filter((escala) => escala.obraId === obra.id && escala.dataFim === null).map((escala) => ({ ...escala, funcionario: encontrar(funcionarios, { id: escala.funcionarioId }) })) }));
       },
     },
     funcionario: { findFirst: async ({ where }) => encontrar(funcionarios, where) || null },
     obraEscala: {
-      findFirst: async ({ where }) => encontrar(escalas, where) || null,
-      findMany: async ({ where }) => escalas.filter((escala) => escala.obraId === where.obraId && encontrar(obras, { id: escala.obraId, empresaId: where.obra.empresaId }) && encontrar(funcionarios, where.funcionario)),
+      findFirst: async ({ where }) => {
+        const escala = escalas.find((item) => Object.entries(where).every(([campo, valor]) => ["obra", "funcionario"].includes(campo) || item[campo] === valor));
+        if (!escala) return null;
+        const funcionario = encontrar(funcionarios, { id: escala.funcionarioId });
+        if (where.obra?.empresaId && !encontrar(obras, { id: escala.obraId, empresaId: where.obra.empresaId })) return null;
+        if (where.funcionario?.empresaId && funcionario?.empresaId !== where.funcionario.empresaId) return null;
+        if (where.funcionario?.usuarioId?.not === null && !funcionario?.usuarioId) return null;
+        return { ...escala, funcionario };
+      },
+      findMany: async ({ where }) => escalas.filter((escala) => (!where.obraId || escala.obraId === where.obraId) && (!where.funcionarioId || escala.funcionarioId === where.funcionarioId) && (!Object.hasOwn(where, "dataFim") || escala.dataFim === where.dataFim) && (!where.obra?.empresaId || encontrar(obras, { id: escala.obraId, empresaId: where.obra.empresaId })) && (!where.funcionario?.empresaId || encontrar(funcionarios, { id: escala.funcionarioId })?.empresaId === where.funcionario.empresaId)).map((escala) => ({ ...escala, obra: encontrar(obras, { id: escala.obraId }), funcionario: encontrar(funcionarios, { id: escala.funcionarioId }) })),
       create: async ({ data }) => {
         const escala = { id: `escala-${proximoId++}`, ...data, dataFim: null, motivo: null };
         escalas.push(escala);
         return { ...escala, funcionario: encontrar(funcionarios, { id: escala.funcionarioId }), alteradoPor: encontrar(usuarios, { id: escala.alteradoPorId }) };
       },
       updateMany: async ({ where, data }) => {
-        const escala = encontrar(escalas, where);
-        if (!escala) return { count: 0 };
-        Object.assign(escala, data);
-        return { count: 1 };
+        const encontrados = escalas.filter((escala) => (!where.id || escala.id === where.id) && (!where.obraId || escala.obraId === where.obraId) && (!where.funcionarioId || escala.funcionarioId === where.funcionarioId) && (!Object.hasOwn(where, "dataFim") || escala.dataFim === where.dataFim) && (!where.obra?.empresaId || encontrar(obras, { id: escala.obraId, empresaId: where.obra.empresaId })));
+        encontrados.forEach((escala) => Object.assign(escala, data));
+        return { count: encontrados.length };
       },
       findUnique: async ({ where }) => {
         const escala = encontrar(escalas, where);
@@ -67,6 +124,11 @@ function prismaMock() {
     },
     obraEvento: {
       create: async ({ data }) => { const evento = { id: `evento-equipe-${eventosEquipe.length + 1}`, ...data }; eventosEquipe.push(evento); return evento; },
+    },
+    usuario: { findMany: async ({ where }) => usuarios.filter((usuario) => usuario.empresaId === where.empresaId && usuario.tipo === where.tipo && (!where.id?.not || usuario.id !== where.id.not)).map(({ id }) => ({ id })) },
+    notificacao: {
+      create: async ({ data }) => { const item = { id: `notificacao-${notificacoesEquipe.length + 1}`, ...data }; notificacoesEquipe.push(item); return item; },
+      createMany: async ({ data }) => { notificacoesEquipe.push(...data); return { count: data.length }; },
     },
   };
   return { ...tx, $transaction: (callback) => callback(tx) };
@@ -80,6 +142,12 @@ require.cache[userRepositoryPath] = {
   filename: userRepositoryPath,
   loaded: true,
   exports: {
+    buscarAutenticacaoUsuarioPorId: async (id) => {
+      const usuario = usuarios.find((item) => item.id === id);
+      if (!usuario) return null;
+      const funcionario = funcionarios.find((item) => item.usuarioId === id);
+      return { id: usuario.id, email: usuario.email, tipo: usuario.tipo, empresaId: usuario.empresaId, funcionario: funcionario ? { empresaId: funcionario.empresaId, ativo: funcionario.ativo } : null };
+    },
     buscarPerfilUsuarioPorId: async (id) => {
       const { senhaHash, ...perfil } = encontrar(usuarios, { id }) || {};
       return perfil.id ? perfil : null;
@@ -139,6 +207,11 @@ async function requisitar(caminho, usuarioId, opcoes = {}) {
     if (chamadaSeguinte) await chamadaSeguinte;
   }
   await executar(0);
+  // This helper dispatches route handlers directly, so it mirrors the app-level
+  // finish hook that clears company list caches after a successful write.
+  if (["post", "put", "patch", "delete"].includes(metodo) && res.statusCode < 400) {
+    invalidarCacheEmpresa(req.usuario?.empresaId);
+  }
 
   return { status: res.statusCode, json: async () => res.body };
 }
@@ -219,5 +292,21 @@ describe("Issue #20 — alocação de colaboradores em obras", () => {
     assert.equal(resposta.status, 200);
     const obrasVisiveis = await resposta.json();
     assert.deepEqual(obrasVisiveis.map((obra) => obra.id), ["obra-a"]);
+  });
+
+  it("remove imediatamente o acesso à obra de origem e notifica o gerente ao movê-lo", async () => {
+    escalas.splice(0, escalas.length);
+    notificacoesEquipe.splice(0, notificacoesEquipe.length);
+    const criada = await requisitar("/obras/obra-a/colaboradores", "admin-a", { method: "POST", body: JSON.stringify({ funcionarioId: "func-resp-a" }) });
+    assert.equal(criada.status, 201);
+    const alocacaoId = (await criada.json()).alocacao.id;
+    const movida = await requisitar(`/obras/obra-a/colaboradores/${alocacaoId}/mover`, "admin-a", { method: "POST", body: JSON.stringify({ novaObraId: "obra-a-destino" }) });
+    assert.equal(movida.status, 200);
+
+    const obrasGerente = await requisitar("/obras", "colaborador-a");
+    assert.deepEqual((await obrasGerente.json()).map((obra) => obra.id), ["obra-a-destino"]);
+    const acessoAntigo = await requisitar("/obras/obra-a", "colaborador-a");
+    assert.equal(acessoAntigo.status, 404);
+    assert.ok(notificacoesEquipe.some((item) => item.usuarioId === "colaborador-a" && item.titulo === "Você foi movido para outra obra"));
   });
 });

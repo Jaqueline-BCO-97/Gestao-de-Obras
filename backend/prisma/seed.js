@@ -14,7 +14,7 @@ const CONTAS_DEMO = [
   // Conta administrativa usada para gerenciar a empresa.
   { nome: "Administrador Demo", email: "admin@obramaster.demo", tipo: "ADMIN" },
   // Conta cliente usada como cliente de todas as obras do exemplo.
-  { nome: "Cliente Demo", email: "cliente@obramaster.demo", tipo: "CLIENTE" },
+  { nome: "Cliente Demo", email: "cliente@obramaster.demo", tipo: "CLIENTE", telefone: "(11) 91234-5678", endereco: "Rua das Acácias, 84 - Gonzaga, Santos - SP", cpf: "52998224725" },
   // Conta do colaborador Carlos, vinculada também ao cadastro de funcionário.
   { nome: "Carlos Eduardo da Silva", email: "colaborador@obramaster.demo", tipo: "COLABORADOR", telefone: "(11) 98765-4321" },
 ];
@@ -39,10 +39,10 @@ function dataPtBR(valor, hora = "12:00") {
   // Cria a data usando UTC para evitar diferenças entre fusos horários.
   return new Date(Date.UTC(ano, mes - 1, dia, horas, minutos));
 }
-// Mantém os quatro exemplos de obra fornecidos pelo mock do frontend.
+// Mantém os exemplos de obra fornecidos pelo mock e a obra de teste de arquivamento.
 const OBRAS = [
   // Dados da primeira obra do exemplo.
-  { titulo: "Construção Residencial Bela Vista", endereco: "Rua das Palmeiras, 120 - Gonzaga, Santos - SP", estado: "SP", cidade: "Santos", bairro: "Gonzaga", rua: "Rua das Palmeiras", numero: "120", semApartamento: true, semBloco: true, detalhes: "Execução de fundação, estrutura e alvenaria residencial. Materiais e medidas devem seguir o projeto aprovado e o contrato da obra.", status: "Agendada", valorTotal: 180000, prazo: "15/10/2026", colaboradores: [1, 2], parcelas: [{ situacao: "PENDENTE", vencimento: "15/04/2026" }, { situacao: "PENDENTE", vencimento: "15/08/2026" }], timeline: [
+  { titulo: "Construção Residencial Bela Vista", endereco: "Rua das Palmeiras, 120 - Gonzaga, Santos - SP", estado: "SP", cidade: "Santos", bairro: "Gonzaga", rua: "Rua das Palmeiras", numero: "120", semApartamento: true, semBloco: true, detalhes: "Execução de fundação, estrutura e alvenaria residencial. Materiais e medidas devem seguir o projeto aprovado e o contrato da obra.", status: "Agendada", agendadaPara: "19/02/2027", valorTotal: 180000, prazo: "15/10/2027", colaboradores: [1, 2], parcelas: [{ situacao: "PENDENTE", vencimento: "15/04/2026" }, { situacao: "PENDENTE", vencimento: "15/08/2026" }], timeline: [
     // Cada registro replica a data, autoria, visibilidade, tipo e descrição do mock.
     { data: "05/03/2026", hora: "09:00", autor: "admin", tipo: "CONTRATACAO", visivel: true, descricao: "Contrato de prestação de serviços assinado e projeto arquitetônico finalizado." },
     { data: "12/03/2026", hora: "14:30", autor: "admin", tipo: "ORCAMENTO_APROVADO", visivel: true, descricao: "Alvará de construção emitido e aprovado pela Prefeitura Municipal." },
@@ -51,7 +51,7 @@ const OBRAS = [
     { data: "08/04/2026", hora: "08:30", autor: "colaborador", tipo: "STATUS", visivel: true, descricao: "Obra confirmada como agendada, com mobilização prevista para meados de abril." },
   ] },
   // Dados da segunda obra do exemplo.
-  { titulo: "Reforma Completa de Apartamento Jardins", endereco: "Avenida Brasil, 850 - Itararé, São Vicente - SP", estado: "SP", cidade: "São Vicente", bairro: "Itararé", rua: "Avenida Brasil", numero: "850", semApartamento: true, semBloco: true, detalhes: "Reforma de apartamento com revisão elétrica e hidráulica, instalação de revestimentos e acabamento. Consultar as medidas e especificações do contrato antes de executar cada etapa.", status: "Em andamento", valorTotal: 75000, prazo: "25/05/2026", colaboradores: [1, 3], parcelas: [{ situacao: "PAGA", pagamento: "10/01/2026" }, { situacao: "PENDENTE", vencimento: "20/05/2026" }], timeline: [
+  { titulo: "Reforma Completa de Apartamento Jardins", endereco: "Avenida Brasil, 850 - Itararé, São Vicente - SP", estado: "SP", cidade: "São Vicente", bairro: "Itararé", rua: "Avenida Brasil", numero: "850", semApartamento: true, semBloco: true, detalhes: "Reforma de apartamento com revisão elétrica e hidráulica, instalação de revestimentos e acabamento. Consultar as medidas e especificações do contrato antes de executar cada etapa.", status: "Em andamento", valorTotal: 75000, prazo: "25/05/2026", colaboradores: [1, 3], parcelas: [{ situacao: "PAGA", pagamento: "10/01/2026", vencimento: "10/01/2026" }, { situacao: "PENDENTE", vencimento: "20/05/2026" }], timeline: [
     // Eventos da timeline mantêm as informações fornecidas no mock.
     { data: "08/01/2026", hora: "08:00", autor: "colaborador", tipo: "CONTRATACAO", visivel: true, descricao: "Demolição das paredes antigas e remoção de entulhos concluída." },
     { data: "10/01/2026", hora: "10:20", autor: "admin", tipo: "PAGAMENTO", visivel: true, descricao: "Pagamento da primeira parcela confirmado no sistema." },
@@ -78,6 +78,14 @@ const OBRAS = [
     { data: "12/11/2025", hora: "14:10", autor: "colaborador", tipo: "ATUALIZACAO", visivel: true, descricao: "Construção da churrasqueira pré-moldada e revestimento em pedra natural." },
     { data: "10/12/2025", hora: "16:45", autor: "admin", tipo: "STATUS", visivel: true, descricao: "Vistoria aprovada sem pendências, limpeza pós-obra e entrega das chaves ao cliente." },
   ] },
+  // Obra agendada sem pagamento para exercitar a regra de arquivamento.
+  { titulo: "Casa de máquinas", endereco: "Rua do Porto, 50 - Centro, Santos - SP", estado: "SP", cidade: "Santos", bairro: "Centro", rua: "Rua do Porto", numero: "50", semApartamento: true, semBloco: true, detalhes: "Adequação demonstrativa da casa de máquinas e revisão dos equipamentos previstos no contrato.", status: "Agendada", agendadaPara: "20/02/2027", valorTotal: 42000, prazo: "20/06/2027", colaboradores: [1], parcelas: [{ situacao: "PENDENTE", vencimento: "20/12/2026" }, { situacao: "PENDENTE", vencimento: "20/01/2027" }], timeline: [
+    { data: "19/11/2026", hora: "12:00", autor: "admin", tipo: "STATUS", visivel: true, descricao: "Obra de demonstração agendada para 20/02/2027." },
+  ] },
+  // Obra nova para validar a confirmação final no perfil do cliente demo.
+  { titulo: "Edifício Teste", endereco: "Rua da Demonstração, 120 - Gonzaga, Santos - SP", estado: "SP", cidade: "Santos", bairro: "Gonzaga", rua: "Rua da Demonstração", numero: "120", semApartamento: true, semBloco: true, detalhes: "Obra de demonstração pronta para conferência e aceite final pelo cliente.", status: "Aguardando conferência", valorTotal: 24000, prazo: "30/11/2026", colaboradores: [], parcelas: [{ situacao: "PAGA", pagamento: "05/11/2026", vencimento: "05/11/2026" }, { situacao: "PAGA", pagamento: "15/11/2026", vencimento: "15/11/2026" }], timeline: [
+    { data: "18/11/2026", hora: "12:00", autor: "admin", tipo: "STATUS", visivel: true, descricao: "Obra enviada para conferência final do cliente demo." },
+  ] },
 ];
 // Define cinco preços iniciais plausíveis para os serviços demonstrativos.
 const PRECOS = [
@@ -96,6 +104,7 @@ const PRECOS = [
 async function main() {
   // Impede a criação ou atualização dos dados de demonstração em produção.
   if (process.env.NODE_ENV === "production") throw new Error("O seed de demonstração não pode ser executado em produção.");
+  if (process.env.OBRAMASTER_DEMO_SEED !== "true") throw new Error("Para executar o seed, confirme que este é um banco isolado de demonstração definindo OBRAMASTER_DEMO_SEED=true.");
   // Cria uma instância do cliente do banco de dados.
   const prisma = new PrismaClient();
   // Garante o encerramento da conexão mesmo se ocorrer um erro.
@@ -111,13 +120,13 @@ async function main() {
     // Cria ou atualiza cada conta pela chave de e-mail exclusiva.
     for (const conta of CONTAS_DEMO) {
       // Persiste os dados atuais da conta mantendo o identificador existente.
-      usuarios[conta.email] = await prisma.usuario.upsert({ where: { email: conta.email }, update: { nome: conta.nome, tipo: conta.tipo, senhaHash, empresaId: empresa.id, telefone: conta.telefone }, create: { empresaId: empresa.id, nome: conta.nome, email: conta.email, senhaHash, tipo: conta.tipo, telefone: conta.telefone } });
+      usuarios[conta.email] = await prisma.usuario.upsert({ where: { email: conta.email }, update: { nome: conta.nome, tipo: conta.tipo, senhaHash, empresaId: empresa.id, telefone: conta.telefone, endereco: conta.endereco, cpf: conta.cpf }, create: { empresaId: empresa.id, nome: conta.nome, email: conta.email, senhaHash, tipo: conta.tipo, telefone: conta.telefone, endereco: conta.endereco, cpf: conta.cpf } });
       // Informa no terminal qual conta foi garantida.
       console.log(`Conta de demonstração garantida: ${conta.email} (${conta.tipo})`);
     }
     // Atalho para o usuário administrador, usado como autor de eventos administrativos.
     const admin = usuarios["admin@obramaster.demo"];
-    // Atalho para o usuário cliente compartilhado pelas quatro obras.
+    // Atalho para o usuário cliente compartilhado pelas obras da demonstração.
     const cliente = usuarios["cliente@obramaster.demo"];
     // Atalho para o login do funcionário Carlos.
     const colaboradorUsuario = usuarios["colaborador@obramaster.demo"];
@@ -141,18 +150,30 @@ async function main() {
       // Atualiza o cadastro existente ou cria o profissional pela primeira vez.
       funcionarios[pessoa.idMock] = existente ? await prisma.funcionario.update({ where: { id: existente.id }, data: { funcao: pessoa.funcao, telefone: pessoa.telefone, nivel: pessoa.nivel, ativo: true } }) : await prisma.funcionario.create({ data: { empresaId: empresa.id, nome: pessoa.nome, funcao: pessoa.funcao, telefone: pessoa.telefone, nivel: pessoa.nivel } });
     }
-    // Processa todas as quatro obras e seus dados relacionados.
+    // Processa as obras da demonstração e seus dados relacionados.
     for (const [indice, dados] of OBRAS.entries()) {
       // Converte o prazo fornecido no mock para uma data inequívoca.
       const prazoFinal = dataPtBR(dados.prazo);
       // Localiza a obra pelo nome dentro da empresa ou cria seu registro.
       const obraExistente = await prisma.obra.findFirst({ where: { empresaId: empresa.id, nome: dados.titulo } });
       // Salva os campos de negócio da obra mantendo sua identidade em reexecuções.
-      const obra = obraExistente ? await prisma.obra.update({ where: { id: obraExistente.id }, data: { descricao: dados.detalhes, endereco: dados.rua, estado: dados.estado, cidade: dados.cidade, bairro: dados.bairro, numero: dados.numero, semApartamento: dados.semApartamento, semBloco: dados.semBloco, informacoesAdicionais: dados.detalhes, status: STATUS_OBRA[dados.status], valorTotal: dados.valorTotal, prazoFinal, clienteId: cliente.id } }) : await prisma.obra.create({ data: { empresaId: empresa.id, nome: dados.titulo, descricao: dados.detalhes, endereco: dados.rua, estado: dados.estado, cidade: dados.cidade, bairro: dados.bairro, numero: dados.numero, semApartamento: dados.semApartamento, semBloco: dados.semBloco, informacoesAdicionais: dados.detalhes, status: STATUS_OBRA[dados.status], valorTotal: dados.valorTotal, prazoFinal, clienteId: cliente.id } });
+      const agendadaPara = dados.agendadaPara ? dataPtBR(dados.agendadaPara) : null;
+      const obra = obraExistente ? await prisma.obra.update({ where: { id: obraExistente.id }, data: { descricao: dados.detalhes, endereco: dados.rua, estado: dados.estado, cidade: dados.cidade, bairro: dados.bairro, numero: dados.numero, semApartamento: dados.semApartamento, semBloco: dados.semBloco, informacoesAdicionais: dados.detalhes, status: STATUS_OBRA[dados.status], valorTotal: dados.valorTotal, prazoFinal, agendadaPara, clienteId: cliente.id } }) : await prisma.obra.create({ data: { empresaId: empresa.id, nome: dados.titulo, descricao: dados.detalhes, endereco: dados.rua, estado: dados.estado, cidade: dados.cidade, bairro: dados.bairro, numero: dados.numero, semApartamento: dados.semApartamento, semBloco: dados.semBloco, informacoesAdicionais: dados.detalhes, status: STATUS_OBRA[dados.status], valorTotal: dados.valorTotal, prazoFinal, agendadaPara, clienteId: cliente.id } });
+      const urlContratoDemo = `${(process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "")}/contrato-demo.pdf`;
+      await prisma.contrato.upsert({ where: { obraId: obra.id }, update: { empresaId: empresa.id, termos: "Contrato de exemplo para demonstração do ObraMaster.", arquivoUrl: urlContratoDemo }, create: { obraId: obra.id, empresaId: empresa.id, termos: "Contrato de exemplo para demonstração do ObraMaster.", arquivoUrl: urlContratoDemo } });
+      for (const registro of [
+        { tipo: "STATUS", descricao: "Obra criada pela empreiteira." },
+        { tipo: "ANOTACAO", descricao: "Dados de exemplo da obra revisados pela empreiteira.", visivelParaCliente: false },
+        { tipo: "CONTRATO", descricao: "Contrato de exemplo anexado à obra." },
+      ]) {
+        const evento = await prisma.obraEvento.findFirst({ where: { obraId: obra.id, empresaId: empresa.id, tipo: registro.tipo, descricao: registro.descricao } });
+        if (!evento) await prisma.obraEvento.create({ data: { obraId: obra.id, empresaId: empresa.id, usuarioId: admin.id, tipo: registro.tipo, descricao: registro.descricao, visivelParaCliente: registro.visivelParaCliente ?? true } });
+      }
       // Cria cada uma das duas parcelas com metade do valor da obra.
       for (const parcela of dados.parcelas) {
         // Usa o número da parcela para impedir duplicatas em execuções futuras.
-        await prisma.parcela.upsert({ where: { obraId_numero: { obraId: obra.id, numero: dados.parcelas.indexOf(parcela) + 1 } }, update: { valor: dados.valorTotal / 2, situacao: parcela.situacao, pagaEm: parcela.pagamento ? dataPtBR(parcela.pagamento) : null }, create: { obraId: obra.id, numero: dados.parcelas.indexOf(parcela) + 1, valor: dados.valorTotal / 2, situacao: parcela.situacao, pagaEm: parcela.pagamento ? dataPtBR(parcela.pagamento) : null } });
+        const vencimento = parcela.vencimento ? dataPtBR(parcela.vencimento) : null;
+        await prisma.parcela.upsert({ where: { obraId_numero: { obraId: obra.id, numero: dados.parcelas.indexOf(parcela) + 1 } }, update: { valor: dados.valorTotal / 2, situacao: parcela.situacao, pagaEm: parcela.pagamento ? dataPtBR(parcela.pagamento) : null, vencimento }, create: { obraId: obra.id, numero: dados.parcelas.indexOf(parcela) + 1, valor: dados.valorTotal / 2, situacao: parcela.situacao, pagaEm: parcela.pagamento ? dataPtBR(parcela.pagamento) : null, vencimento } });
       }
       // Persiste cada evento da timeline com uma chave lógica verificável.
       for (const evento of dados.timeline) {
@@ -174,9 +195,31 @@ async function main() {
         // Reutiliza uma escala aberta ou cria uma nova com a data do mock.
         if (!escala) await prisma.obraEscala.create({ data: { obraId: obra.id, funcionarioId: funcionarios[idMock].id, dataInicio, alteradoPorId: admin.id, motivo: "Escala atual reproduzida dos dados de demonstração." } });
       }
+      const eventosHistoricos = await prisma.obraEvento.findMany({ where: { obraId: obra.id, empresaId: empresa.id }, select: { id: true, tipo: true, descricao: true, usuarioId: true, visivelParaCliente: true } });
+      const escalasAtivas = await prisma.obraEscala.findMany({ where: { obraId: obra.id, dataFim: null, funcionario: { ativo: true } }, select: { funcionario: { select: { usuarioId: true } } } });
+      const usuariosGerentes = escalasAtivas.map(({ funcionario }) => funcionario?.usuarioId).filter(Boolean);
+      for (const evento of eventosHistoricos) {
+        const destinatarios = [admin.id, ...usuariosGerentes, ...(evento.visivelParaCliente ? [cliente.id] : [])].filter((usuarioId) => usuarioId !== evento.usuarioId);
+        for (const usuarioId of new Set(destinatarios)) {
+          const existente = await prisma.notificacao.findFirst({ where: { eventoId: evento.id, usuarioId } });
+          if (!existente) await prisma.notificacao.create({ data: { empresaId: empresa.id, usuarioId, obraId: obra.id, eventoId: evento.id, tipo: evento.tipo, titulo: evento.tipo === "AGENDAMENTO" ? "Alteração no calendário da obra" : "Atualização da obra", descricao: evento.descricao } });
+        }
+      }
       // Mostra o título da obra concluída nesta etapa.
-      console.log(`Obra de demonstração garantida: ${dados.titulo} (${indice + 1}/4)`);
+      console.log(`Obra de demonstração garantida: ${dados.titulo} (${indice + 1}/${OBRAS.length})`);
     }
+    const obrasClienteDemo = await prisma.obra.findMany({ where: { empresaId: empresa.id, clienteId: cliente.id }, select: { id: true } });
+    const urlContratoClienteDemo = `${(process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "")}/contrato-demo.pdf`;
+    await prisma.contrato.createMany({
+      data: obrasClienteDemo.map(({ id: obraId }) => ({ obraId, empresaId: empresa.id, termos: "Contrato de exemplo para demonstração do ObraMaster.", arquivoUrl: urlContratoClienteDemo })),
+      skipDuplicates: true,
+    });
+    if (obrasClienteDemo.length) await prisma.contrato.updateMany({
+      where: { empresaId: empresa.id, obraId: { in: obrasClienteDemo.map(({ id }) => id) } },
+      data: { termos: "Contrato de exemplo para demonstração do ObraMaster.", arquivoUrl: urlContratoClienteDemo },
+    });
+    const casaDeMaquinas = await prisma.obra.findFirst({ where: { empresaId: empresa.id, nome: "Casa de máquinas" } });
+    if (casaDeMaquinas) await prisma.parcela.updateMany({ where: { obraId: casaDeMaquinas.id, numero: 1 }, data: { situacao: "PENDENTE", pagaEm: null } });
     // Lista os cinco serviços e seus valores iniciais por empresa.
     for (const preco of PRECOS) {
       // Procura o serviço pela combinação de empresa, nome e unidade.

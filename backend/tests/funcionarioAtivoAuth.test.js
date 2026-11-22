@@ -31,12 +31,47 @@ function localizar(lista, where) {
 
 function selecionar(registro, select) {
   if (!registro || !select) return registro;
-  return Object.fromEntries(Object.keys(select).filter((campo) => select[campo] === true).map((campo) => [campo, registro[campo]]));
+  const resultado = Object.fromEntries(Object.keys(select).filter((campo) => select[campo] === true).map((campo) => [campo, registro[campo]]));
+  if (select.funcionario?.select) {
+    const funcionario = funcionarios.find((item) => item.usuarioId === registro.id);
+    resultado.funcionario = funcionario ? selecionar(funcionario, select.funcionario.select) : null;
+  }
+  return resultado;
 }
 
 const prismaFalso = {
+  $queryRaw: async (consulta) => {
+    const id = consulta.values.find((valor) => usuarios.some((usuario) => usuario.id === valor));
+    const usuario = localizar(usuarios, { id });
+    if (consulta.text.includes("'ativo', funcionario.ativo") && erroConsultaFuncionario) {
+      const erro = new Error("Banco temporariamente indisponível");
+      erro.name = "PrismaClientInitializationError";
+      throw erro;
+    }
+    if (!usuario) return [];
+    const funcionario = funcionarios.find((item) => item.usuarioId === usuario.id) || null;
+    if (consulta.text.includes('LEFT JOIN "Empresa" empresa')) {
+      return [{
+        ...usuario,
+        telefone: null, telefoneSecundario: null, fotoUrl: null, endereco: null, estado: null, cidade: null,
+        bairro: null, numero: null, complemento: null, apartamento: null, bloco: null, semApartamento: null,
+        semBloco: null, cpf: null,
+        funcionario: funcionario ? { funcao: null, telefone: null, fotoUrl: null } : null,
+        empresa: usuario.tipo === "ADMIN" ? { nome: "Empresa de teste" } : null,
+      }];
+    }
+    return [{
+      id: usuario.id, empresaId: usuario.empresaId, email: usuario.email, tipo: usuario.tipo,
+      funcionario: funcionario ? { empresaId: funcionario.empresaId, ativo: funcionario.ativo } : null,
+    }];
+  },
   usuario: {
     findUnique: async ({ where, select }) => {
+      if (erroConsultaFuncionario && select?.funcionario) {
+        const erro = new Error("Banco temporariamente indisponível");
+        erro.name = "PrismaClientInitializationError";
+        throw erro;
+      }
       const usuario = localizar(usuarios, where);
       return selecionar(usuario, select);
     },
@@ -137,6 +172,7 @@ describe("Bloqueio centralizado de funcionários desativados", () => {
     eventos = [];
     funcionarios.find((item) => item.usuarioId === "colab-ativo").ativo = true;
     funcionarios.find((item) => item.usuarioId === "colab-inativo").ativo = true;
+    usuarios.forEach((usuario) => authMiddleware.invalidarSessaoUsuario(usuario.id));
   });
 
   it("colaborador ativo autentica e recebe token", async () => {

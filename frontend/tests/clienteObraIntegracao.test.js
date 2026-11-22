@@ -13,10 +13,12 @@ test('detalhe exibe fotos reais da obra e do histórico sem montar registros fic
   assert.doesNotMatch(pagina, /Registro #\{indice|>\s*Mock\s*</)
 })
 
-test('confirmação da conclusão chama API real após confirmação explícita', () => {
+test('confirmação da conclusão usa o modal do sistema antes de chamar a API real', () => {
   assert.doesNotMatch(pagina, /confirmacaoRegistrada/)
+  assert.match(pagina, /useConfirmacao/)
+  assert.match(pagina, /pedirConfirmacao\(/)
   assert.match(pagina, /confirmarConclusaoObra\(id\)/)
-  assert.match(pagina, /window\.confirm\(/)
+  assert.doesNotMatch(pagina, /window\.(alert|confirm)\(/)
   assert.match(pagina, /buscarObra\(id\)/)
   assert.match(pagina, /obra\.status === 'Aguardando conferência'/)
 })
