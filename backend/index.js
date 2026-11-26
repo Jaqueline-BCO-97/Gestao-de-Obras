@@ -23,8 +23,8 @@ const { comCacheEmpresa, invalidarCacheEmpresa } = require("./src/services/cache
 const { validarDisponibilidades } = require("./src/utils/disponibilidadeFuncionario");
 // Reutiliza os requisitos de senha somente na criação de contas por convite.
 const { validarSenhaConvite } = require("./src/utils/validarSenhaConvite");
-// Reutiliza a exclusão atômica e suas mensagens específicas na rota administrativa de clientes.
-const { excluirClienteComObrasAgendadas } = require("./src/services/excluirCliente");
+// Reutiliza a exclusão atômica de clientes e de obras agendadas nas rotas administrativas.
+const { excluirClienteComObrasAgendadas, excluirObraAgendada } = require("./src/services/excluirCliente");
 const {
   listarUsuarios,
   buscarUsuarioPorEmail,
@@ -1457,6 +1457,29 @@ app.post("/obras/:id/restaurar", authMiddleware, exigirEmpresaDoToken, exigirPap
     if (erro.code === "PRAZO_RESTAURACAO_EXPIRADO") return res.status(410).json({ erro: erro.message });
     console.error("Erro ao restaurar obra:", erro.code || erro.message);
     return res.status(500).json({ erro: "Não foi possível restaurar a obra" });
+  }
+});
+
+// Exclui definitivamente uma obra Agendada sem parcela paga na empresa autenticada.
+app.delete("/obras/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    // Obtém o cliente Prisma somente após validar autenticação e papel ADMIN.
+    const prisma = getPrisma();
+    // Informa indisponibilidade quando o banco não está configurado no ambiente.
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    // Executa todas as validações e remoções em uma única transação serializável.
+    const resultado = await excluirObraAgendada(prisma, { obraId: req.params.id, empresaId: req.usuario.empresaId });
+    // Devolve a confirmação da exclusão mantendo o formato JSON da API.
+    return res.json(resultado);
+  } catch (erro) {
+    // Converte bloqueios de regra de negócio (status, pagamento ou 404) com código estável.
+    if (erro.status) return res.status(erro.status).json({ erro: erro.message, codigo: erro.code });
+    // Trata conflito concorrente de transação serializável como erro 409 recuperável.
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada durante a exclusão. Atualize a tela e tente novamente.", codigo: "OBRA_EXCLUSAO_CONCORRENTE" });
+    // Registra apenas código ou mensagem técnica sem expor segredos no log.
+    console.error("Erro ao excluir obra:", erro.code || erro.message);
+    // Devolve resposta segura para falhas inesperadas de servidor.
+    return res.status(500).json({ erro: "Não foi possível excluir a obra" });
   }
 });
 
