@@ -192,8 +192,14 @@ export function salvarSessao({ token, usuario }, lembrarDeMim) {
 
 // Função para simular uma sessão mock (útil para desenvolvimento, testes e navegação sem backend)
 export function salvarSessaoMock(tipo = 'CLIENTE') {
-  // Define o nome amigável do usuário: para COLABORADOR usamos o nome do profissional fake, senão o padrão
-  const nomeUsuario = tipo === 'COLABORADOR' ? 'Carlos Eduardo da Silva' : `Usuário Demonstração (${tipo})`
+  // Define os nomes reais das contas demo já existentes nos perfis locais.
+  const nomesDemo = {
+    ADMIN: 'Carla Kleia',
+    CLIENTE: 'Marthania Soares',
+    COLABORADOR: 'Carlos Eduardo da Silva',
+  }
+  // Mantém um nome genérico para qualquer perfil mock não listado.
+  const nomeUsuario = nomesDemo[tipo] || 'Usuário Demonstração (' + tipo + ')'
 
   // Cria um objeto de sessão simulada com dados válidos de teste
   const sessaoMock = {
@@ -207,6 +213,8 @@ export function salvarSessaoMock(tipo = 'CLIENTE') {
       nome: nomeUsuario,
       // E-mail fictício de teste
       email: `demo.${tipo.toLowerCase()}@obramaster.local`,
+      // Inclui a empresa demo no perfil administrativo usado sem a API.
+      ...(tipo === 'ADMIN' ? { empresa: { nome: 'CaiPim Reformas', slogan: 'O toque final que dá vida ao seu projeto.' } } : {}),
       // Perfil/tipo do usuário (CLIENTE, ADMIN ou COLABORADOR)
       tipo: tipo,
     },

@@ -2,9 +2,9 @@
 
 Use as contas de demonstração. Senha: `Demo@12345`.
 
-- Admin: `admin@obramaster.demo`
-- Cliente: `cliente@obramaster.demo`
-- Gerente: `colaborador@obramaster.demo`
+- Admin (Carla Kleia): `admin@obramaster.demo`
+- Cliente (Marthania Soares): `cliente@obramaster.demo`
+- Gerente (Carlos Eduardo da Silva): `colaborador@obramaster.demo`
 
 ## Admin
 
@@ -22,7 +22,7 @@ Use as contas de demonstração. Senha: `Demo@12345`.
 12. Em **Notificações**, clique **Filtrar notificações** e selecione as categorias disponíveis para Admin.
 13. Nas telas de perfil, funcionário, obra, andamento e comprovante, selecione arquivos válidos e inválidos. Sem armazenamento configurado, confira a mensagem com os três nomes de variáveis Cloudinary.
 
-## Cliente
+## Cliente Marthania Soares
 
 1. Entre como Cliente e clique em **Início**, **Pagamentos**, **Preços**, **Contratos**, **Notificações** e **Perfil**. Confirme que o menu aparece em todas essas telas; no Perfil, o menu fica apenas na lateral.
 2. Em **Contratos**, clique para abrir o PDF em cada obra demo.
@@ -32,6 +32,8 @@ Use as contas de demonstração. Senha: `Demo@12345`.
 6. No **Perfil**, preencha os campos de endereço e telefone e salve.
 
 ## Gerente
+
+As contas de Luciano Oliveira (\`colaborador2@obramaster.demo\`) e Jhonatan Bruno (\`colaborador3@obramaster.demo\`) entram pelo formulário normal de login, sem atalho de demonstração.
 
 1. Entre como Gerente e clique em **Início**, **Notificações** e **Perfil**. Confirme que o menu permanece visível.
 2. Abra uma obra e confira que aparecem o endereço da obra e o telefone de contato do cliente, sem CPF ou endereço pessoal.

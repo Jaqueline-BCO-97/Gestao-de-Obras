@@ -30,7 +30,7 @@ test('preenche todos os estados do formulário a partir do usuário local de fal
     numero: '100',
     empresa: {
       nome: 'CaiPim Reformas',
-      slogan: 'Reforma com confiança',
+      slogan: 'O toque final que dá vida ao seu projeto.',
       endereco: 'Av. Ana Costa',
       numero: '67',
       estado: 'SP',
@@ -51,7 +51,7 @@ test('preenche todos os estados do formulário a partir do usuário local de fal
   assert.equal(estados.dadosEmpresaForm.endereco, 'Av. Ana Costa')
   assert.equal(estados.dadosEmpresaForm.numero, '67')
   assert.equal(estados.dadosEmpresaForm.nome, 'CaiPim Reformas')
-  assert.equal(estados.dadosEmpresaForm.slogan, 'Reforma com confiança')
+  assert.equal(estados.dadosEmpresaForm.slogan, 'O toque final que dá vida ao seu projeto.')
 })
 
 // Garante que valores vazios mostram "Não informado" no modo leitura.
@@ -104,10 +104,10 @@ test('separa payload de contato do endereço pessoal e preserva dados da empresa
 
   // Preserva nome e CNPJ da empresa quando o PATCH retorna só o subconjunto atualizado.
   const mesclado = mesclarUsuarioAtualizado(
-    { id: '1', tipo: 'ADMIN', empresa: { nome: 'Empresa Demo', cnpj: '12345678000199', endereco: 'Antiga' } },
+    { id: '1', tipo: 'ADMIN', empresa: { nome: 'CaiPim Reformas', cnpj: '12345678000199', endereco: 'Antiga' } },
     { id: '1', tipo: 'ADMIN', empresa: { endereco: 'Nova Rua', numero: '50' } },
   )
-  assert.equal(mesclado.empresa.nome, 'Empresa Demo')
+  assert.equal(mesclado.empresa.nome, 'CaiPim Reformas')
   assert.equal(mesclado.empresa.endereco, 'Nova Rua')
   assert.equal(usuarioPossuiEnderecoEmpresa({ tipo: 'ADMIN' }), true)
   assert.equal(usuarioPossuiEnderecoEmpresa({ tipo: 'CLIENTE' }), false)

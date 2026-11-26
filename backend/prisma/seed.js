@@ -12,11 +12,15 @@ const ROUNDS_BCRYPT = 10;
 // Lista as contas necessárias para a demonstração.
 const CONTAS_DEMO = [
   // Conta administrativa usada para gerenciar a empresa.
-  { nome: "Administrador Demo", email: "admin@obramaster.demo", tipo: "ADMIN" },
+  { nome: "Carla Kleia", email: "admin@obramaster.demo", tipo: "ADMIN" },
   // Conta cliente usada como cliente de todas as obras do exemplo.
-  { nome: "Cliente Demo", email: "cliente@obramaster.demo", tipo: "CLIENTE", telefone: "(11) 91234-5678", endereco: "Rua das Acácias, 84 - Gonzaga, Santos - SP", cpf: "52998224725" },
+  { nome: "Marthania Soares", email: "cliente@obramaster.demo", tipo: "CLIENTE", telefone: "(11) 91234-5678", endereco: "Rua das Acácias, 84 - Gonzaga, Santos - SP", cpf: "52998224725" },
   // Conta do colaborador Carlos, vinculada também ao cadastro de funcionário.
   { nome: "Carlos Eduardo da Silva", email: "colaborador@obramaster.demo", tipo: "COLABORADOR", telefone: "(11) 98765-4321" },
+  // Conta de demonstração de Luciano Oliveira, disponível apenas pelo formulário normal de login.
+  { nome: "Luciano Oliveira", email: "colaborador2@obramaster.demo", tipo: "COLABORADOR" },
+  // Conta de demonstração de Jhonatan Bruno, disponível apenas pelo formulário normal de login.
+  { nome: "Jhonatan Bruno", email: "colaborador3@obramaster.demo", tipo: "COLABORADOR" },
 ];
 
 // Traduz os estados legíveis do mock para os valores do enum do banco.
@@ -105,14 +109,43 @@ async function main() {
   // Impede a criação ou atualização dos dados de demonstração em produção.
   if (process.env.NODE_ENV === "production") throw new Error("O seed de demonstração não pode ser executado em produção.");
   if (process.env.OBRAMASTER_DEMO_SEED !== "true") throw new Error("Para executar o seed, confirme que este é um banco isolado de demonstração definindo OBRAMASTER_DEMO_SEED=true.");
+  // Garante que as novas contas Responsável nunca entrem nas listas de escala das obras.
+  const idsGerentesDemoSemEscala = new Set([5, 6]);
+  if (OBRAS.some((obra) => obra.colaboradores.some((idMock) => idsGerentesDemoSemEscala.has(idMock)))) {
+    throw new Error("Luciano e Jhonatan não podem ser incluídos nas escalas das obras de demonstração.");
+  }
   // Cria uma instância do cliente do banco de dados.
   const prisma = new PrismaClient();
   // Garante o encerramento da conexão mesmo se ocorrer um erro.
   try {
-    // Procura a empresa pelo nome fixo para tornar execuções repetidas seguras.
-    const empresaExistente = await prisma.empresa.findFirst({ where: { nome: "Empresa Demo" } });
-    // Atualiza a empresa encontrada ou cria uma empresa nova com UUID válido.
-    const empresa = empresaExistente ? await prisma.empresa.update({ where: { id: empresaExistente.id }, data: { nome: "Empresa Demo" } }) : await prisma.empresa.create({ data: { nome: "Empresa Demo" } });
+    // Procura primeiro a empresa já ligada ao administrador demo para evitar duplicá-la ao renomear.
+    const administradorExistente = await prisma.usuario.findUnique({ where: { email: "admin@obramaster.demo" }, select: { empresaId: true } });
+    // Usa os nomes antigos e novos apenas como recuperação para um banco demo sem usuário admin.
+    const empresaExistente = administradorExistente
+      ? await prisma.empresa.findUnique({ where: { id: administradorExistente.empresaId } })
+      : await prisma.empresa.findFirst({ where: { nome: { in: ["Empresa Demo", "CaiPim Reformas"] } } });
+    // Interrompe sem gravar caso a empresa já tenha sido criada com o mesmo nome em outro registro.
+    const empresaCaiPimExistente = await prisma.empresa.findFirst({ where: { nome: "CaiPim Reformas", ...(empresaExistente ? { id: { not: empresaExistente.id } } : {}) } });
+    if (empresaCaiPimExistente) throw new Error("Já existe outra empresa chamada CaiPim Reformas; seed interrompido sem alterar dados.");
+    // Verifica antes de alterar contas se os novos gerentes demo já possuem escala ou disponibilidade.
+    for (const email of ["colaborador2@obramaster.demo", "colaborador3@obramaster.demo"]) {
+      // Procura um cadastro de funcionário associado à conta demo já existente.
+      const usuarioExistente = await prisma.usuario.findUnique({ where: { email }, select: { funcionario: { select: { id: true } } } });
+      // Continua quando ainda não há funcionário vinculado à conta.
+      if (!usuarioExistente?.funcionario) continue;
+      // Consulta os dois tipos de programação sem alterar nem excluir registros.
+      const [escalaExistente, disponibilidadeExistente] = await Promise.all([
+        prisma.obraEscala.findFirst({ where: { funcionarioId: usuarioExistente.funcionario.id }, select: { id: true } }),
+        prisma.disponibilidadeFuncionario.findFirst({ where: { funcionarioId: usuarioExistente.funcionario.id }, select: { id: true } }),
+      ]);
+      // Para em vez de apagar histórico ou disponibilidade que já existam.
+      if (escalaExistente || disponibilidadeExistente) throw new Error("A conta demo " + email + " já possui escala ou disponibilidade; nenhum dado foi removido.");
+    }
+    // Atualiza a empresa demo existente ou cria uma nova com nome e slogan definidos.
+    const dadosEmpresaDemo = { nome: "CaiPim Reformas", slogan: "O toque final que dá vida ao seu projeto." };
+    const empresa = empresaExistente
+      ? await prisma.empresa.update({ where: { id: empresaExistente.id }, data: dadosEmpresaDemo })
+      : await prisma.empresa.create({ data: dadosEmpresaDemo });
     // Cria um hash para aplicar a mesma senha às contas de demonstração.
     const senhaHash = await bcrypt.hash(SENHA_DEMO, ROUNDS_BCRYPT);
     // Guarda os usuários criados para relacioná-los aos registros seguintes.
@@ -132,6 +165,24 @@ async function main() {
     const colaboradorUsuario = usuarios["colaborador@obramaster.demo"];
     // Cria ou atualiza o cadastro de Carlos e liga-o ao respectivo usuário.
     const funcionarioCarlos = await prisma.funcionario.upsert({ where: { usuarioId: colaboradorUsuario.id }, update: { empresaId: empresa.id, nome: "Carlos Eduardo da Silva", funcao: "Mestre de Obras", nivel: "RESPONSAVEL", telefone: "(11) 98765-4321", ativo: true }, create: { empresaId: empresa.id, nome: "Carlos Eduardo da Silva", funcao: "Mestre de Obras", nivel: "RESPONSAVEL", telefone: "(11) 98765-4321", usuarioId: colaboradorUsuario.id } });
+    // Define os dois novos gerentes Responsável sem obra e sem programação semanal.
+    const gerentesDemoSemEscala = [
+      { idMock: 5, email: "colaborador2@obramaster.demo", nome: "Luciano Oliveira", funcao: "Engenheiro" },
+      { idMock: 6, email: "colaborador3@obramaster.demo", nome: "Jhonatan Bruno", funcao: "Arquiteto" },
+    ];
+    // Começa a lista com Carlos, que já participa de algumas obras de demonstração.
+    const funcionarios = { 1: funcionarioCarlos };
+    // Cria ou atualiza cada novo gerente ligado à sua conta de colaborador.
+    for (const pessoa of gerentesDemoSemEscala) {
+      // Recupera o usuário demo criado ou atualizado na lista de contas.
+      const usuario = usuarios[pessoa.email];
+      // Garante o nível Responsável, a função indicada e o estado ativo.
+      funcionarios[pessoa.idMock] = await prisma.funcionario.upsert({
+        where: { usuarioId: usuario.id },
+        update: { empresaId: empresa.id, nome: pessoa.nome, funcao: pessoa.funcao, nivel: "RESPONSAVEL", ativo: true },
+        create: { empresaId: empresa.id, nome: pessoa.nome, funcao: pessoa.funcao, nivel: "RESPONSAVEL", ativo: true, usuarioId: usuario.id },
+      });
+    }
     // Define os outros profissionais que aparecem na escala dos mocks.
     const equipe = [
       // Cadastro de Mariana conforme o mock.
@@ -141,8 +192,6 @@ async function main() {
       // Cadastro de Patrícia conforme o mock.
       { idMock: 4, nome: "Patrícia Gomes Alves", funcao: "Técnica em Edificações", telefone: "(19) 95432-1098", nivel: "APOIO" },
     ];
-    // Indexa os profissionais por seus identificadores numéricos do mock.
-    const funcionarios = { 1: funcionarioCarlos };
     // Cria ou atualiza cada profissional sem associar um login inexistente.
     for (const pessoa of equipe) {
       // Busca pelo nome dentro da empresa para que a carga seja repetível.
@@ -208,6 +257,17 @@ async function main() {
       // Mostra o título da obra concluída nesta etapa.
       console.log(`Obra de demonstração garantida: ${dados.titulo} (${indice + 1}/${OBRAS.length})`);
     }
+    // Confirma que os novos gerentes continuam sem escala e sem disponibilidade após processar as obras.
+    for (const pessoa of gerentesDemoSemEscala) {
+      // Lê a existência de programação sem consultar ou modificar outros funcionários.
+      const [escalaFinal, disponibilidadeFinal] = await Promise.all([
+        prisma.obraEscala.findFirst({ where: { funcionarioId: funcionarios[pessoa.idMock].id }, select: { id: true } }),
+        prisma.disponibilidadeFuncionario.findFirst({ where: { funcionarioId: funcionarios[pessoa.idMock].id }, select: { id: true } }),
+      ]);
+      // Interrompe se uma alteração futura do seed passar a alocá-los em uma obra.
+      if (escalaFinal || disponibilidadeFinal) throw new Error("A conta demo " + pessoa.email + " terminou o seed com escala ou disponibilidade.");
+    }
+    // Busca obras que pertencem ao cliente demo atualizado.
     const obrasClienteDemo = await prisma.obra.findMany({ where: { empresaId: empresa.id, clienteId: cliente.id }, select: { id: true } });
     const urlContratoClienteDemo = `${(process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "")}/contrato-demo.pdf`;
     await prisma.contrato.createMany({
