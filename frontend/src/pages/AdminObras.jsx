@@ -9,12 +9,16 @@ import Card from '../components/Card.jsx'
 
 // Importa o componente reutilizável Button do sistema de design
 import Button from '../components/Button.jsx'
+// Importa o seletor próprio das quantidades exibido somente na criação de obra.
+import SelectQuantidadeParcelas from '../components/SelectQuantidadeParcelas.jsx'
 
 // Importa os dados das obras e as funções de moeda e cores
 import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a lista de colaboradores mockados para exibir os membros da equipe alocada
 import { listarObras, listarObrasArquivadas, restaurarObra, solicitarConferenciaObra, criarObra } from '../services/auth.js'
+// Importa o montador compartilhado com o teste do payload da opção 36.
+import { montarPayloadCriarObra } from '../utils/quantidadeParcelas.js'
 
 function moedaEntrada(valor) {
   const centavos = String(valor).replace(/\D/g, '')
@@ -119,7 +123,10 @@ export default function AdminObras() {
       const fotos = await Promise.all(fotosObra.map((arquivo) => new Promise((resolve, reject) => {
         const leitor = new FileReader(); leitor.onload = () => resolve({ data: leitor.result, mimeType: arquivo.type }); leitor.onerror = () => reject(new Error('Não foi possível ler uma das fotos.')); leitor.readAsDataURL(arquivo)
       })))
-      const resposta = await criarObra({ ...novaObra, quantidadeParcelas: Number(novaObra.quantidadeParcelas), valorTotal: valorNormalizado, fotos })
+      // Monta o payload preservando os campos atuais e convertendo a quantidade para número.
+      const payloadObra = montarPayloadCriarObra(novaObra, valorNormalizado, fotos)
+      // Envia à API a mesma quantidade selecionada, inclusive valores acima de doze.
+      const resposta = await criarObra(payloadObra)
       setNovaObra({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', quantidadeParcelas: '', vencimentoInicial: '', valorTotal: '', informacoesAdicionais: '' }); setFotosObra([])
       setFeedbackForm(resposta.avisos?.length ? `Obra criada, mas as fotos não foram enviadas: ${resposta.avisos.join('; ')}` : 'Obra cadastrada. Cadastre o cliente na tela Clientes para anexar contrato e parcelas.')
       await atualizarObras()
@@ -380,7 +387,8 @@ export default function AdminObras() {
             <div className="grid gap-2 sm:grid-cols-2"><label className="text-sm">Bloco<input disabled={novaObra.semBloco} required={!novaObra.semBloco} pattern="[A-Za-z0-9]+" title="Use apenas letras e números" value={novaObra.bloco} onChange={(e) => setNovaObra({ ...novaObra, bloco: e.target.value.replace(/[^a-z\d]/gi, '') })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /></label><label className="mt-6 flex items-center gap-2 text-xs"><input type="checkbox" checked={novaObra.semBloco} onChange={(e) => setNovaObra({ ...novaObra, semBloco: e.target.checked, bloco: '' })} /> Não existe bloco</label></div>
             <label className="text-sm">Prazo final<input required type="date" value={novaObra.prazoFinal} onChange={(e) => setNovaObra({ ...novaObra, prazoFinal: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm">Valor base (R$)<input required inputMode="decimal" placeholder="40.000,25" value={novaObra.valorTotal} onChange={(e) => setNovaObra({ ...novaObra, valorTotal: moedaEntrada(e.target.value) })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            <label className="text-sm">Quantidade de parcelas<select required value={novaObra.quantidadeParcelas} onChange={(e) => setNovaObra({ ...novaObra, quantidadeParcelas: e.target.value })} className="mt-1 max-h-28 w-full overflow-y-auto rounded border border-slate-300 p-2"><option value="">Selecione…</option>{Array.from({ length: 36 }, (_, index) => index + 1).map((quantidade) => <option key={quantidade} value={quantidade}>{quantidade} parcela{quantidade === 1 ? '' : 's'}{quantidade <= 12 ? ' · sem juros' : ' · juros de 1% por parcela adicional'}</option>)}</select></label>
+            {/* Exibe a lista compacta somente no cadastro de uma nova obra. */}
+            <div className="text-sm"><label htmlFor="quantidade-parcelas">Quantidade de parcelas</label><SelectQuantidadeParcelas id="quantidade-parcelas" value={novaObra.quantidadeParcelas} onChange={(quantidadeParcelas) => setNovaObra({ ...novaObra, quantidadeParcelas })} /></div>
             <label className="text-sm">Vencimento da primeira parcela<input required type="date" value={novaObra.vencimentoInicial} onChange={(e) => setNovaObra({ ...novaObra, vencimentoInicial: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <p className="text-sm text-slate-600">Valor final estimado: <strong>{valorFinalEstimado === null ? '—' : formatarMoeda(valorFinalEstimado)}</strong>. Até 12 parcelas sem juros; acima disso, acréscimo simples de 1% por parcela adicional.</p>
             <label className="text-sm sm:col-span-2 lg:col-span-3">Informações de execução: serviços, materiais e medidas previstos no contrato<textarea required rows="4" value={novaObra.informacoesAdicionais} onChange={(e) => setNovaObra({ ...novaObra, informacoesAdicionais: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>

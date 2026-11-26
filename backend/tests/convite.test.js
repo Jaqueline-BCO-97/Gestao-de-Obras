@@ -80,6 +80,8 @@ function criarPrisma() {
       create: async ({ data }) => { const item = { id: `evento-${eventos.length + 1}`, ...data }; eventos.push(item); return item; },
     },
     parcela: {
+      // Busca a parcela da obra solicitada e respeita o recorte usado pela rota.
+      findFirst: async ({ where, select }) => selecionar(parcelas.find((item) => item.obraId === where.obraId && item.numero === where.numero) || null, select),
       count: async ({ where }) => parcelas.filter((item) => item.obraId === where.obraId && (!where.situacao || item.situacao === where.situacao)).length,
       findMany: async ({ where }) => parcelas.filter((item) => item.obraId === where.obraId).map((item) => ({ ...item, pagamentos: [] })),
       update: async ({ where, data }) => { const item = parcelas.find((parcela) => parcela.id === where.id); Object.assign(item, data); return item; },
@@ -152,9 +154,10 @@ describe("Convites de cliente e gerente por obra", () => {
     funcionarios = [];
     escalas = [];
     eventos = [];
+    // Prepara parcelas com datas próprias para exercitar a nova prioridade da obra.
     parcelas = [
-      { id: "parcela-1", obraId: "obra-convite-a", numero: 1, valor: "500.00", situacao: "PENDENTE" },
-      { id: "parcela-2", obraId: "obra-convite-a", numero: 2, valor: "500.00", situacao: "PENDENTE" },
+      { id: "parcela-1", obraId: "obra-convite-a", numero: 1, valor: "500.00", vencimento: new Date("2026-12-10T12:00:00.000Z"), situacao: "PENDENTE" },
+      { id: "parcela-2", obraId: "obra-convite-a", numero: 2, valor: "500.00", vencimento: new Date("2027-01-10T12:00:00.000Z"), situacao: "PENDENTE" },
     ];
     contratos = [];
     notificacoes = [];
@@ -270,10 +273,13 @@ describe("Convites de cliente e gerente por obra", () => {
     obras[0].valorTotal = "1010.00";
     obras[0].quantidadeParcelas = 13;
 
-    // O payload novo informa vencimento e contrato, mas não quantidade.
-    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Novo", email: "novo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Simula a parcela número um existente para que o aceite complete as outras doze.
+    parcelas = [{ id: "parcela-1", obraId: "obra-convite-a", numero: 1, valor: "1010.00", vencimento: new Date("2026-12-10T12:00:00.000Z"), situacao: "PENDENTE" }];
+    // O payload atual envia o contrato, mas não envia data nem quantidade próprias.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Novo", email: "novo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
     assert.equal(criado.statusCode, 201);
     assert.equal(convites[0].quantidadeParcelas, null);
+    assert.equal(convites[0].vencimentoInicial, null);
 
     // O aceite gera as parcelas conforme quantidade e total da obra.
     const codigo = criado.body.convite.link.split("/").at(-1);
@@ -284,7 +290,107 @@ describe("Convites de cliente e gerente por obra", () => {
     assert.equal(parcelas.length, obras[0].quantidadeParcelas);
     assert.equal(Math.round(parcelas.reduce((soma, parcela) => soma + Number(parcela.valor), 0) * 100) / 100, Number(obras[0].valorTotal));
     assert.equal(parcelas[0].vencimento.toISOString().slice(0, 10), "2026-12-10");
+    assert.equal(parcelas[1].vencimento.toISOString().slice(0, 10), "2027-01-10");
     assert.equal(contratos[0].arquivoUrl, "https://res.cloudinary.com/teste/raw/upload/contrato.pdf");
+  });
+
+  // Convites novos e antigos sempre preferem a data da parcela um da obra.
+  it("usa o vencimento da obra mesmo se um convite antigo guardar outra data", async () => {
+    // Cria um convite sem data própria, como os convites novos do formulário.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Novo", email: "novo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Confirma que a criação guardou a data como nula para usar a programação da obra.
+    assert.equal(criado.statusCode, 201);
+    assert.equal(convites[0].vencimentoInicial, null);
+    // Simula uma data própria persistida por um convite antigo.
+    convites[0].vencimentoInicial = new Date("2027-02-10T12:00:00.000Z");
+    // Aceita o convite com a senha válida e vinculada à obra do teste.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "novo@teste.local", senha: "Senha-segura-123" }, usuario: null });
+    // Confirma que o convite foi aceito normalmente.
+    assert.equal(aceite.statusCode, 200);
+    // Confirma que o vencimento salvo na primeira parcela da obra foi mantido.
+    assert.equal(parcelas[0].vencimento.toISOString().slice(0, 10), "2026-12-10");
+    // Confirma que as datas seguintes da obra também não foram substituídas pela data do convite.
+    assert.equal(parcelas[1].vencimento.toISOString().slice(0, 10), "2027-01-10");
+  });
+
+  // Convites legados sem vencimento da obra usam sua própria data como reserva.
+  it("usa o vencimento do convite antigo quando a obra não tiver data na parcela um", async () => {
+    // Cria um convite antes de simular os registros antigos no banco.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Antigo", email: "antigo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Persiste no mock a data de convite que existia antes da mudança do formulário.
+    convites[0].vencimentoInicial = new Date("2027-02-10T12:00:00.000Z");
+    // Remove a data da obra para exercitar a regra de reserva do convite antigo.
+    parcelas.forEach((parcela) => { parcela.vencimento = null; });
+    // Aceita o registro antigo sem gerar parcelas sem vencimento.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "antigo@teste.local", senha: "Senha-segura-123" }, usuario: null });
+    // Confirma que a reserva do convite permite preservar o aceite legado.
+    assert.equal(aceite.statusCode, 200);
+    // Confirma que a primeira parcela começa na data antiga do convite.
+    assert.equal(parcelas[0].vencimento.toISOString().slice(0, 10), "2027-02-10");
+    // Confirma que a parcela seguinte mantém o intervalo mensal da programação.
+    assert.equal(parcelas[1].vencimento.toISOString().slice(0, 10), "2027-03-10");
+  });
+
+  // Cada obra vinculada a uma conta existente mantém o próprio calendário de parcelas.
+  it("vincula cliente existente usando o vencimento da nova obra sem alterar as demais", async () => {
+    // Cria uma conta de cliente que já acompanha a primeira obra.
+    const cliente = { id: "cliente-com-duas-obras", empresaId, nome: "Cliente existente", email: "cliente@teste.local", tipo: "CLIENTE", senhaHash: "hash-antigo" };
+    // Registra a conta usada na sessão autenticada do aceite.
+    usuarios.push(cliente);
+    // Cria uma segunda obra com um primeiro vencimento diferente do calendário original.
+    obras.push({ id: "obra-convite-b", empresaId, nome: "Obra B", clienteId: null, valorBase: "600.00", valorTotal: "600.00", quantidadeParcelas: 2, excluidaEm: null });
+    // Cria duas parcelas da segunda obra com datas próprias.
+    parcelas.push({ id: "parcela-b-1", obraId: "obra-convite-b", numero: 1, valor: "300.00", vencimento: new Date("2027-03-15T12:00:00.000Z"), situacao: "PENDENTE" });
+    parcelas.push({ id: "parcela-b-2", obraId: "obra-convite-b", numero: 2, valor: "300.00", vencimento: new Date("2027-04-15T12:00:00.000Z"), situacao: "PENDENTE" });
+    // Cria o convite para associar a conta existente somente à segunda obra.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-b", nome: cliente.nome, email: cliente.email, telefone: "11987654321", endereco: "Rua B", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "200", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Confirma que o novo convite não precisa receber um vencimento no payload.
+    assert.equal(criado.statusCode, 201);
+    // Aceita o convite com a sessão da conta existente, sem senha nova.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: {}, usuario: cliente });
+    // Confirma que a conta existente foi vinculada à segunda obra.
+    assert.equal(aceite.statusCode, 200);
+    assert.equal(obras[1].clienteId, cliente.id);
+    // Confirma que a primeira obra manteve seu vencimento original.
+    assert.equal(parcelas[0].vencimento.toISOString().slice(0, 10), "2026-12-10");
+    // Confirma que a segunda obra manteve a data própria em sua primeira parcela.
+    assert.equal(parcelas[2].vencimento.toISOString().slice(0, 10), "2027-03-15");
+    // Confirma que a segunda parcela da nova obra mantém seu calendário independente.
+    assert.equal(parcelas[3].vencimento.toISOString().slice(0, 10), "2027-04-15");
+  });
+
+  // Obras sem vencimento não podem gerar convites ou parcelas sem data.
+  it("bloqueia convite quando a obra não tem vencimento na parcela um", async () => {
+    // Remove a data da primeira parcela para representar uma obra antiga incompleta.
+    parcelas[0].vencimento = null;
+    // Tenta criar o convite mesmo que o payload legado informe outra data.
+    const resposta = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Novo", email: "novo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, vencimentoInicial: "2027-02-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Confirma a mensagem acordada para a obra sem vencimento.
+    assert.equal(resposta.statusCode, 400);
+    assert.equal(resposta.body.erro, "Esta obra não tem vencimento da primeira parcela. Edite a obra e informe a data antes de convidar o cliente.");
+    // Confirma que nenhum convite foi criado.
+    assert.equal(convites.length, 0);
+  });
+
+  // Um convite antigo sem data na obra nem no registro não pode gerar parcelas sem data.
+  it("recusa aceite antigo quando a obra e o convite não têm vencimento", async () => {
+    // Cria um convite válido enquanto a obra ainda tem data para passar pela rota nova.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Antigo", email: "antigo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Simula um convite histórico sem vencimento salvo.
+    convites[0].vencimentoInicial = null;
+    // Remove a data da obra para confirmar que o aceite não cria parcelas sem data.
+    parcelas.forEach((parcela) => { parcela.vencimento = null; });
+    // Tenta aceitar o convite sem sessão e com uma senha válida.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "antigo@teste.local", senha: "Senha-segura-123" }, usuario: null });
+    // Confirma que a regra retorna conflito antes de criar conta ou consumir o convite.
+    assert.equal(aceite.statusCode, 409);
+    assert.equal(aceite.body.erro, "Esta obra não tem vencimento da primeira parcela. Edite a obra e informe a data antes de convidar o cliente.");
+    assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 0);
+    assert.equal(convites[0].usadoEm, null);
   });
 
   // A API não permite uma segunda vinculação a uma obra ocupada.

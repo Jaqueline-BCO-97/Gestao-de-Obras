@@ -250,6 +250,17 @@ app.post("/convites/:token/aceitar", async (req, res) => {
       // Retorna erro próprio sem iniciar a transação quando a senha for inválida.
       if (!validacaoSenha.valida) return res.status(400).json({ codigo: validacaoSenha.codigo, erro: validacaoSenha.erro });
     }
+    // Confirma que toda obra de cliente tem uma data para iniciar ou preservar suas parcelas.
+    let vencimentoInicialDaObra = null;
+    // Aplica a exigência somente aos convites de cliente associados a uma obra.
+    if (conviteAtual.tipo === "CLIENTE" && conviteAtual.obraId) {
+      // Lê a parcela número um da própria obra antes de abrir a transação de aceite.
+      const primeiraParcelaDaObra = await prisma.parcela.findFirst({ where: { obraId: conviteAtual.obraId, numero: 1 }, select: { vencimento: true } });
+      // Prioriza a data da obra e mantém a data salva apenas como reserva de convites antigos.
+      vencimentoInicialDaObra = primeiraParcelaDaObra?.vencimento || conviteAtual.vencimentoInicial || null;
+      // Impede que um convite sem data da obra ou reserva antiga prossiga até criar usuário.
+      if (!vencimentoInicialDaObra) return res.status(409).json({ erro: "Esta obra não tem vencimento da primeira parcela. Edite a obra e informe a data antes de convidar o cliente." });
+    }
     const senhaHash = usuarioSessao ? null : await bcrypt.hash(senha, 10);
     const usuario = await prisma.$transaction(async (tx) => {
       const convite = await tx.convite.findFirst({ where: { id: conviteAtual.id, usadoEm: null, expiraEm: { gt: new Date() } } });
@@ -275,8 +286,16 @@ app.post("/convites/:token/aceitar", async (req, res) => {
           const vinculada = await tx.obra.updateMany({ where: { id: convite.obraId, empresaId: convite.empresaId, clienteId: null }, data: { clienteId: novo.id } });
           const obra = await tx.obra.findFirst({ where: { id: convite.obraId, empresaId: convite.empresaId }, select: { id: true, clienteId: true, valorBase: true, valorTotal: true, quantidadeParcelas: true } });
           if (!obra || (obra.clienteId !== novo.id && vinculada.count === 0)) throw Object.assign(new Error("A obra já está vinculada a outro cliente."), { code: "WORK_ALREADY_LINKED" });
-          if (convite.quantidadeParcelas && convite.vencimentoInicial) {
-            const parcelasAtuais = await tx.parcela.findMany({ where: { obraId: convite.obraId }, include: { pagamentos: { select: { id: true } } }, orderBy: { numero: "asc" } });
+          // Carrega a programação da obra para manter a data já salva em sua parcela número um.
+          const parcelasAtuais = await tx.parcela.findMany({ where: { obraId: convite.obraId }, include: { pagamentos: { select: { id: true } } }, orderBy: { numero: "asc" } });
+          // Usa a parcela já cadastrada antes de recorrer à data gravada em um convite legado.
+          const primeiraParcelaAtual = parcelasAtuais.find((parcela) => Number(parcela.numero) === 1);
+          // Mantém a regra de que a data própria da obra prevalece sobre a data antiga do convite.
+          const dataPrimeiraParcela = primeiraParcelaAtual?.vencimento || convite.vencimentoInicial;
+          // Bloqueia qualquer tentativa de criar parcelas sem data, mesmo em convites antigos.
+          if (!dataPrimeiraParcela) throw Object.assign(new Error("Esta obra não tem vencimento da primeira parcela. Edite a obra e informe a data antes de convidar o cliente."), { code: "FIRST_INSTALLMENT_DUE_REQUIRED" });
+          // Preserva o fluxo legado de quantidade, mas calcula as datas desde a parcela um da obra.
+          if (convite.quantidadeParcelas) {
             if (parcelasAtuais.some((parcela) => parcela.situacao === "PAGA" || parcela.pagamentos.length)) throw Object.assign(new Error("Não é possível alterar parcelas depois de iniciar pagamentos."), { code: "INSTALLMENTS_LOCKED" });
             const quantidade = convite.quantidadeParcelas;
             if (parcelasAtuais.length > quantidade) throw Object.assign(new Error("Não é possível reduzir a quantidade de parcelas já cadastradas."), { code: "INSTALLMENTS_LOCKED" });
@@ -287,7 +306,7 @@ app.post("/convites/:token/aceitar", async (req, res) => {
             valores[valores.length - 1] = Math.round((total - valores.slice(0, -1).reduce((soma, item) => soma + item, 0)) * 100) / 100;
             await tx.obra.update({ where: { id: obra.id }, data: { valorBase: base.toFixed(2), valorTotal: total.toFixed(2), quantidadeParcelas: quantidade, taxaJurosMensal: taxa } });
             for (let indice = 0; indice < quantidade; indice += 1) {
-              const vencimento = somarMesesPreservandoDia(new Date(convite.vencimentoInicial), indice);
+              const vencimento = somarMesesPreservandoDia(new Date(dataPrimeiraParcela), indice);
               const parcela = parcelasAtuais[indice];
               if (parcela) await tx.parcela.update({ where: { id: parcela.id }, data: { numero: indice + 101, valor: valores[indice].toFixed(2), vencimento } });
               else await tx.parcela.create({ data: { obraId: obra.id, numero: indice + 101, valor: valores[indice].toFixed(2), vencimento } });
@@ -295,9 +314,8 @@ app.post("/convites/:token/aceitar", async (req, res) => {
             for (let indice = 0; indice < quantidade; indice += 1) {
               await tx.parcela.updateMany({ where: { obraId: obra.id, numero: indice + 101 }, data: { numero: indice + 1 } });
             }
-          } else if (convite.vencimentoInicial) {
-            // Convites novos mantêm quantidade e total que já foram definidos na obra.
-            const parcelasAtuais = await tx.parcela.findMany({ where: { obraId: convite.obraId }, include: { pagamentos: { select: { id: true } } }, orderBy: { numero: "asc" } });
+          } else if (dataPrimeiraParcela) {
+            // Mantém a criação ou regularização das parcelas usando o calendário da obra.
             // Datas de vencimento não podem ser alteradas depois do início de pagamentos.
             if (parcelasAtuais.some((parcela) => parcela.situacao === "PAGA" || parcela.pagamentos.length)) throw Object.assign(new Error("Não é possível alterar parcelas depois de iniciar pagamentos."), { code: "INSTALLMENTS_LOCKED" });
             // Usa os campos persistidos na obra, sem recalcular a cobrança ou a quantidade.
@@ -311,7 +329,7 @@ app.post("/convites/:token/aceitar", async (req, res) => {
             valores[valores.length - 1] = Math.round((total - valores.slice(0, -1).reduce((soma, item) => soma + item, 0)) * 100) / 100;
             // Atualiza ou completa parcelas usando o vencimento informado no convite.
             for (let indice = 0; indice < quantidade; indice += 1) {
-              const vencimento = somarMesesPreservandoDia(new Date(convite.vencimentoInicial), indice);
+              const vencimento = somarMesesPreservandoDia(new Date(dataPrimeiraParcela), indice);
               const parcela = parcelasAtuais[indice];
               if (parcela) await tx.parcela.update({ where: { id: parcela.id }, data: { numero: indice + 101, valor: valores[indice].toFixed(2), vencimento } });
               else await tx.parcela.create({ data: { obraId: obra.id, numero: indice + 101, valor: valores[indice].toFixed(2), vencimento } });
@@ -346,7 +364,7 @@ app.post("/convites/:token/aceitar", async (req, res) => {
     return res.json(sessao(usuario));
   } catch (erro) {
     if (erro.code === "EMAIL_EXISTS") return res.status(409).json({ erro: erro.message });
-    if (["ACCOUNT_MISMATCH", "WORK_ALREADY_LINKED", "MANAGER_PROFILE_INVALID", "INSTALLMENTS_LOCKED"].includes(erro.code)) return res.status(409).json({ erro: erro.message });
+    if (["ACCOUNT_MISMATCH", "WORK_ALREADY_LINKED", "MANAGER_PROFILE_INVALID", "INSTALLMENTS_LOCKED", "FIRST_INSTALLMENT_DUE_REQUIRED"].includes(erro.code)) return res.status(409).json({ erro: erro.message });
     if (erro.code === "INVITE_USED") return res.status(410).json({ erro: "Convite já utilizado" });
     if (erro.code === "P2034") return res.status(409).json({ erro: "O convite foi aceito por outra solicitação; atualize a página" });
     console.error("Erro ao aceitar convite:", erro.code || erro.message);
@@ -356,19 +374,24 @@ app.post("/convites/:token/aceitar", async (req, res) => {
 
 async function criarConvite(req, res, tipo) {
   try {
-    const { obraId, nome, email, funcao, telefone, endereco, estado, cidade, bairro, numero, apartamento, bloco, semApartamento, semBloco, quantidadeParcelas, vencimentoInicial, contrato } = req.body || {};
+    const { obraId, nome, email, funcao, telefone, endereco, estado, cidade, bairro, numero, apartamento, bloco, semApartamento, semBloco, quantidadeParcelas, contrato } = req.body || {};
     // Mantém quantidade opcional para aceitar integrações e convites legados.
     const quantidadeLegadaInformada = quantidadeParcelas !== undefined && quantidadeParcelas !== null && quantidadeParcelas !== "";
     const obraIdInformada = typeof obraId === "string" && obraId.trim() ? obraId.trim() : null;
     if (![nome, email, telefone].every((v) => typeof v === "string" && v.trim()) || !obraIdInformada || (tipo === "GERENTE" && (typeof funcao !== "string" || !funcao.trim())) || (tipo === "CLIENTE" && (typeof endereco !== "string" || !endereco.trim()))) return res.status(400).json({ erro: tipo === "GERENTE" ? "Obra, nome, e-mail, telefone e função são obrigatórios" : "Obra, nome, e-mail, telefone e endereço são obrigatórios" });
     if (tipo === "CLIENTE" && (![estado, cidade, bairro, endereco, numero].every((v) => typeof v === "string" && v.trim()) || !/^\d+$/.test(String(numero || "").trim()) || typeof semApartamento !== "boolean" || typeof semBloco !== "boolean" || (!semApartamento && (typeof apartamento !== "string" || !/^\d+$/.test(apartamento.trim()))) || (!semBloco && (typeof bloco !== "string" || !/^[A-Za-z0-9]+$/.test(bloco.trim()))))) return res.status(400).json({ erro: "Preencha estado, cidade, bairro, rua, número e informe apartamento e bloco ou marque que não existem" });
-    if (tipo === "CLIENTE" && ((quantidadeLegadaInformada && (!Number.isInteger(Number(quantidadeParcelas)) || Number(quantidadeParcelas) < 1 || Number(quantidadeParcelas) > 36)) || !/^\d{4}-\d{2}-\d{2}$/.test(vencimentoInicial || "") || typeof contrato?.data !== "string" || contrato.mimeType !== "application/pdf")) return res.status(400).json({ erro: "Selecione o contrato PDF e a data do primeiro vencimento; a quantidade legada, se enviada, deve estar entre 1 e 36" });
+    // Valida contrato e quantidade legada sem exigir vencimento enviado pelo cliente.
+    if (tipo === "CLIENTE" && ((quantidadeLegadaInformada && (!Number.isInteger(Number(quantidadeParcelas)) || Number(quantidadeParcelas) < 1 || Number(quantidadeParcelas) > 36)) || typeof contrato?.data !== "string" || contrato.mimeType !== "application/pdf")) return res.status(400).json({ erro: "Selecione o contrato PDF; a quantidade legada, se enviada, deve estar entre 1 e 36" });
     const prisma = getPrisma();
     if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
     const obra = await prisma.obra.findFirst({ where: { id: obraIdInformada, empresaId: req.usuario.empresaId, excluidaEm: null } });
     if (!obra) return res.status(404).json({ erro: "Obra não encontrada" });
     if (tipo === "CLIENTE" && obra?.clienteId) return res.status(409).json({ erro: "Esta obra já está vinculada a um cliente" });
     if (tipo === "CLIENTE") {
+      // Busca a data real da primeira parcela cadastrada na obra selecionada.
+      const primeiraParcela = await prisma.parcela.findFirst({ where: { obraId: obra.id, numero: 1 }, select: { vencimento: true } });
+      // Impede gerar convites quando a obra não tem vencimento para as parcelas.
+      if (!primeiraParcela?.vencimento) return res.status(400).json({ erro: "Esta obra não tem vencimento da primeira parcela. Edite a obra e informe a data antes de convidar o cliente." });
       const pagamentos = await prisma.pagamento.count({ where: { obraId: obra.id } });
       const pagas = await prisma.parcela.count({ where: { obraId: obra.id, situacao: "PAGA" } });
       if (pagamentos || pagas) return res.status(409).json({ erro: "Só é possível vincular cliente e definir parcelas antes de iniciar pagamentos" });
@@ -376,11 +399,10 @@ async function criarConvite(req, res, tipo) {
     if (tipo === "GERENTE" && (!obraIdInformada || !funcao?.trim())) return res.status(400).json({ erro: "Selecione a obra e informe a função" });
     const normalizedEmail = email.trim().toLowerCase();
     let contratoUrl = null;
-    let vencimento = null;
+    // Convites novos não carregam uma data própria, pois a obra já define o calendário.
+    const vencimento = null;
     if (tipo === "CLIENTE") {
-      const dataComHora = new Date(`${vencimentoInicial}T12:00:00.000Z`);
-      if (!Number.isFinite(dataComHora.getTime()) || dataComHora.toISOString().slice(0, 10) !== vencimentoInicial) return res.status(400).json({ erro: "Data do primeiro vencimento inválida" });
-      vencimento = dataComHora;
+      // Mantém o upload do contrato depois da validação da obra e de sua primeira parcela.
       contratoUrl = await cloudinaryService.enviarContratoObra({ arquivo: contrato, obraId: obra.id });
     }
     const rawToken = crypto.randomBytes(32).toString("base64url");
