@@ -13,6 +13,14 @@ export default function SelectQuantidadeParcelas({ id, value, onChange, disabled
   const [aberta, setAberta] = useState(false)
   // Controla qual opção está ativa durante a navegação pelo teclado.
   const [indiceAtivo, setIndiceAtivo] = useState(-1)
+  // Guarda quando uma opção está sendo acionada com mouse ou toque.
+  const interacaoOpcaoRef = useRef(false)
+  // Guarda o ponto inicial do toque para permitir rolagem manual da lista.
+  const toqueInicioRef = useRef(null)
+  // Identifica quando o dedo moveu a lista em vez de tocar para selecionar.
+  const toqueMoveuRef = useRef(false)
+  // Marca uma seleção por toque para evitar que um clique sintetizado selecione duas vezes.
+  const toqueSelecionadoRef = useRef(false)
   // Localiza a posição da quantidade atualmente escolhida.
   const indiceSelecionado = localizarIndiceQuantidadeParcelas(value, opcoes)
   // Monta o estado atual no formato usado pelo redutor de teclado.
@@ -25,7 +33,16 @@ export default function SelectQuantidadeParcelas({ id, value, onChange, disabled
     // Fecha a lista ao detectar um ponteiro fora da caixa do componente.
     function fecharAoClicarFora(evento) {
       // Preserva a lista aberta quando o clique ocorre dentro do seletor.
-      if (!raizRef.current?.contains(evento.target)) setAberta(false)
+      if (!raizRef.current?.contains(evento.target)) {
+        // Limpa a interação caso o ponteiro tenha sido liberado fora de uma opção.
+        interacaoOpcaoRef.current = false
+        // Descarta qualquer gesto de toque interrompido antes de sair do seletor.
+        toqueInicioRef.current = null
+        // Limpa a marca de rolagem de um toque que foi interrompido.
+        toqueMoveuRef.current = false
+        // Fecha a lista quando o ponteiro está fora da raiz do seletor.
+        setAberta(false)
+      }
     }
     // Usa pointerdown para cobrir mouse, caneta e toque em dispositivos móveis.
     document.addEventListener('pointerdown', fecharAoClicarFora)
@@ -71,6 +88,109 @@ export default function SelectQuantidadeParcelas({ id, value, onChange, disabled
     setAberta(false)
   }
 
+  // Mantém a lista aberta se o botão perder foco durante a interação com uma opção.
+  function fecharAoPerderFoco() {
+    // Aguarda a seleção da opção quando o foco saiu por mouse ou toque.
+    if (interacaoOpcaoRef.current) return
+    // Fecha normalmente quando o foco sai do seletor por teclado ou outra interação.
+    setAberta(false)
+  }
+
+  // Evita que o mousedown mova o foco do botão antes do clique na opção.
+  function preservarFocoNoMouse(evento) {
+    // Cancela somente a ação padrão de foco do mouse.
+    evento.preventDefault()
+    // Marca a interação até que o clique ou a liberação do mouse termine.
+    interacaoOpcaoRef.current = true
+  }
+
+  // Finaliza o marcador de mouse antes do clique selecionar a opção.
+  function finalizarInteracaoOpcao() {
+    // Permite que futuros eventos de blur fechem a lista normalmente.
+    interacaoOpcaoRef.current = false
+    // Descarta a posição inicial de um toque que terminou ou foi cancelado.
+    toqueInicioRef.current = null
+    // Limpa a marca de rolagem para a próxima interação.
+    toqueMoveuRef.current = false
+  }
+
+  // Impede o foco de sair do botão quando o toque começa numa opção.
+  function preservarFocoNoToque(evento) {
+    // Lê a posição inicial do dedo para distinguir um toque de uma rolagem.
+    const toque = evento.touches[0]
+    // Guarda a lista suspensa para movimentar sua rolagem se o dedo deslizar.
+    const lista = evento.currentTarget.parentElement
+    // Para quando o navegador não fornece os dados necessários do toque.
+    if (!toque || !lista) return
+    // Cancela a ação padrão de foco e rolagem do toque.
+    evento.preventDefault()
+    // Marca que o toque ainda está escolhendo uma opção da lista.
+    interacaoOpcaoRef.current = true
+    // Registra o início para permitir rolagem manual da lista suspensa.
+    toqueInicioRef.current = { y: toque.clientY, scrollTop: lista.scrollTop, lista }
+    // Limpa o indicador antes de começar uma nova interação de toque.
+    toqueMoveuRef.current = false
+  }
+
+  // Mantém a rolagem das opções disponível mesmo com touchstart cancelado.
+  function rolarListaNoToque(evento) {
+    // Lê o movimento atual do dedo.
+    const toque = evento.touches[0]
+    // Recupera o ponto inicial e a lista registrados no touchstart.
+    const inicio = toqueInicioRef.current
+    // Para quando o toque foi cancelado ou não há posição para comparar.
+    if (!toque || !inicio) return
+    // Calcula quanto a lista deve acompanhar o movimento vertical do dedo.
+    const deslocamento = inicio.y - toque.clientY
+    // Só trata como rolagem depois de um movimento perceptível.
+    if (Math.abs(deslocamento) > 5) {
+      // Marca o gesto como rolagem para não selecionar a opção ao soltar.
+      toqueMoveuRef.current = true
+      // Atualiza a posição da lista sem depender da rolagem padrão cancelada.
+      inicio.lista.scrollTop = inicio.scrollTop + deslocamento
+    }
+  }
+
+  // Seleciona no fim do toque, mesmo quando o navegador não sintetiza um clique.
+  function selecionarAoFinalDoToque(indice) {
+    // Não seleciona quando o usuário estava rolando a lista com o dedo.
+    const estavaRolando = toqueMoveuRef.current
+    // Limpa a posição inicial usada para acompanhar o gesto.
+    toqueInicioRef.current = null
+    // Limpa o indicador de movimento para a próxima interação.
+    toqueMoveuRef.current = false
+    // Guarda que uma seleção por toque está sendo concluída.
+    toqueSelecionadoRef.current = true
+    // Libera o fechamento por blur depois que a opção já foi selecionada.
+    interacaoOpcaoRef.current = false
+    // Mantém a lista aberta se o toque apenas rolou as opções.
+    if (estavaRolando) {
+      // Evita que um clique sintetizado selecione após o gesto de rolagem.
+      toqueSelecionadoRef.current = false
+      // Para sem alterar o valor quando o dedo foi usado para rolar.
+      return
+    }
+    // Atualiza o valor controlado e fecha a lista suspensa.
+    selecionar(indice)
+    // Limpa a marca para que um clique futuro de mouse não seja ignorado.
+    window.setTimeout(() => { toqueSelecionadoRef.current = false }, 0)
+  }
+
+  // Evita processar novamente o clique que alguns navegadores enviam após o toque.
+  function selecionarAoClicar(indice) {
+    // Ignora o clique sintetizado se o touchend já selecionou a opção.
+    if (toqueSelecionadoRef.current) {
+      // Limpa a marca para a próxima interação do usuário.
+      toqueSelecionadoRef.current = false
+      // Interrompe a segunda chamada de seleção para o mesmo toque.
+      return
+    }
+    // Seleciona normalmente quando o evento veio de mouse ou teclado virtual.
+    interacaoOpcaoRef.current = false
+    // Atualiza a opção e fecha a lista.
+    selecionar(indice)
+  }
+
   // Mostra o texto da quantidade escolhida ou a instrução inicial do formulário.
   const textoSelecionado = indiceSelecionado >= 0 ? opcoes[indiceSelecionado].texto : 'Selecione…'
 
@@ -100,7 +220,7 @@ export default function SelectQuantidadeParcelas({ id, value, onChange, disabled
           setAberta((atual) => !atual)
         }}
         onKeyDown={lidarComTecla}
-        onBlur={() => setAberta(false)}
+        onBlur={fecharAoPerderFoco}
         disabled={disabled}
         className="flex min-h-10 w-full items-center justify-between rounded border border-slate-300 bg-white p-2 text-left text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:bg-slate-100"
       >
@@ -124,7 +244,13 @@ export default function SelectQuantidadeParcelas({ id, value, onChange, disabled
               role="option"
               aria-selected={indice === indiceSelecionado}
               onMouseEnter={() => setIndiceAtivo(indice)}
-              onClick={() => selecionar(indice)}
+              onMouseDown={preservarFocoNoMouse}
+              onMouseUp={finalizarInteracaoOpcao}
+              onTouchStart={preservarFocoNoToque}
+              onTouchMove={rolarListaNoToque}
+              onTouchEnd={() => selecionarAoFinalDoToque(indice)}
+              onTouchCancel={finalizarInteracaoOpcao}
+              onClick={() => selecionarAoClicar(indice)}
               className={'h-10 min-w-max cursor-pointer whitespace-nowrap px-3 py-2 text-sm ' + (indice === indiceAtivo ? 'bg-slate-100' : 'bg-white')}
             >
               {/* Exibe o texto integral preservado para esta quantidade. */}
