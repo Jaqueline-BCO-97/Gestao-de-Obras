@@ -21,6 +21,8 @@ const {
 const { comCacheEmpresa, invalidarCacheEmpresa } = require("./src/services/cacheConsultas");
 // Reutiliza a mesma validação nas rotas de criação e edição de funcionários.
 const { validarDisponibilidades } = require("./src/utils/disponibilidadeFuncionario");
+// Reutiliza os requisitos de senha somente na criação de contas por convite.
+const { validarSenhaConvite } = require("./src/utils/validarSenhaConvite");
 const {
   listarUsuarios,
   buscarUsuarioPorEmail,
@@ -177,12 +179,26 @@ app.post("/auth/registro-empreiteira", async (req, res) => {
 
 // Mascara o e-mail no GET de convites de cliente para não expor o endereço completo.
 function mascararEmailConvite(email) {
-  // Divide o endereço em nome e domínio para deixar o domínio visível como dica.
-  const [parteLocal, dominio] = String(email || "").split("@");
-  // Mantém a primeira letra e mascara o restante do nome antes do arroba.
-  const nomeMascarado = `${parteLocal.slice(0, 1)}${"*".repeat(Math.max(1, Math.min(5, parteLocal.length - 1)))}`;
-  // Devolve um texto seguro mesmo se o registro legado tiver um e-mail incompleto.
-  return dominio ? `${nomeMascarado}@${dominio}` : nomeMascarado;
+  // Mantém a string de origem para preservar domínio e caixa como foram cadastrados.
+  const valor = String(email || "");
+  // Localiza o último arroba para separar com segurança a parte local e o domínio.
+  const indiceArroba = valor.lastIndexOf("@");
+  // Devolve somente a máscara fixa se um registro legado não tiver domínio.
+  if (indiceArroba < 0) return "******";
+  // Separa a parte local sem incluir o arroba.
+  const parteLocal = valor.slice(0, indiceArroba);
+  // Conta letras da parte local como caracteres Unicode completos.
+  const caracteresLocais = Array.from(parteLocal);
+  // Preserva o domínio completo, mesmo quando não contém ponto.
+  const dominio = valor.slice(indiceArroba + 1);
+  // Define sempre seis asteriscos para não revelar o tamanho original.
+  const asteriscos = "******";
+  // Usa duas primeiras e duas últimas letras quando há seis caracteres locais ou mais.
+  if (caracteresLocais.length >= 6) return `${caracteresLocais.slice(0, 2).join("")}${asteriscos}${caracteresLocais.slice(-2).join("")}@${dominio}`;
+  // Mostra só a primeira letra para partes locais entre três e cinco caracteres.
+  if (caracteresLocais.length >= 3) return `${caracteresLocais.slice(0, 1).join("")}${asteriscos}@${dominio}`;
+  // Oculta por completo partes locais com um ou dois caracteres.
+  return `${asteriscos}@${dominio}`;
 }
 
 app.get("/convites/:token", async (req, res) => {
@@ -222,11 +238,18 @@ app.post("/convites/:token/aceitar", async (req, res) => {
       const emailInformado = typeof email === "string" ? email.trim().toLowerCase() : "";
       // Normaliza o endereço salvo no convite usando a mesma regra do valor informado.
       const emailConvidado = String(conviteAtual.email || "").trim().toLowerCase();
-      // Usa a mesma resposta genérica para e-mail vazio ou diferente, antes de abrir a transação.
-      if (!emailInformado || emailInformado !== emailConvidado) return res.status(400).json({ erro: "Não foi possível confirmar os dados do convite." });
+      // Identifica a falta de e-mail com um código claro antes de abrir a transação.
+      if (!emailInformado) return res.status(400).json({ codigo: "EMAIL_CONVITE_OBRIGATORIO", erro: "Informe o e-mail do convite." });
+      // Informa divergência sem revelar o endereço salvo no convite.
+      if (emailInformado !== emailConvidado) return res.status(400).json({ codigo: "EMAIL_CONVITE_DIVERGENTE", erro: "O e-mail informado não confere com o do convite. Confira o endereço e tente novamente." });
     }
-    // Preserva a regra existente de senha mínima para qualquer cadastro sem sessão.
-    if (!usuarioSessao && (typeof senha !== "string" || senha.length < 8)) return res.status(400).json({ erro: "A senha deve ter pelo menos 8 caracteres" });
+    // Exige as regras de senha somente quando o convite realmente cria uma conta.
+    if (!usuarioSessao) {
+      // Executa as mesmas regras para convites de cliente e gerente sem sessão.
+      const validacaoSenha = validarSenhaConvite(senha);
+      // Retorna erro próprio sem iniciar a transação quando a senha for inválida.
+      if (!validacaoSenha.valida) return res.status(400).json({ codigo: validacaoSenha.codigo, erro: validacaoSenha.erro });
+    }
     const senhaHash = usuarioSessao ? null : await bcrypt.hash(senha, 10);
     const usuario = await prisma.$transaction(async (tx) => {
       const convite = await tx.convite.findFirst({ where: { id: conviteAtual.id, usadoEm: null, expiraEm: { gt: new Date() } } });

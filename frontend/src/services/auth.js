@@ -84,6 +84,8 @@ async function executarRequisicao(caminho, opcoes = {}) {
     const erro = new Error(dados.erro || 'Não foi possível concluir a solicitação.')
     // Anexa o código de status HTTP retornado pelo servidor ao erro
     erro.status = resposta.status
+    // Preserva códigos funcionais para que a tela trate cada campo com a mensagem certa.
+    erro.codigo = dados.codigo
     erro.tentativaFinalizada = Boolean(dados.tentativaFinalizada)
     // Lança o erro para a camada superior tratar
     throw erro
