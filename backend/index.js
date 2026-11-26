@@ -134,17 +134,34 @@ function sessao(usuario) {
 // Cadastro da empreiteira e da primeira conta administradora.
 app.post("/auth/registro-empreiteira", async (req, res) => {
   try {
-    const { empresa, nome, email, senha, cnpj, cpfResponsavel, telefone, telefoneSecundario, enderecoResponsavel, endereco } = req.body || {};
+    const corpo = req.body || {};
+    const { empresa, nome, email, senha, cnpj, cpfResponsavel, telefone, telefoneSecundario, enderecoResponsavel, endereco } = corpo;
     if (![empresa, nome, email, senha, cnpj, cpfResponsavel, telefone, enderecoResponsavel, endereco].every((v) => typeof v === "string" && v.trim())) return res.status(400).json({ erro: "Preencha os dados da empresa, CNPJ, CPF, telefone, endereço pessoal, endereço da empresa e dados do administrador" });
     if (senha.length < 8) return res.status(400).json({ erro: "A senha deve ter pelo menos 8 caracteres" });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return res.status(400).json({ erro: "E-mail inválido" });
     if (!cnpjValido(cnpj)) return res.status(400).json({ erro: "CNPJ inválido: confira os 14 números e os dígitos verificadores" });
     if (!cpfValido(cpfResponsavel)) return res.status(400).json({ erro: "CPF inválido: confira os 11 números e os dígitos verificadores" });
+    // Aceita os novos dados opcionais sem rejeitar clientes antigos da API.
+    const camposOpcionaisEmpresa = {};
+    // Define limites específicos para os campos novos do cadastro da empresa.
+    const limitesCamposEmpresa = { slogan: 120, estado: 120, cidade: 120, bairro: 120, numero: 40, complemento: 240 };
+    // Valida e normaliza somente os campos enviados pelo cliente.
+    for (const [campo, limite] of Object.entries(limitesCamposEmpresa)) {
+      // Mantém compatibilidade quando uma integração antiga omite o campo.
+      if (corpo[campo] === undefined) continue;
+      // Rejeita tipos incorretos e textos acima do limite documentado.
+      if (typeof corpo[campo] !== "string" || corpo[campo].trim().length > limite) return res.status(400).json({ erro: `Campo ${campo} inválido` });
+      // Converte texto vazio para nulo para não persistir espaços como conteúdo.
+      camposOpcionaisEmpresa[campo] = corpo[campo].trim() || null;
+    }
+    // Mantém o número da empresa apenas com dígitos quando informado.
+    if (camposOpcionaisEmpresa.numero && !/^\d+$/.test(camposOpcionaisEmpresa.numero)) return res.status(400).json({ erro: "O número do endereço da empresa deve conter apenas números" });
     const prisma = getPrisma();
     if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
     const senhaHash = await bcrypt.hash(senha, 10);
     const usuario = await prisma.$transaction(async (tx) => {
-      const criada = await tx.empresa.create({ data: { nome: empresa.trim(), cnpj: somenteDigitosCnpj(cnpj), cpfResponsavel: somenteDigitosCpf(cpfResponsavel), telefone: telefone.trim(), telefoneSecundario: telefoneSecundario?.trim() || null, enderecoResponsavel: enderecoResponsavel.trim(), endereco: endereco.trim() } });
+      // Cria a empresa com os campos antigos e os novos dados opcionais.
+      const criada = await tx.empresa.create({ data: { nome: empresa.trim(), cnpj: somenteDigitosCnpj(cnpj), cpfResponsavel: somenteDigitosCpf(cpfResponsavel), telefone: telefone.trim(), telefoneSecundario: telefoneSecundario?.trim() || null, enderecoResponsavel: enderecoResponsavel.trim(), endereco: endereco.trim(), ...camposOpcionaisEmpresa } });
       return tx.usuario.create({ data: { empresaId: criada.id, nome: nome.trim(), email: email.trim().toLowerCase(), senhaHash, tipo: "ADMIN", telefone: telefone.trim(), telefoneSecundario: telefoneSecundario?.trim() || null, endereco: enderecoResponsavel.trim() } });
     });
     return res.status(201).json(sessao(usuario));
@@ -613,9 +630,12 @@ app.patch("/usuarios/me", authMiddleware, async (req, res) => {
     if (corpo.empresa !== undefined) {
       if (req.usuario.tipo !== "ADMIN" || !corpo.empresa || typeof corpo.empresa !== "object") return res.status(403).json({ erro: "Somente o administrador pode atualizar os dados da empresa" });
       empresaDados = {};
-      for (const campo of ["endereco", "estado", "cidade", "bairro", "numero", "complemento", "telefone", "telefoneSecundario", "enderecoResponsavel"]) {
+      // Permite que o administrador atualize o slogan e os dados já editáveis da empresa.
+      for (const campo of ["slogan", "endereco", "estado", "cidade", "bairro", "numero", "complemento", "telefone", "telefoneSecundario", "enderecoResponsavel"]) {
         if (corpo.empresa[campo] === undefined) continue;
-        if (typeof corpo.empresa[campo] !== "string" || corpo.empresa[campo].trim().length > 240) return res.status(400).json({ erro: `Campo ${campo} inválido` });
+        // Mantém o slogan mais curto e preserva o limite anterior para os demais campos.
+        const limite = campo === "slogan" ? 120 : 240;
+        if (typeof corpo.empresa[campo] !== "string" || corpo.empresa[campo].trim().length > limite) return res.status(400).json({ erro: `Campo ${campo} inválido` });
         empresaDados[campo] = corpo.empresa[campo].trim() || null;
       }
       if (!Object.keys(empresaDados).length) empresaDados = null;

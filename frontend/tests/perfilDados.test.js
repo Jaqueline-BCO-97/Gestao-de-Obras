@@ -8,6 +8,7 @@ import {
   formatarValorLeitura,
   mesclarUsuarioAtualizado,
   montarPayloadContato,
+  montarPayloadEnderecoEmpresa,
   montarPayloadEnderecoPessoal,
   usuarioPossuiEnderecoEmpresa,
 } from '../src/utils/perfilDados.js'
@@ -29,6 +30,7 @@ test('preenche todos os estados do formulário a partir do usuário local de fal
     numero: '100',
     empresa: {
       nome: 'CaiPim Reformas',
+      slogan: 'Reforma com confiança',
       endereco: 'Av. Ana Costa',
       numero: '67',
       estado: 'SP',
@@ -48,6 +50,8 @@ test('preenche todos os estados do formulário a partir do usuário local de fal
   // Confirma que o endereço da empresa também foi hidratado.
   assert.equal(estados.dadosEmpresaForm.endereco, 'Av. Ana Costa')
   assert.equal(estados.dadosEmpresaForm.numero, '67')
+  assert.equal(estados.dadosEmpresaForm.nome, 'CaiPim Reformas')
+  assert.equal(estados.dadosEmpresaForm.slogan, 'Reforma com confiança')
 })
 
 // Garante que valores vazios mostram "Não informado" no modo leitura.
@@ -86,6 +90,17 @@ test('separa payload de contato do endereço pessoal e preserva dados da empresa
   assert.equal(endereco.apartamento, '')
   assert.equal(endereco.semApartamento, true)
   assert.equal(endereco.bloco, 'B')
+
+  // O endereço da empresa também limpa complemento sem enviar uma flag de interface.
+  const enderecoEmpresa = montarPayloadEnderecoEmpresa({ endereco: 'Av. B', numero: '20', complemento: 'fundos' }, true)
+  assert.deepEqual(enderecoEmpresa, {
+    endereco: 'Av. B',
+    estado: '',
+    cidade: '',
+    bairro: '',
+    numero: '20',
+    complemento: '',
+  })
 
   // Preserva nome e CNPJ da empresa quando o PATCH retorna só o subconjunto atualizado.
   const mesclado = mesclarUsuarioAtualizado(

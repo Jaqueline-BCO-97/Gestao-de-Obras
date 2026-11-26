@@ -20,6 +20,8 @@ model Empresa {
   id           String        @id @default(uuid())
   // Nome apresentado para a empresa.
   nome         String
+  // Slogan opcional exibido junto do nome da empresa.
+  slogan       String?
   cnpj         String?
   cpfResponsavel String?
   telefone     String?

@@ -8,6 +8,8 @@ import Button from '../../components/Button.jsx'
 import Input from '../../components/Input.jsx'
 // Importa o componente de foto/iniciais do usuário.
 import Avatar from '../../components/Avatar.jsx'
+// Importa o campo reutilizável com dica de CPF exibida ao focar.
+import CampoDocumento from '../../components/CampoDocumento.jsx'
 // Importa os serviços de autenticação e atualização de perfil/senha da API.
 import { atualizarPerfil, buscarUsuarioAtual, alterarSenha, encerrarSessao, salvarSessao } from '../../services/auth.js'
 // Importa a função que devolve a rota inicial de cada perfil.
@@ -26,6 +28,7 @@ import {
   formatarValorLeitura,
   mesclarUsuarioAtualizado,
   montarPayloadContato,
+  montarPayloadEnderecoEmpresa,
   montarPayloadEnderecoPessoal,
   obterUsuarioLocal,
   traduzirTipoPerfil,
@@ -121,6 +124,8 @@ export default function Perfil() {
   const [mensagemContato, setMensagemContato] = useState(null)
   const [mensagemEndereco, setMensagemEndereco] = useState(null)
   const [mensagemEmpresa, setMensagemEmpresa] = useState(null)
+  // Guarda o feedback independente da edição do slogan da empresa.
+  const [mensagemSloganEmpresa, setMensagemSloganEmpresa] = useState(null)
   const [mensagemSenha, setMensagemSenha] = useState(null)
 
   // Indica se alguma requisição de salvamento está em andamento.
@@ -129,6 +134,8 @@ export default function Perfil() {
   const [dadosContato, setDadosContato] = useState(() => estadosIniciais.dadosContato)
   // Armazena os campos editáveis de endereço da empresa (quando ADMIN).
   const [dadosEmpresaForm, setDadosEmpresaForm] = useState(() => estadosIniciais.dadosEmpresaForm)
+  // Controla a opção temporária de que a empresa não tem complemento.
+  const [semComplementoEmpresa, setSemComplementoEmpresa] = useState(false)
   // Controla se o campo de telefone adicional está visível na edição de contato.
   const [mostrarTelefoneAdicional, setMostrarTelefoneAdicional] = useState(() => estadosIniciais.mostrarTelefoneAdicional)
   // Armazena o arquivo de foto selecionado na edição da seção Identidade.
@@ -141,6 +148,7 @@ export default function Perfil() {
     identidade: false,
     contato: false,
     enderecoPessoal: false,
+    sloganEmpresa: false,
     enderecoEmpresa: false,
     seguranca: false,
   })
@@ -418,11 +426,13 @@ export default function Perfil() {
     setSalvando(true)
     try {
       // Envia o objeto empresa com os campos editáveis de endereço.
-      const resposta = await atualizarPerfil({ empresa: dadosEmpresaForm })
+      const payloadEmpresa = montarPayloadEnderecoEmpresa(dadosEmpresaForm, semComplementoEmpresa)
+      const resposta = await atualizarPerfil({ empresa: payloadEmpresa })
       // Mescla com a empresa atual para preservar nome/CNPJ e salva a sessão.
       const usuarioMesclado = concluirAtualizacaoUsuario(resposta)
       // Atualiza o formulário com os dados da empresa já mesclados.
-      setDadosEmpresaForm(dadosEmpresa(usuarioMesclado.empresa))
+      setDadosEmpresaForm((atuais) => ({ ...atuais, ...montarPayloadEnderecoEmpresa(usuarioMesclado.empresa) }))
+      setSemComplementoEmpresa(false)
       // Retorna ao modo leitura e exibe mensagem de confirmação.
       setModoEdicao((atual) => ({ ...atual, enderecoEmpresa: false }))
       setMensagemEmpresa({ tipo: 'sucesso', texto: resposta.mensagem || 'Endereço da empresa atualizado.' })
@@ -438,10 +448,47 @@ export default function Perfil() {
   // Cancela a edição do Endereço da empresa restaurando os dados salvos.
   function cancelarSecaoEnderecoEmpresa() {
     // Restaura os campos da empresa a partir do último estado salvo do usuário.
-    setDadosEmpresaForm(dadosEmpresa(usuario?.empresa || {}))
+    const enderecoSalvo = montarPayloadEnderecoEmpresa(dadosEmpresa(usuario?.empresa || {}))
+    setDadosEmpresaForm((atuais) => ({ ...atuais, ...enderecoSalvo }))
+    setSemComplementoEmpresa(false)
     // Limpa mensagem anterior e fecha a edição.
     setMensagemEmpresa(null)
     setModoEdicao((atual) => ({ ...atual, enderecoEmpresa: false }))
+  }
+
+  // Salva o slogan opcional da empresa usando o endpoint já disponível para ADMIN.
+  async function salvarSloganEmpresa(event) {
+    // Impede o envio padrão do formulário.
+    event.preventDefault()
+    // Limpa avisos anteriores e inicia o estado de salvamento.
+    setMensagemSloganEmpresa(null)
+    setSalvando(true)
+    try {
+      // Envia somente o slogan para não alterar o restante dos dados da empresa.
+      const resposta = await atualizarPerfil({ empresa: { slogan: dadosEmpresaForm.slogan } })
+      // Atualiza o usuário local preservando os demais campos da empresa.
+      const usuarioMesclado = concluirAtualizacaoUsuario(resposta)
+      // Atualiza somente o slogan no formulário e mantém outros rascunhos.
+      setDadosEmpresaForm((atuais) => ({ ...atuais, slogan: usuarioMesclado.empresa?.slogan || '' }))
+      // Fecha a edição e confirma a gravação do slogan.
+      setModoEdicao((atual) => ({ ...atual, sloganEmpresa: false }))
+      setMensagemSloganEmpresa({ tipo: 'sucesso', texto: resposta.mensagem || 'Slogan da empresa atualizado.' })
+    } catch (erro) {
+      // Exibe falha junto dos dados de identificação da empresa.
+      setMensagemSloganEmpresa({ tipo: 'erro', texto: erro.message || 'Não foi possível atualizar o slogan da empresa.' })
+    } finally {
+      // Libera os botões mesmo quando a requisição falha.
+      setSalvando(false)
+    }
+  }
+
+  // Cancela a edição do slogan e restaura o último valor salvo.
+  function cancelarSloganEmpresa() {
+    // Preserva os outros campos enquanto restaura o slogan salvo.
+    setDadosEmpresaForm((atuais) => ({ ...atuais, slogan: usuario?.empresa?.slogan || '' }))
+    // Limpa o feedback e volta ao modo de leitura.
+    setMensagemSloganEmpresa(null)
+    setModoEdicao((atual) => ({ ...atual, sloganEmpresa: false }))
   }
 
   // Valida e envia a alteração de senha da seção Segurança.
@@ -546,6 +593,18 @@ export default function Perfil() {
             <strong className="block text-[17px] leading-[1.1] tracking-[-.04em]">
               Obra<span className="text-sky-300">Master</span>
             </strong>
+            {/* Exibe o nome da empresa e o slogan do administrador abaixo da marca. */}
+            {tipoPerfil === 'ADMIN' && usuario?.empresa?.nome && (
+              <small className="mt-1 block break-words text-[8px] tracking-[.12em] text-slate-400">
+                {usuario.empresa.nome}
+              </small>
+            )}
+            {/* Oculta a linha do slogan quando a empresa ainda não cadastrou um. */}
+            {tipoPerfil === 'ADMIN' && usuario?.empresa?.slogan && (
+              <small className="mt-1 block break-words text-[8px] tracking-[.12em] text-slate-400">
+                {usuario.empresa.slogan}
+              </small>
+            )}
             <small className="mt-1 block text-[8px] tracking-[.12em] text-slate-400">GESTÃO DE OBRAS</small>
           </span>
         </Link>
@@ -714,7 +773,7 @@ export default function Perfil() {
                       </label>
                       <label className="block text-[11px] font-semibold text-slate-700">
                         CPF
-                        <input
+                        <CampoDocumento
                           type="text"
                           inputMode="numeric"
                           autoComplete="off"
@@ -916,7 +975,57 @@ export default function Perfil() {
                 )}
               </section>
 
-              {/* ---- SEÇÃO 4: Endereço da empresa (6 colunas no desktop quando existir) ---- */}
+              {/* ---- SEÇÃO 4: Dados da empresa (6 colunas no desktop) ---- */}
+              {tipoPerfil === 'ADMIN' && (
+                <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-[21px_20px_20px] shadow-sm max-[620px]:p-[18px_16px] lg:col-span-6">
+                  {/* Permite identificar a empresa e editar apenas o slogan opcional. */}
+                  <CabecalhoSecao
+                    subtitulo="EMPRESA"
+                    titulo="Dados da empresa"
+                    icone="▤"
+                    editando={modoEdicao.sloganEmpresa}
+                    aoAlterar={() => abrirEdicao('sloganEmpresa', setMensagemSloganEmpresa)}
+                  />
+
+                  {modoEdicao.sloganEmpresa ? (
+                    /* Formulário que mantém o nome da empresa somente para leitura. */
+                    <form onSubmit={salvarSloganEmpresa} className="mt-4 space-y-3">
+                      <CampoLeitura rotulo="Nome da empresa" valor={dadosEmpresaForm.nome} />
+                      <label className="block text-[11px] font-semibold text-slate-700">
+                        Slogan (opcional)
+                        <input
+                          type="text"
+                          maxLength={120}
+                          value={dadosEmpresaForm.slogan}
+                          onChange={(evento) => setDadosEmpresaForm((atuais) => ({ ...atuais, slogan: evento.target.value }))}
+                          className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal"
+                        />
+                      </label>
+                      {mensagemSloganEmpresa && (
+                        <p className={`rounded-[7px] px-[10px] py-[9px] text-sm font-semibold ${mensagemSloganEmpresa.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`} role={mensagemSloganEmpresa.tipo === 'erro' ? 'alert' : 'status'}>
+                          {mensagemSloganEmpresa.texto}
+                        </p>
+                      )}
+                      <AcoesEdicaoSecao salvando={salvando} aoCancelar={cancelarSloganEmpresa} />
+                    </form>
+                  ) : (
+                    /* Mostra nome e slogan armazenados para a empresa atual. */
+                    <div className="mt-4 space-y-4">
+                      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <CampoLeitura rotulo="Nome da empresa" valor={dadosEmpresaForm.nome} />
+                        <CampoLeitura rotulo="Slogan" valor={dadosEmpresaForm.slogan} />
+                      </dl>
+                      {mensagemSloganEmpresa && (
+                        <p className={`rounded-[7px] px-[10px] py-[9px] text-sm font-semibold ${mensagemSloganEmpresa.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`} role={mensagemSloganEmpresa.tipo === 'erro' ? 'alert' : 'status'}>
+                          {mensagemSloganEmpresa.texto}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* ---- SEÇÃO 5: Endereço da empresa (6 colunas no desktop quando existir) ---- */}
               {temEnderecoEmpresa && (
                 <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-[21px_20px_20px] shadow-sm max-[620px]:p-[18px_16px] lg:col-span-6">
                   <CabecalhoSecao
@@ -972,11 +1081,24 @@ export default function Perfil() {
                             className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal"
                           />
                         </label>
+                        <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 sm:col-span-2">
+                          {/* Mantém a ausência de complemento apenas como estado da interface. */}
+                          <input
+                            type="checkbox"
+                            checked={semComplementoEmpresa}
+                            onChange={(evento) => {
+                              setSemComplementoEmpresa(evento.target.checked)
+                              if (evento.target.checked) setDadosEmpresaForm((atuais) => ({ ...atuais, complemento: '' }))
+                            }}
+                          />
+                          Sem complemento
+                        </label>
                         <label className="text-[11px] font-semibold text-slate-700 sm:col-span-2">
                           Complemento
                           <input
                             value={dadosEmpresaForm.complemento}
                             onChange={(event) => setDadosEmpresaForm({ ...dadosEmpresaForm, complemento: event.target.value })}
+                            disabled={semComplementoEmpresa}
                             className="mt-1 min-h-[34px] w-full rounded-[7px] border border-slate-300 px-[10px] py-2 text-xs font-normal"
                           />
                         </label>
@@ -1013,7 +1135,7 @@ export default function Perfil() {
                 </section>
               )}
 
-              {/* ---- SEÇÃO 5: Segurança (largura total de 12 colunas no desktop) ---- */}
+              {/* ---- SEÇÃO 6: Segurança (largura total de 12 colunas no desktop) ---- */}
               <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-[21px_20px_20px] shadow-sm max-[620px]:p-[18px_16px] lg:col-span-12">
                 <CabecalhoSecao
                   subtitulo="SEGURANÇA"

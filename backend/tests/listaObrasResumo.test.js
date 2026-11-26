@@ -164,7 +164,7 @@ function criarPerfilAdminSql() {
     bairro: "Centro", numero: "10", complemento: null, apartamento: null, bloco: null, semApartamento: true, semBloco: true, cpf: null,
     funcionario: null,
     empresa: {
-      nome: "Empreiteira Teste", cnpj: "12345678000199", cpfResponsavel: null, telefone: "1130000000", telefoneSecundario: null,
+      nome: "Empreiteira Teste", slogan: "Obras com cuidado", cnpj: "12345678000199", cpfResponsavel: null, telefone: "1130000000", telefoneSecundario: null,
       enderecoResponsavel: null, endereco: "Av. B", estado: "SP", cidade: "Campinas", bairro: "Jardim", numero: "20", complemento: null,
     },
   };
@@ -277,11 +277,13 @@ describe("consultas agregadas de obras", () => {
     assert.equal(chamadas.length, 1);
     assert.match(chamadas[0].text, /LEFT JOIN "Funcionario" funcionario/);
     assert.match(chamadas[0].text, /LEFT JOIN "Empresa" empresa/);
+    assert.match(chamadas[0].text, /'slogan', empresa\.slogan/);
 
     chamadas.splice(0);
     const resposta = await requisitarPelaRota("/auth/me", perfil, {}, {}, false);
     assert.equal(resposta.status, 200);
     assert.equal(resposta.body.usuario.empresa.nome, "Empreiteira Teste");
+    assert.equal(resposta.body.usuario.empresa.slogan, "Obras com cuidado");
     assert.equal(chamadas.length, 2);
     assert.match(chamadas[0].text, /LEFT JOIN "Funcionario" funcionario/);
     assert.match(chamadas[1].text, /LEFT JOIN "Empresa" empresa/);

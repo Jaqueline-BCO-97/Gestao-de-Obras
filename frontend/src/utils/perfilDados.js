@@ -73,6 +73,10 @@ export function dadosEmpresa(empresa = {}) {
   const origem = empresa || {}
   // Retorna todos os campos da empresa normalizados para os inputs controlados.
   return {
+    // Nome cadastrado da empresa exibido no Perfil e na navegação da conta.
+    nome: origem.nome || '',
+    // Slogan opcional que o administrador pode editar no Perfil.
+    slogan: origem.slogan || '',
     // Logradouro da empresa.
     endereco: origem.endereco || '',
     // Estado da empresa.
@@ -168,6 +172,25 @@ export function montarPayloadEnderecoPessoal(dadosContato = {}) {
     semApartamento: Boolean(dadosContato.semApartamento),
     // Flag booleana indicando ausência de bloco.
     semBloco: Boolean(dadosContato.semBloco),
+  }
+}
+
+// Monta somente os campos de endereço editados na seção da empresa.
+export function montarPayloadEnderecoEmpresa(dadosEmpresaFormulario = {}, semComplemento = false) {
+  // Mantém a flag de ausência de complemento apenas na interface.
+  return {
+    // Rua ou avenida cadastrada para a empresa.
+    endereco: dadosEmpresaFormulario.endereco || '',
+    // Estado informado no endereço da empresa.
+    estado: dadosEmpresaFormulario.estado || '',
+    // Cidade informada no endereço da empresa.
+    cidade: dadosEmpresaFormulario.cidade || '',
+    // Bairro informado no endereço da empresa.
+    bairro: dadosEmpresaFormulario.bairro || '',
+    // Número do imóvel informado no endereço da empresa.
+    numero: dadosEmpresaFormulario.numero || '',
+    // Limpa o complemento ao marcar que não existe.
+    complemento: semComplemento ? '' : (dadosEmpresaFormulario.complemento || ''),
   }
 }
 
