@@ -209,8 +209,9 @@ app.get("/convites/:token", async (req, res) => {
     if (!convite) return res.status(404).json({ erro: "Convite não encontrado" });
     // Mantém o e-mail completo para gerente e fornece somente uma dica mascarada para cliente.
     const dadosEmail = convite.tipo === "CLIENTE" ? { emailDica: mascararEmailConvite(convite.email) } : { email: convite.email };
+    // Inclui a função do gerente para montar a apresentação do convite sem consultar outra rota.
     // Retorna os dados públicos do convite sem revelar o e-mail de clientes.
-    return res.json({ tipo: convite.tipo, nome: convite.nome, ...dadosEmail, empresa: convite.empresa.nome, obra: convite.obra?.nome || null, expirado: convite.expiraEm <= new Date(), usado: Boolean(convite.usadoEm) });
+    return res.json({ tipo: convite.tipo, nome: convite.nome, ...dadosEmail, empresa: convite.empresa.nome, obra: convite.obra?.nome || null, funcao: convite.tipo === "GERENTE" ? convite.funcao : null, expirado: convite.expiraEm <= new Date(), usado: Boolean(convite.usadoEm) });
   } catch (erro) { return res.status(503).json({ erro: "Não foi possível consultar o convite" }); }
 });
 
@@ -350,13 +351,23 @@ app.post("/convites/:token/aceitar", async (req, res) => {
         if (!funcionario) funcionario = await tx.funcionario.create({ data: { empresaId: convite.empresaId, nome: convite.nome, funcao: convite.funcao || "Gerente de obras", nivel: "RESPONSAVEL", telefone: convite.telefone, usuarioId: novo.id } });
         else if (convite.telefone) await tx.funcionario.update({ where: { id: funcionario.id }, data: { telefone: convite.telefone } });
         if (funcionario.empresaId !== convite.empresaId || !funcionario.ativo || funcionario.nivel !== "RESPONSAVEL") throw Object.assign(new Error("A conta existente não pode receber acesso de gerente."), { code: "MANAGER_PROFILE_INVALID" });
-        const escalaAberta = await tx.obraEscala.findFirst({ where: { obraId: convite.obraId, funcionarioId: funcionario.id, dataFim: null } });
-        if (!escalaAberta) {
-          await tx.obraEscala.create({ data: { obraId: convite.obraId, funcionarioId: funcionario.id, alteradoPorId: convite.criadoPorId, motivo: "Convite de gerente aceito" } });
-          const evento = await tx.obraEvento.create({ data: { obraId: convite.obraId, empresaId: convite.empresaId, usuarioId: convite.criadoPorId, tipo: "EQUIPE", descricao: `${convite.nome} recebeu acesso de gerente à obra.`, visivelParaCliente: false } });
-          await tx.notificacao.create({ data: { empresaId: convite.empresaId, usuarioId: novo.id, obraId: convite.obraId, eventoId: evento.id, tipo: "EQUIPE", titulo: "Você recebeu acesso a uma obra", descricao: "A empreiteira atribuiu uma obra à sua conta." } });
-          const administradores = await tx.usuario.findMany({ where: { empresaId: convite.empresaId, tipo: "ADMIN" }, select: { id: true } });
-          if (administradores.length) await tx.notificacao.createMany({ data: administradores.map(({ id }) => ({ empresaId: convite.empresaId, usuarioId: id, obraId: convite.obraId, eventoId: evento.id, tipo: "CONVITE", titulo: "Gerente aceitou o convite", descricao: `${convite.nome} aceitou o convite de gerente da obra.` })) });
+        // Só cria escala e registros relacionados quando o convite traz uma obra.
+        if (convite.obraId) {
+          // Procura uma escala ativa existente para evitar duplicar o vínculo.
+          const escalaAberta = await tx.obraEscala.findFirst({ where: { obraId: convite.obraId, funcionarioId: funcionario.id, dataFim: null } });
+          // Registra acesso à obra apenas quando ainda não há escala ativa.
+          if (!escalaAberta) {
+            // Cria a escala do gerente na obra informada no convite.
+            await tx.obraEscala.create({ data: { obraId: convite.obraId, funcionarioId: funcionario.id, alteradoPorId: convite.criadoPorId, motivo: "Convite de gerente aceito" } });
+            // Registra no histórico da obra que o gerente recebeu acesso.
+            const evento = await tx.obraEvento.create({ data: { obraId: convite.obraId, empresaId: convite.empresaId, usuarioId: convite.criadoPorId, tipo: "EQUIPE", descricao: `${convite.nome} recebeu acesso de gerente à obra.`, visivelParaCliente: false } });
+            // Notifica o gerente sobre o acesso concedido à obra.
+            await tx.notificacao.create({ data: { empresaId: convite.empresaId, usuarioId: novo.id, obraId: convite.obraId, eventoId: evento.id, tipo: "EQUIPE", titulo: "Você recebeu acesso a uma obra", descricao: "A empreiteira atribuiu uma obra à sua conta." } });
+            // Busca os administradores da empresa para avisar que o convite foi aceito.
+            const administradores = await tx.usuario.findMany({ where: { empresaId: convite.empresaId, tipo: "ADMIN" }, select: { id: true } });
+            // Envia a notificação administrativa somente quando há destinatários.
+            if (administradores.length) await tx.notificacao.createMany({ data: administradores.map(({ id }) => ({ empresaId: convite.empresaId, usuarioId: id, obraId: convite.obraId, eventoId: evento.id, tipo: "CONVITE", titulo: "Gerente aceitou o convite", descricao: `${convite.nome} aceitou o convite de gerente da obra.` })) });
+          }
         }
       }
       return novo;
@@ -378,14 +389,21 @@ async function criarConvite(req, res, tipo) {
     // Mantém quantidade opcional para aceitar integrações e convites legados.
     const quantidadeLegadaInformada = quantidadeParcelas !== undefined && quantidadeParcelas !== null && quantidadeParcelas !== "";
     const obraIdInformada = typeof obraId === "string" && obraId.trim() ? obraId.trim() : null;
-    if (![nome, email, telefone].every((v) => typeof v === "string" && v.trim()) || !obraIdInformada || (tipo === "GERENTE" && (typeof funcao !== "string" || !funcao.trim())) || (tipo === "CLIENTE" && (typeof endereco !== "string" || !endereco.trim()))) return res.status(400).json({ erro: tipo === "GERENTE" ? "Obra, nome, e-mail, telefone e função são obrigatórios" : "Obra, nome, e-mail, telefone e endereço são obrigatórios" });
+    // Normaliza a função de texto livre antes de validar e salvar o convite.
+    const funcaoInformada = typeof funcao === "string" ? funcao.trim() : "";
+    // Exige obra para cliente, mas permite que o gerente receba o vínculo depois.
+    const obraObrigatoria = tipo === "CLIENTE" && !obraIdInformada;
+    // Confere os campos comuns e as exigências próprias de cada tipo de convite.
+    if (![nome, email, telefone].every((v) => typeof v === "string" && v.trim()) || obraObrigatoria || (tipo === "GERENTE" && (!funcaoInformada || funcaoInformada.length > 100)) || (tipo === "CLIENTE" && (typeof endereco !== "string" || !endereco.trim()))) return res.status(400).json({ erro: tipo === "GERENTE" ? "Nome, e-mail, telefone e função de até 100 caracteres são obrigatórios" : "Obra, nome, e-mail, telefone e endereço são obrigatórios" });
     if (tipo === "CLIENTE" && (![estado, cidade, bairro, endereco, numero].every((v) => typeof v === "string" && v.trim()) || !/^\d+$/.test(String(numero || "").trim()) || typeof semApartamento !== "boolean" || typeof semBloco !== "boolean" || (!semApartamento && (typeof apartamento !== "string" || !/^\d+$/.test(apartamento.trim()))) || (!semBloco && (typeof bloco !== "string" || !/^[A-Za-z0-9]+$/.test(bloco.trim()))))) return res.status(400).json({ erro: "Preencha estado, cidade, bairro, rua, número e informe apartamento e bloco ou marque que não existem" });
     // Valida contrato e quantidade legada sem exigir vencimento enviado pelo cliente.
     if (tipo === "CLIENTE" && ((quantidadeLegadaInformada && (!Number.isInteger(Number(quantidadeParcelas)) || Number(quantidadeParcelas) < 1 || Number(quantidadeParcelas) > 36)) || typeof contrato?.data !== "string" || contrato.mimeType !== "application/pdf")) return res.status(400).json({ erro: "Selecione o contrato PDF; a quantidade legada, se enviada, deve estar entre 1 e 36" });
     const prisma = getPrisma();
     if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
-    const obra = await prisma.obra.findFirst({ where: { id: obraIdInformada, empresaId: req.usuario.empresaId, excluidaEm: null } });
-    if (!obra) return res.status(404).json({ erro: "Obra não encontrada" });
+    // Busca a obra somente quando um identificador foi enviado.
+    const obra = obraIdInformada ? await prisma.obra.findFirst({ where: { id: obraIdInformada, empresaId: req.usuario.empresaId, excluidaEm: null } }) : null;
+    // Recusa identificadores inexistentes ou pertencentes a outra empresa.
+    if (obraIdInformada && !obra) return res.status(404).json({ erro: "Obra não encontrada" });
     if (tipo === "CLIENTE" && obra?.clienteId) return res.status(409).json({ erro: "Esta obra já está vinculada a um cliente" });
     if (tipo === "CLIENTE") {
       // Busca a data real da primeira parcela cadastrada na obra selecionada.
@@ -396,7 +414,6 @@ async function criarConvite(req, res, tipo) {
       const pagas = await prisma.parcela.count({ where: { obraId: obra.id, situacao: "PAGA" } });
       if (pagamentos || pagas) return res.status(409).json({ erro: "Só é possível vincular cliente e definir parcelas antes de iniciar pagamentos" });
     }
-    if (tipo === "GERENTE" && (!obraIdInformada || !funcao?.trim())) return res.status(400).json({ erro: "Selecione a obra e informe a função" });
     const normalizedEmail = email.trim().toLowerCase();
     let contratoUrl = null;
     // Convites novos não carregam uma data própria, pois a obra já define o calendário.
@@ -406,7 +423,7 @@ async function criarConvite(req, res, tipo) {
       contratoUrl = await cloudinaryService.enviarContratoObra({ arquivo: contrato, obraId: obra.id });
     }
     const rawToken = crypto.randomBytes(32).toString("base64url");
-    const convite = await prisma.convite.create({ data: { empresaId: req.usuario.empresaId, obraId: obra.id, criadoPorId: req.usuario.id, tipo, nome: nome.trim(), email: normalizedEmail, telefone: telefone.trim(), endereco: tipo === "CLIENTE" ? endereco.trim() : null, estado: tipo === "CLIENTE" ? estado.trim() : null, cidade: tipo === "CLIENTE" ? cidade.trim() : null, bairro: tipo === "CLIENTE" ? bairro.trim() : null, numero: tipo === "CLIENTE" ? numero.trim() : null, apartamento: tipo === "CLIENTE" && !semApartamento ? apartamento.trim() : null, bloco: tipo === "CLIENTE" && !semBloco ? bloco.trim() : null, semApartamento: tipo === "CLIENTE" ? semApartamento : null, semBloco: tipo === "CLIENTE" ? semBloco : null, funcao: tipo === "GERENTE" ? funcao.trim() : null, quantidadeParcelas: tipo === "CLIENTE" && quantidadeLegadaInformada ? Number(quantidadeParcelas) : null, vencimentoInicial: vencimento, contratoUrl, tokenHash: hashConvite(rawToken), expiraEm: new Date(Date.now() + 48 * 60 * 60 * 1000) } });
+    const convite = await prisma.convite.create({ data: { empresaId: req.usuario.empresaId, obraId: tipo === "GERENTE" ? obra?.id || null : obra.id, criadoPorId: req.usuario.id, tipo, nome: nome.trim(), email: normalizedEmail, telefone: telefone.trim(), endereco: tipo === "CLIENTE" ? endereco.trim() : null, estado: tipo === "CLIENTE" ? estado.trim() : null, cidade: tipo === "CLIENTE" ? cidade.trim() : null, bairro: tipo === "CLIENTE" ? bairro.trim() : null, numero: tipo === "CLIENTE" ? numero.trim() : null, apartamento: tipo === "CLIENTE" && !semApartamento ? apartamento.trim() : null, bloco: tipo === "CLIENTE" && !semBloco ? bloco.trim() : null, semApartamento: tipo === "CLIENTE" ? semApartamento : null, semBloco: tipo === "CLIENTE" ? semBloco : null, funcao: tipo === "GERENTE" ? funcaoInformada : null, quantidadeParcelas: tipo === "CLIENTE" && quantidadeLegadaInformada ? Number(quantidadeParcelas) : null, vencimentoInicial: vencimento, contratoUrl, tokenHash: hashConvite(rawToken), expiraEm: new Date(Date.now() + 48 * 60 * 60 * 1000) } });
     const base = process.env.FRONTEND_URL || "http://localhost:5173";
     return res.status(201).json({ convite: { id: convite.id, email: convite.email, expiraEm: convite.expiraEm, link: `${base.replace(/\/$/, "")}/convite/${rawToken}` } });
   } catch (erro) {
@@ -455,6 +472,7 @@ app.post("/convites/:id/reenviar", authMiddleware, exigirEmpresaDoToken, exigirP
   try {
     const prisma = getPrisma();
     if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    // Carrega apenas o convite; o reenvio não depende da relação opcional com uma obra.
     const convite = await prisma.convite.findFirst({ where: { id: req.params.id, empresaId: req.usuario.empresaId, usadoEm: null } });
     if (!convite) return res.status(404).json({ erro: "Convite pendente não encontrado" });
     const rawToken = crypto.randomBytes(32).toString("base64url");

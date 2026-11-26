@@ -51,7 +51,8 @@ function criarPrisma() {
       findUnique: async ({ where, include }) => {
         const convite = convites.find((item) => Object.entries(where).every(([chave, valor]) => item[chave] === valor)) || null;
         if (!convite || !include) return convite;
-        return { ...convite, empresa: { nome: "Empreiteira A" }, obra: { nome: obras.find((obra) => obra.id === convite.obraId)?.nome } };
+        // Imita a relação opcional do Prisma e mantém obra nula para convite sem vínculo.
+        return { ...convite, empresa: { nome: "Empreiteira A" }, obra: convite.obraId ? { nome: obras.find((obra) => obra.id === convite.obraId)?.nome } : null };
       },
       findFirst: async ({ where }) => convites.find((item) => Object.entries(where).every(([chave, valor]) => {
         if (chave === "expiraEm" && valor?.gt) return item.expiraEm > valor.gt;
@@ -71,6 +72,8 @@ function criarPrisma() {
     funcionario: {
       findUnique: async ({ where }) => funcionarios.find((item) => Object.entries(where).every(([chave, valor]) => item[chave] === valor)) || null,
       create: async ({ data }) => { const item = { id: `funcionario-${funcionarios.length + 1}`, ativo: true, ...data }; funcionarios.push(item); return item; },
+      // Imita a atualização de telefone do funcionário quando uma conta existente aceita convite.
+      update: async ({ where, data }) => { const item = funcionarios.find((funcionario) => funcionario.id === where.id); Object.assign(item, data); return item; },
     },
     obraEscala: {
       findFirst: async ({ where }) => escalas.find((item) => Object.entries(where).every(([chave, valor]) => item[chave] === valor)) || null,
@@ -104,6 +107,7 @@ function criarPrisma() {
 
 const dbPath = require.resolve("../src/config/db");
 const usuarioRepositoryPath = require.resolve("../src/repositories/usuarioRepository");
+const obraRepositoryPath = require.resolve("../src/repositories/obraRepository");
 const cloudinaryServicePath = require.resolve("../src/services/cloudinaryService");
 const prisma = criarPrisma();
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { getPrisma: () => prisma, isDbConfigured: () => true } };
@@ -111,7 +115,7 @@ require.cache[cloudinaryServicePath] = { id: cloudinaryServicePath, filename: cl
 require.cache[usuarioRepositoryPath] = {
   id: usuarioRepositoryPath, filename: usuarioRepositoryPath, loaded: true,
   exports: {
-    listarUsuarios: async () => [], buscarUsuarioPorEmail: async () => null, buscarUsuarioPorId: async () => null,
+    listarUsuarios: async () => [], buscarUsuarioPorEmail: async (email) => usuarios.find((item) => item.email === email) || null, buscarUsuarioPorId: async () => null,
     buscarAutenticacaoUsuarioPorId: async (id) => {
       const usuario = usuarios.find((item) => item.id === id);
       if (!usuario) return null;
@@ -121,6 +125,17 @@ require.cache[usuarioRepositoryPath] = {
     buscarPerfilUsuarioPorId: async (id) => selecionar(usuarios.find((item) => item.id === id) || null, { id: true, empresaId: true, nome: true, email: true, tipo: true }),
     buscarFuncionarioPorUsuarioId: async (usuarioId) => funcionarios.find((item) => item.usuarioId === usuarioId) || null,
     atualizarSenhaUsuario: async () => null, criarUsuarioColaborador: async () => null,
+  },
+};
+require.cache[obraRepositoryPath] = {
+  id: obraRepositoryPath, filename: obraRepositoryPath, loaded: true,
+  exports: {
+    listarObras: async (_empresaId, usuarioId, tipo) => {
+      // Usa as escalas ativas do mock para simular o escopo de obras do colaborador.
+      const funcionario = funcionarios.find((item) => item.usuarioId === usuarioId);
+      // Devolve somente obras associadas ao funcionário autenticado.
+      return obras.filter((obra) => tipo !== "COLABORADOR" || escalas.some((escala) => escala.funcionarioId === funcionario?.id && escala.obraId === obra.id && !escala.dataFim));
+    },
   },
 };
 process.env.JWT_SECRET = "segredo-testes-convite";
@@ -409,6 +424,8 @@ describe("Convites de cliente e gerente por obra", () => {
     // Confirma que o GET do gerente continua devolvendo o e-mail usado pelo fluxo atual.
     const consulta = await chamar("GET", "/convites/:token", { params: { token: codigo }, usuario: null });
     assert.equal(consulta.body.email, "gerente@teste.local");
+    // Confirma que o GET devolve a função necessária à nova tela de equipe.
+    assert.equal(consulta.body.funcao, "Gerente de obras");
     // Confirma que gerente sem sessão também precisa criar senha conforme a regra nova.
     const senhaFraca = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
     assert.equal(senhaFraca.statusCode, 400);
@@ -428,6 +445,101 @@ describe("Convites de cliente e gerente por obra", () => {
     assert.equal(eventos[0].tipo, "EQUIPE");
     assert.equal(eventos[0].visivelParaCliente, false);
     assert.equal(notificacoes.length, 2);
+  });
+
+  // Permite criar gerente sem obra, mas valida a obra quando ela é informada.
+  it("cria convite de gerente sem obra e recusa obra de outra empresa", async () => {
+    // Solicita o convite sem enviar obraId e com espaços na função.
+    const criado = await chamar("POST", "/convites/gerente", { body: { nome: "Luciano", email: "luciano@teste.local", telefone: "11987654321", funcao: "  Encarregado geral  " } });
+    // Confirma que a obra é opcional para esse tipo de convite.
+    assert.equal(criado.statusCode, 201);
+    // Confirma que o banco recebe obra nula e função aparada.
+    assert.equal(convites[0].obraId, null);
+    assert.equal(convites[0].funcao, "Encarregado geral");
+    // Impede função maior que o limite anunciado no formulário.
+    const funcaoLonga = await chamar("POST", "/convites/gerente", { body: { nome: "Gerente longo", email: "longo@teste.local", telefone: "11987654321", funcao: "x".repeat(101) } });
+    // Confirma que a validação não cria um segundo convite.
+    assert.equal(funcaoLonga.statusCode, 400);
+    assert.equal(convites.length, 1);
+    // Prepara uma obra que pertence a outra empresa.
+    obras.push({ id: "obra-outra-empresa", empresaId: "empresa-convite-b", nome: "Obra B", clienteId: null, excluidaEm: null });
+    // Tenta associar um novo gerente a essa obra alheia.
+    const recusado = await chamar("POST", "/convites/gerente", { body: { obraId: "obra-outra-empresa", nome: "Jhonatan", email: "jhonatan@teste.local", telefone: "11987654322", funcao: "Arquiteto" } });
+    // Confirma que a validação de empresa continua bloqueando o convite.
+    assert.equal(recusado.statusCode, 404);
+    assert.equal(convites.length, 1);
+  });
+
+  // Reenviar um link pendente não depende de a obra opcional estar vinculada.
+  it("reenvia convite de gerente sem obra e conserva a resposta compatível", async () => {
+    // Cria um convite sem obra para exercitar o endpoint de reenvio.
+    const criado = await chamar("POST", "/convites/gerente", { body: { nome: "Gerente sem obra", email: "sem-obra@teste.local", telefone: "11987654321", funcao: "Responsável" } });
+    // Confirma que o convite foi criado com obra nula.
+    assert.equal(criado.statusCode, 201);
+    // Solicita um token novo sem consultar nem ler o nome de uma obra.
+    const reenviado = await chamar("POST", "/convites/:id/reenviar", { params: { id: convites[0].id } });
+    // Confirma que o endpoint retorna link e e-mail como antes.
+    assert.equal(reenviado.statusCode, 200);
+    assert.equal(reenviado.body.convite.email, "sem-obra@teste.local");
+    assert.match(reenviado.body.convite.link, /\/convite\//);
+  });
+
+  // Aceitar convite sem obra cria uma conta ativa que pode entrar e ver a lista vazia.
+  it("aceita gerente sem obra, permite login e retorna Gestão de Obras vazia", async () => {
+    // Cria o convite de gerente sem associar uma obra.
+    const criado = await chamar("POST", "/convites/gerente", { body: { nome: "Gerente sem obra", email: "gerente-sem-obra@teste.local", telefone: "11987654321", funcao: "Responsável" } });
+    // Extrai o token único para consultar e aceitar o convite.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    // Confirma que o GET protege contra uma relação de obra nula.
+    const consulta = await chamar("GET", "/convites/:token", { params: { token: codigo }, usuario: null });
+    assert.equal(consulta.body.obra, null);
+    assert.equal(consulta.body.email, "gerente-sem-obra@teste.local");
+    assert.equal(consulta.body.funcao, "Responsável");
+    // Aceita o convite com uma senha válida e cria a conta normalmente.
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "Senha-segura-123" }, usuario: null });
+    // Confirma que o usuário criado pode autenticar como colaborador.
+    assert.equal(aceite.statusCode, 200);
+    assert.equal(aceite.body.usuario.tipo, "COLABORADOR");
+    // Confirma que o funcionário fica ativo e no nível Responsável.
+    assert.equal(funcionarios[0].ativo, true);
+    assert.equal(funcionarios[0].nivel, "RESPONSAVEL");
+    // Confirma que convite sem obra não cria escala, evento ou notificação de obra.
+    assert.equal(escalas.length, 0);
+    assert.equal(eventos.length, 0);
+    assert.equal(notificacoes.length, 0);
+    // Faz login pela rota normal com a senha recém-criada.
+    const login = await chamar("POST", "/auth/login", { body: { email: "gerente-sem-obra@teste.local", senha: "Senha-segura-123" }, usuario: null });
+    // Confirma que a conta ativa pode receber uma sessão de colaborador.
+    assert.equal(login.statusCode, 200);
+    assert.equal(login.body.usuario.tipo, "COLABORADOR");
+    // Abre a rota usada pela tela Gestão de Obras com a sessão de colaborador.
+    const gestao = await chamar("GET", "/obras", { usuario: login.body.usuario });
+    // Confirma que o gerente sem escala recebe lista vazia em vez de erro.
+    assert.equal(gestao.statusCode, 200);
+    assert.deepEqual(gestao.body, []);
+  });
+
+  // Uma pessoa que já tem conta aceita convite de gerente sem criar senha nem escala.
+  it("aceita convite de gerente sem obra com usuário já autenticado", async () => {
+    // Prepara a conta de colaborador existente e seu perfil Responsável ativo.
+    const gerente = { id: "gerente-existente", empresaId, nome: "Gerente existente", email: "existente@teste.local", tipo: "COLABORADOR", senhaHash: "hash-antigo" };
+    // Registra a conta para o JWT e a validação de identidade.
+    usuarios.push(gerente);
+    // Registra o funcionário vinculado à conta.
+    funcionarios.push({ id: "funcionario-existente", empresaId, nome: gerente.nome, funcao: "Arquiteto", nivel: "RESPONSAVEL", ativo: true, usuarioId: gerente.id });
+    // Cria o convite sem obra para o mesmo endereço da conta autenticada.
+    const criado = await chamar("POST", "/convites/gerente", { body: { nome: gerente.nome, email: gerente.email, telefone: "11987654321", funcao: "Arquiteto" } });
+    // Recupera o token para aceitar o convite com a sessão existente.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    // Aceita com a conta atual e sem enviar senha nova.
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: {}, usuario: gerente });
+    // Confirma que o convite foi aceito sem exigir vínculo de obra.
+    assert.equal(aceite.statusCode, 200);
+    assert.equal(convites[0].usadoEm instanceof Date, true);
+    // Confirma que a conta continua sem escala, evento ou notificação de obra.
+    assert.equal(escalas.length, 0);
+    assert.equal(eventos.length, 0);
+    assert.equal(notificacoes.length, 0);
   });
 
   // Usuários já autenticados aceitam convite sem criar senha nova ou validar a política.

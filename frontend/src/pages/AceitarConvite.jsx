@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 // Importa as ações da API e as funções atuais de sessão.
 import { aceitarConvite, consultarConvite, salvarSessao, obterToken } from '../services/auth.js'
 // Importa as regras locais de senha e confirmação usadas pelo formulário.
-import { avaliarSenhaConvite, senhasConferem } from '../utils/convite.js'
+import { avaliarSenhaConvite, obterDadosConviteGerente, senhasConferem } from '../utils/convite.js'
 
 // Renderiza a página pública de aceite dos convites de cliente e gerente.
 export default function AceitarConvite() {
@@ -33,8 +33,12 @@ export default function AceitarConvite() {
   const possuiSessao = Boolean(obterToken())
   // Exige e-mail e confirmação de senha apenas no cadastro anônimo de cliente.
   const exigeConfirmacaoCliente = convite?.tipo === 'CLIENTE' && !possuiSessao
+  // Apresenta o convite especial somente para gerente que ainda vai criar conta.
+  const exigeApresentacaoGerente = convite?.tipo === 'GERENTE' && !possuiSessao
   // Avalia em tempo real os requisitos aplicáveis a qualquer senha nova por convite.
   const avaliacaoSenha = avaliarSenhaConvite(senha)
+  // Prepara fallbacks seguros para dados ausentes no convite de gerente.
+  const dadosGerente = obterDadosConviteGerente(convite || {})
   // Usa textos neutros se um campo de identificação não vier no GET.
   const nomeCliente = typeof convite?.nome === 'string' && convite.nome.trim() ? convite.nome.trim() : 'convidado(a)'
   // Usa um texto neutro se o nome da empresa não vier no GET.
@@ -128,8 +132,37 @@ export default function AceitarConvite() {
         {convite && (
           // Agrupa o resumo, estado e controles de aceite.
           <>
-            {/* Usa a nova apresentação somente para cliente que ainda não tem sessão. */}
-            {exigeConfirmacaoCliente ? (
+            {/* Usa o convite de equipe somente para gerente sem sessão. */}
+            {exigeApresentacaoGerente ? (
+              // Exibe os dados de gerente vindos do GET sem revelar seu e-mail.
+              <div className="mt-4 space-y-3">
+                {/* Identifica a tela como convite de equipe do ObraMaster. */}
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">OBRAMASTER · CONVITE DE EQUIPE</p>
+                {/* Apresenta o título atual do convite de gerente. */}
+                <h1 className="text-2xl font-bold text-[#0c2d43]">Você foi convidado para fazer parte de uma obra!</h1>
+                {/* Cumprimenta o convidado ou usa uma saudação neutra. */}
+                <p className="text-sm text-slate-700">{dadosGerente.saudacao}</p>
+                {/* Mostra a empresa sem inserir conteúdo HTML dinâmico. */}
+                <p className="text-sm text-slate-700">{dadosGerente.empresaConvite} está convidando você para integrar sua equipe no ObraMaster e acompanhar a execução de uma obra.</p>
+                {/* Agrupa obra e função no destaque visual já usado no convite de cliente. */}
+                <section className="rounded-xl border border-slate-200 bg-slate-50 p-4" aria-label="Detalhes do convite de equipe">
+                  {/* Identifica a obra que a administração vinculou ao convite. */}
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500">OBRA VINCULADA</p>
+                  {/* Exibe a obra ou informa que o vínculo será feito depois. */}
+                  <p className="mt-1 text-lg font-bold text-navy">{dadosGerente.obraVinculada}</p>
+                  {/* Identifica a função definida para o gerente. */}
+                  <p className="mt-4 text-xs font-bold uppercase tracking-wider text-slate-500">SUA FUNÇÃO</p>
+                  {/* Exibe a função informada ou o fallback administrativo. */}
+                  <p className="mt-1 text-lg font-bold text-navy">{dadosGerente.funcaoConvidada}</p>
+                  {/* Explica quem define as responsabilidades do cargo. */}
+                  <p className="mt-1 text-sm text-slate-600">Responsabilidades definidas pela administração da empresa.</p>
+                </section>
+                {/* Resume o acesso oferecido sem ampliar as permissões atuais. */}
+                <p className="text-sm text-slate-700">Com seu acesso, você poderá acompanhar e registrar as atividades relacionadas à obra, conforme as permissões da sua função.</p>
+                {/* Orienta a criação da senha antes do formulário. */}
+                <p className="text-sm text-slate-700">Crie sua senha para começar:</p>
+              </div>
+            ) : exigeConfirmacaoCliente ? (
               // Mostra o convite especial com nomes que vieram do GET.
               <div className="mt-4 space-y-3">
                 {/* Exibe o rótulo pequeno solicitado para o aceite do cliente. */}
@@ -160,7 +193,7 @@ export default function AceitarConvite() {
                 {/* Mantém o título atual para os demais fluxos de convite. */}
                 <h1 className="mt-4 text-2xl font-bold text-[#0c2d43]">Convite para acessar uma obra</h1>
                 {/* Preserva empresa, nome, obra e e-mail na tela de gerente. */}
-                <p className="mt-4 text-sm text-slate-700">A empreiteira <strong>{convite.empresa}</strong> convidou <strong>{convite.nome}</strong>{convite.tipo === 'CLIENTE' ? convite.obra ? <> para acompanhar a obra <strong>{convite.obra}</strong>.</> : <> para se cadastrar como cliente e acompanhar as obras vinculadas à sua conta.</> : <> como gerente responsável pela obra <strong>{convite.obra}</strong> ({convite.email}).</>}</p>
+                <p className="mt-4 text-sm text-slate-700">A empreiteira <strong>{convite.empresa}</strong> convidou <strong>{convite.nome}</strong>{convite.tipo === 'CLIENTE' ? convite.obra ? <> para acompanhar a obra <strong>{convite.obra}</strong>.</> : <> para se cadastrar como cliente e acompanhar as obras vinculadas à sua conta.</> : convite.obra ? <> como gerente responsável pela obra <strong>{convite.obra}</strong> ({convite.email}).</> : <> como gerente responsável, sem obra vinculada ({convite.email}).</>}</p>
               </>
             )}
             {/* Preserva as mensagens específicas de convite expirado ou usado. */}
@@ -170,7 +203,7 @@ export default function AceitarConvite() {
                 // Mantém o formulário disponível somente para convites ainda válidos.
                 <form onSubmit={enviar} noValidate={!possuiSessao} className="mt-5 space-y-3">
                   {/* Preserva o texto atual de conta existente fora do novo fluxo de cliente. */}
-                  {!exigeConfirmacaoCliente && <p className="text-xs text-slate-600">Se você já tem uma conta, <Link to="/login" className="text-sky-700 underline">entre primeiro</Link> e volte a este link. Caso contrário, confirme seus dados e crie sua senha.</p>}
+                  {!exigeConfirmacaoCliente && !exigeApresentacaoGerente && <p className="text-xs text-slate-600">Se você já tem uma conta, <Link to="/login" className="text-sky-700 underline">entre primeiro</Link> e volte a este link. Caso contrário, confirme seus dados e crie sua senha.</p>}
                   {/* Solicita o e-mail digitado somente para cliente sem sessão. */}
                   {exigeConfirmacaoCliente && <label className="block text-sm font-medium">Confirme seu e-mail<input required type="email" name="confirmarEmail" autoComplete="off" value={email} onChange={(event) => { setEmail(event.target.value); setErroEmail(''); setErro('') }} className="mt-1 w-full rounded-lg border px-3 py-2" /></label>}
                   {/* Orienta a usar a caixa de e-mail para a qual o convite foi enviado. */}
@@ -180,7 +213,7 @@ export default function AceitarConvite() {
                   {/* Exibe erros do e-mail imediatamente junto ao campo correspondente. */}
                   {exigeConfirmacaoCliente && erroEmail && <p role="alert" className="text-sm font-semibold text-red-800">{erroEmail}</p>}
                   {/* Pede uma senha nova somente quando ainda não existe sessão. */}
-                  {!possuiSessao && <label className="block text-sm font-medium">Crie sua senha<input required type="password" name="senha" autoComplete="new-password" value={senha} onChange={(event) => { setSenha(event.target.value); setErro('') }} className="mt-1 w-full rounded-lg border px-3 py-2" /></label>}
+                  {!possuiSessao && <label className="block text-sm font-medium">{exigeApresentacaoGerente ? 'Senha de acesso' : 'Crie sua senha'}<input required type="password" name="senha" autoComplete="new-password" value={senha} onChange={(event) => { setSenha(event.target.value); setErro('') }} className="mt-1 w-full rounded-lg border px-3 py-2" /></label>}
                   {/* Mostra o andamento das quatro regras enquanto a senha é digitada. */}
                   {!possuiSessao && <ul className="space-y-1 text-xs text-slate-600" aria-label="Regras da senha">{avaliacaoSenha.requisitos.map((requisito) => <li key={requisito.id}><span aria-hidden="true">{requisito.valido ? '✓' : '○'}</span> {requisito.rotulo}</li>)}</ul>}
                   {/* Confirma a senha somente para o novo cadastro de cliente. */}
@@ -191,6 +224,8 @@ export default function AceitarConvite() {
                   <button disabled={carregando} className="w-full rounded-lg bg-[#0c2d43] p-3 font-semibold text-white">{exigeConfirmacaoCliente ? 'Aceitar convite e acessar' : 'Aceitar convite'}</button>
                   {/* Exibe o rodapé aprovado somente para cliente sem sessão. */}
                   {exigeConfirmacaoCliente && <p className="text-xs text-slate-600">Já possui uma conta? <Link to="/login" className="text-sky-700 underline">Entre</Link> com seu acesso existente para aceitar o convite.</p>}
+                  {/* Mantém o convite de gerente sem sessão acessível à conta existente. */}
+                  {exigeApresentacaoGerente && <p className="text-xs text-slate-600">Já possui uma conta? <Link to="/login" className="text-sky-700 underline">Entre</Link> primeiro e retorne a este convite.</p>}
                 </form>
               )}
           </>

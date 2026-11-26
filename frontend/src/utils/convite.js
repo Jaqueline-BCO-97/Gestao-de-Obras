@@ -24,3 +24,25 @@ export function avaliarSenhaConvite(senha) {
   // Retorna o estado completo para a lista visual e o envio do formulário.
   return { requisitos, valida: !pendente, erro: pendente?.erro || '' }
 }
+
+// Prepara os textos seguros que a tela pública usa no convite de gerente.
+export function obterDadosConviteGerente(convite = {}) {
+  // Lê o nome somente quando ele é um texto não vazio.
+  const nome = typeof convite.nome === 'string' ? convite.nome.trim() : ''
+  // Lê a empresa somente quando ela é um texto não vazio.
+  const empresa = typeof convite.empresa === 'string' ? convite.empresa.trim() : ''
+  // Lê a obra somente quando ela é um texto não vazio.
+  const obra = typeof convite.obra === 'string' ? convite.obra.trim() : ''
+  // Lê a função somente quando ela é um texto não vazio.
+  const funcao = typeof convite.funcao === 'string' ? convite.funcao.trim() : ''
+  // Usa uma saudação neutra quando o convite não tem nome.
+  const saudacao = nome ? `Olá, ${nome}!` : 'Olá!'
+  // Inclui o artigo somente quando há nome de empresa para mostrar.
+  const empresaConvite = empresa ? `A ${empresa}` : 'A empresa'
+  // Explica o vínculo futuro sem exibir null ou undefined.
+  const obraVinculada = obra || 'Você será vinculado a uma obra pela administração da empresa.'
+  // Informa que a função será definida pela administração quando vier vazia.
+  const funcaoConvidada = funcao || 'Definida pela administração da empresa'
+  // Devolve somente os textos prontos para exibição escapada pelo React.
+  return { saudacao, empresaConvite, obraVinculada, funcaoConvidada }
+}
