@@ -10,7 +10,9 @@ Os papéis válidos são `ADMIN`, `CLIENTE` e `COLABORADOR`.
 | `GET /` | Público | Mensagem de disponibilidade. |
 | `GET /health` | Público | Informa se o processo está ativo e se `DATABASE_URL` está definida; não testa conexão ao banco. |
 | `POST /auth/login` | Público | Recebe `{ "email", "senha" }`; retorna JWT válido por 8 horas e perfil básico. |
-| `GET /auth/me` | Autenticado | Retorna o perfil atual do usuário. |
+| `POST /auth/registro-empreiteira` | Público | Recebe os dados da empresa e do administrador; `slogan`, `estado`, `cidade`, `bairro`, `numero` e `complemento` são opcionais para manter compatibilidade. |
+| `GET /auth/me` | Autenticado | Retorna o perfil atual do usuário; para ADMIN inclui nome, slogan e endereço da empresa. |
+| `PATCH /usuarios/me` | Autenticado | Atualiza dados do perfil; ADMIN pode enviar `empresa.slogan` e os campos de endereço da empresa. |
 | `GET /usuarios` | ADMIN | Lista usuários da empresa do token, sem hashes de senha. |
 | `POST /colaboradores` | ADMIN | Cria colaborador na empresa do token. Recebe `nome`, `email` e `senha`. |
 | `POST /obras` | ADMIN | Cria obra na empresa do token. Recebe `nome` e, opcionalmente, `descricao` e `endereco`. |
@@ -36,7 +38,11 @@ Login retorna 400 para campos ausentes, 401 para credenciais inválidas e 503 qu
 - `CLIENTE` recebe eventos com `visivelParaCliente: true`. `COLABORADOR` não recebe eventos `pagamento`, `orcamento_aprovado` ou `contratacao`, em linha com o filtro de timeline usado no frontend.
 - Eventos, funcionários escalados e cliente de outra empresa não devem aparecer na resposta.
 
-O objeto de obra usa os campos `id`, `titulo`, `cliente`, `colaboradores`, `endereco`, `status`, `prazo`, `timeline` e, conforme o perfil, `valorTotal`, `parcela1`, `parcela2`, `parcelas` e `resumoParcelas`. Na listagem `GET /obras`, `resumoParcelas` (somente leitura) traz `{ total, pagas, valorParcelaBase, ultimaPaga, penultimaPaga, proximaNaoPaga }` com `{ numero, valor, situacao, estado }` calculado a partir de todas as parcelas da obra usando a mesma regra de atraso do sistema, permitindo exibir cartões de obras com mais de 2 parcelas sem alterar o campo `parcelas`. Datas usam `DD/MM/YYYY`; horários usam `HH:mm`. O schema não possui vencimento de parcela, portanto parcelas pendentes retornam `vencimento: null`. O formato atual legado de `parcela1`/`parcela2` expõe até duas parcelas para compatibilidade.
+O objeto de obra usa os campos `id`, `titulo`, `cliente`, `colaboradores`, `endereco`, `status`, `prazo`, `timeline` e, conforme o perfil, `valorTotal`, `parcela1`, `parcela2`, `parcelas` e `resumoParcelas`. Na listagem `GET /obras`, `resumoParcelas` (somente leitura) traz `{ total, pagas, valorParcelaBase, ultimaPaga, penultimaPaga, proximaNaoPaga }` com `{ numero, valor, situacao, estado }` calculado a partir de todas as parcelas da obra usando a mesma regra de atraso do sistema, permitindo exibir cartões de obras com mais de 2 parcelas sem alterar o campo `parcelas`. Datas usam `DD/MM/YYYY`; horários usam `HH:mm`. O schema possui `Parcela.vencimento`, usado para classificar parcelas não pagas vencidas como atrasadas; o campo `vencimento` aparece formatado nas parcelas quando informado. O formato atual legado de `parcela1`/`parcela2` expõe até duas parcelas para compatibilidade.
+
+## Cadastro e perfil da empresa
+
+`POST /auth/registro-empreiteira` aceita, além dos campos existentes, os campos opcionais `slogan`, `estado`, `cidade`, `bairro`, `numero` e `complemento`. A interface de cadastro exige os campos do endereço completo, mas integrações antigas podem continuar omitindo-os. O campo `slogan` também pode ser alterado por ADMIN em `PATCH /usuarios/me`, dentro do objeto `empresa`. `GET /auth/me` retorna o slogan e os dados de endereço da empresa para ADMIN.
 
 ## Ainda não implementado
 
