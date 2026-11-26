@@ -168,8 +168,40 @@ describe("Convites de cliente e gerente por obra", () => {
     const consulta = await chamar("GET", "/convites/:token", { params: { token: codigo }, usuario: null });
     assert.equal(consulta.statusCode, 200);
     assert.equal(consulta.body.obra, "Obra A");
+    // Confirma que o GET de cliente entrega uma dica mascarada, sem e-mail completo.
+    assert.equal(consulta.body.emailDica, "c*****@teste.local");
+    // Garante que o campo antigo não possa expor o endereço completo para cliente.
+    assert.equal(consulta.body.email, undefined);
 
-    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
+    // Tenta aceitar sem e-mail e confirma que o convite segue intacto.
+    const semEmail = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
+    assert.equal(semEmail.statusCode, 400);
+    // A ausência e a divergência de e-mail usam a mesma resposta genérica.
+    assert.equal(semEmail.body.erro, "Não foi possível confirmar os dados do convite.");
+    // Confirma que o erro não criou cliente nem consumiu o convite.
+    assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 0);
+    assert.equal(convites[0].usadoEm, null);
+
+    // Tenta aceitar com e-mail vazio e confirma a mesma recusa genérica.
+    const emailVazio = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "   ", senha: "senha-segura-123" }, usuario: null });
+    assert.equal(emailVazio.statusCode, 400);
+    // Garante que o e-mail ausente e o vazio não possam ser distinguidos pela resposta.
+    assert.equal(emailVazio.body.erro, semEmail.body.erro);
+    // Confirma que um e-mail vazio também não cria conta nem consome o convite.
+    assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 0);
+    assert.equal(convites[0].usadoEm, null);
+
+    // Tenta aceitar com outro e-mail e confirma que o endereço do convite não é revelado.
+    const emailErrado = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "outro@teste.local", senha: "senha-segura-123" }, usuario: null });
+    assert.equal(emailErrado.statusCode, 400);
+    // Mantém a mesma mensagem genérica para não confirmar o e-mail convidado.
+    assert.equal(emailErrado.body.erro, semEmail.body.erro);
+    // Confirma que a tentativa incorreta não cria usuário nem marca o convite como usado.
+    assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 0);
+    assert.equal(convites[0].usadoEm, null);
+
+    // Aceita com e-mail correto após remover espaços e ignorar maiúsculas.
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "  CLIENTE@TESTE.LOCAL  ", senha: "senha-segura-123" }, usuario: null });
     assert.equal(aceite.statusCode, 200);
     assert.equal(aceite.body.usuario.tipo, "CLIENTE");
     assert.equal(usuarios.find((item) => item.id === aceite.body.usuario.id).cidade, "Santos");
@@ -200,7 +232,7 @@ describe("Convites de cliente e gerente por obra", () => {
 
     // O aceite gera as parcelas conforme quantidade e total da obra.
     const codigo = criado.body.convite.link.split("/").at(-1);
-    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "novo@teste.local", senha: "senha-segura-123" }, usuario: null });
     assert.equal(aceite.statusCode, 200);
     assert.equal(obras[0].quantidadeParcelas, 13);
     assert.equal(Number(obras[0].valorTotal), 1010);
@@ -223,6 +255,9 @@ describe("Convites de cliente e gerente por obra", () => {
     const criado = await chamar("POST", "/convites/gerente", { body: { obraId: "obra-convite-a", nome: "Gerente A", email: "gerente@teste.local", telefone: "11987654321", funcao: "Gerente de obras" } });
     assert.equal(criado.statusCode, 201);
     const codigo = criado.body.convite.link.split("/").at(-1);
+    // Confirma que o GET do gerente continua devolvendo o e-mail usado pelo fluxo atual.
+    const consulta = await chamar("GET", "/convites/:token", { params: { token: codigo }, usuario: null });
+    assert.equal(consulta.body.email, "gerente@teste.local");
     const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
     assert.equal(aceite.statusCode, 200);
     assert.equal(aceite.body.usuario.tipo, "COLABORADOR");
@@ -234,6 +269,24 @@ describe("Convites de cliente e gerente por obra", () => {
     assert.equal(eventos[0].tipo, "EQUIPE");
     assert.equal(eventos[0].visivelParaCliente, false);
     assert.equal(notificacoes.length, 2);
+  });
+
+  // Convites vencidos continuam recusados mesmo quando o e-mail informado é válido.
+  it("recusa convite expirado sem criar usuário", async () => {
+    // Cria um convite de cliente válido pela rota administrativa existente.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente A", email: "cliente@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Confirma que o convite foi criado antes de simular a expiração.
+    assert.equal(criado.statusCode, 201);
+    // Expira o registro em memória sem alterar ou acessar banco compartilhado.
+    convites[0].expiraEm = new Date(Date.now() - 1000);
+    // Tenta aceitar o token já expirado com os dados que seriam válidos.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "cliente@teste.local", senha: "senha-segura-123" }, usuario: null });
+    // Preserva o status existente para convite inválido, expirado ou usado.
+    assert.equal(aceite.statusCode, 410);
+    // Confirma que a expiração não cria usuário nem consome o convite.
+    assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 0);
+    assert.equal(convites[0].usadoEm, null);
   });
 
   it("exige que o cliente esteja vinculado a uma obra e tenha contrato e parcelas", async () => {

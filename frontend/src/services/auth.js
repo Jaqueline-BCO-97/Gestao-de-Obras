@@ -112,9 +112,13 @@ export async function consultarConvite(token) {
   return requisicao(`/convites/${encodeURIComponent(token)}`)
 }
 
-export async function aceitarConvite(token, senha) {
+export async function aceitarConvite(token, senha, email) {
+  // Lê a sessão para preservar o comportamento atual de quem já entrou na conta.
   const sessao = obterToken()
-  return requisicao(`/convites/${encodeURIComponent(token)}/aceitar`, { method: 'POST', body: JSON.stringify({ senha }), ...(sessao ? { headers: { Authorization: `Bearer ${sessao}` } } : {}) })
+  // Inclui o e-mail somente quando o formulário anônimo de cliente o fornece.
+  const dados = { senha, ...(email !== undefined ? { email } : {}) }
+  // Envia a confirmação no corpo e mantém o cabeçalho de sessão existente.
+  return requisicao(`/convites/${encodeURIComponent(token)}/aceitar`, { method: 'POST', body: JSON.stringify(dados), ...(sessao ? { headers: { Authorization: `Bearer ${sessao}` } } : {}) })
 }
 
 export async function convidarPessoa(tipo, dados) {

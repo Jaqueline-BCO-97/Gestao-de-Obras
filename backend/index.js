@@ -175,19 +175,33 @@ app.post("/auth/registro-empreiteira", async (req, res) => {
   }
 });
 
+// Mascara o e-mail no GET de convites de cliente para não expor o endereço completo.
+function mascararEmailConvite(email) {
+  // Divide o endereço em nome e domínio para deixar o domínio visível como dica.
+  const [parteLocal, dominio] = String(email || "").split("@");
+  // Mantém a primeira letra e mascara o restante do nome antes do arroba.
+  const nomeMascarado = `${parteLocal.slice(0, 1)}${"*".repeat(Math.max(1, Math.min(5, parteLocal.length - 1)))}`;
+  // Devolve um texto seguro mesmo se o registro legado tiver um e-mail incompleto.
+  return dominio ? `${nomeMascarado}@${dominio}` : nomeMascarado;
+}
+
 app.get("/convites/:token", async (req, res) => {
   try {
     const prisma = getPrisma();
     if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
     const convite = await prisma.convite.findUnique({ where: { tokenHash: hashConvite(req.params.token) }, include: { empresa: { select: { nome: true } }, obra: { select: { nome: true } } } });
     if (!convite) return res.status(404).json({ erro: "Convite não encontrado" });
-    return res.json({ tipo: convite.tipo, nome: convite.nome, email: convite.email, empresa: convite.empresa.nome, obra: convite.obra?.nome || null, expirado: convite.expiraEm <= new Date(), usado: Boolean(convite.usadoEm) });
+    // Mantém o e-mail completo para gerente e fornece somente uma dica mascarada para cliente.
+    const dadosEmail = convite.tipo === "CLIENTE" ? { emailDica: mascararEmailConvite(convite.email) } : { email: convite.email };
+    // Retorna os dados públicos do convite sem revelar o e-mail de clientes.
+    return res.json({ tipo: convite.tipo, nome: convite.nome, ...dadosEmail, empresa: convite.empresa.nome, obra: convite.obra?.nome || null, expirado: convite.expiraEm <= new Date(), usado: Boolean(convite.usadoEm) });
   } catch (erro) { return res.status(503).json({ erro: "Não foi possível consultar o convite" }); }
 });
 
 app.post("/convites/:token/aceitar", async (req, res) => {
   try {
-    const { senha } = req.body || {};
+    // Lê e-mail e senha sem exigir campos extras dos fluxos de gerente ou usuário logado.
+    const { email, senha } = req.body || {};
     const prisma = getPrisma();
     if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
     const tokenHash = hashConvite(req.params.token);
@@ -202,6 +216,16 @@ app.post("/convites/:token/aceitar", async (req, res) => {
         if (!usuarioSessao || usuarioSessao.email !== decoded.email || usuarioSessao.empresaId !== decoded.empresaId || usuarioSessao.tipo !== decoded.tipo) usuarioSessao = null;
       } catch { usuarioSessao = null; }
     }
+    // Exige a confirmação do e-mail somente de clientes que ainda não têm sessão válida.
+    if (!usuarioSessao && conviteAtual.tipo === "CLIENTE") {
+      // Normaliza o valor informado sem espaços externos e sem diferença entre maiúsculas e minúsculas.
+      const emailInformado = typeof email === "string" ? email.trim().toLowerCase() : "";
+      // Normaliza o endereço salvo no convite usando a mesma regra do valor informado.
+      const emailConvidado = String(conviteAtual.email || "").trim().toLowerCase();
+      // Usa a mesma resposta genérica para e-mail vazio ou diferente, antes de abrir a transação.
+      if (!emailInformado || emailInformado !== emailConvidado) return res.status(400).json({ erro: "Não foi possível confirmar os dados do convite." });
+    }
+    // Preserva a regra existente de senha mínima para qualquer cadastro sem sessão.
     if (!usuarioSessao && (typeof senha !== "string" || senha.length < 8)) return res.status(400).json({ erro: "A senha deve ter pelo menos 8 caracteres" });
     const senhaHash = usuarioSessao ? null : await bcrypt.hash(senha, 10);
     const usuario = await prisma.$transaction(async (tx) => {

@@ -1,7 +1,7 @@
 // Importa os hooks useEffect e useState do React para ciclo de vida e estados da tela.
 import { useEffect, useState } from 'react'
 // Importa Link e useNavigate do React Router para navegação entre telas.
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 // Importa o componente de botão reutilizável do sistema.
 import Button from '../../components/Button.jsx'
 // Importa o componente de input reutilizável usado na seção de segurança.
@@ -98,6 +98,19 @@ function AcoesEdicaoSecao({ salvando, aoCancelar }) {
 export default function Perfil() {
   // Hook do React Router para navegar de volta ao painel do perfil logado.
   const navigate = useNavigate()
+  // Lê a mensagem temporária enviada após o aceite de um convite.
+  const location = useLocation()
+  // Guarda a mensagem localmente para que apareça apenas nesta visita ao Perfil.
+  const [mensagemBoasVindas] = useState(() => location.state?.mensagemBoasVindas || '')
+
+  // Remove a mensagem do histórico após copiá-la para o estado desta tela.
+  useEffect(() => {
+    // Só altera a navegação quando a mensagem de convite está presente.
+    if (location.state?.mensagemBoasVindas) {
+      // Substitui o estado da rota para impedir que a mensagem reapareça ao atualizar a página.
+      navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [location.key, location.pathname, location.state, navigate])
 
   // Lê o usuário salvo localmente na inicialização para já montar os campos sem esperar a API.
   const [usuario, setUsuario] = useState(() => obterUsuarioLocal())
@@ -654,6 +667,8 @@ export default function Perfil() {
 
         {/* Área central responsiva contendo cabeçalho e a grade de 12 colunas no desktop */}
         <main className="mx-auto w-[min(1120px,calc(100%-64px))] py-7 max-[920px]:w-[min(720px,calc(100%-44px))] max-[620px]:w-[calc(100%-32px)] max-[620px]:py-[23px] max-[360px]:w-[calc(100%-24px)]">
+          {/* Mostra a boas-vindas somente quando a navegação veio do aceite do convite. */}
+          {mensagemBoasVindas && <p role="status" className="mb-4 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">{mensagemBoasVindas}</p>}
           {/* Título da página com Avatar e apresentação */}
           <div className="mb-[19px] flex items-center gap-4 max-[620px]:mb-4">
             <Avatar nome={usuario?.nome} src={fotoPerfil} className="h-16 w-16 border-slate-200 max-[360px]:h-14 max-[360px]:w-14" />
