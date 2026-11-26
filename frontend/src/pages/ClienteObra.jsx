@@ -16,7 +16,9 @@ import HistoricoObra from '../components/HistoricoObra.jsx'
 import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 import { buscarObra, confirmarConclusaoObra } from '../services/auth.js'
 import { consultaAindaPertenceAObra, criarRastreadorObra, detectarNovosAgendamentos, registrarEventosConhecidos, registrarListenerOnline } from '../utils/eventosAgendamento.js'
-import { textoDataParcela } from '../utils/formatacaoParcela.js'
+// Importa o componente de resumo de parcelas e o utilitário para remover parênteses do texto financeiro.
+import ResumoParcelas from '../components/ResumoParcelas.jsx'
+import { removerParentesesResumo } from '../utils/resumoParcelas.js'
 import useConfirmacao from '../components/useConfirmacao.jsx'
 
 // Componente da página de Detalhes da Obra do Cliente (/cliente/obra/:id)
@@ -251,21 +253,21 @@ function ClienteObraConteudo({ id }) {
           </div>
         </section>
 
-        {/* Bloco 2: Valores Financeiros da Obra (Valor Total e as 2 Parcelas de 50%) */}
+        {/* Bloco 2: Valores Financeiros da Obra (Valor Total e Resumo de Parcelas) */}
         <section aria-label="Informações financeiras e parcelas">
           {/* Título da seção financeira */}
           <div className="mb-3">
             <h2 className="text-lg font-bold text-navy">
               Informações Financeiras
             </h2>
+            {/* Exibe o resumo contratual sem parênteses ao redor do número de parcelas */}
             <p className="text-xs text-slate-500">
-              {obra.resumoFinanceiro || `Detalhamento do investimento total e das ${obra.parcelas?.length || 2} parcelas.`}
+              {removerParentesesResumo(obra.resumoFinanceiro) || `Detalhamento do investimento total e das ${obra.parcelas?.length || 2} parcelas.`}
             </p>
           </div>
 
-          {/* Grade com 3 cartões financeiros reutilizando o componente Card */}
-          {((obra.parcelas || []).length === 0 || (obra.parcelas || []).length === 2) && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
+          {/* Grade com Valor Total e o resumo padronizado de Parcelas (sem parênteses e até 2 linhas) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
             {/* Cartão 1: Valor Total Contratado */}
             <Card
               label="Valor Total da Obra"
@@ -278,77 +280,15 @@ function ClienteObraConteudo({ id }) {
                 </svg>
               }
             >
-              {/* Informação adicional de rodapé do card */}
+              {/* Informação adicional de rodapé do card sem parênteses */}
               <p className="mt-2 text-xs text-slate-500 border-t border-slate-100 pt-2">
-                {obra.resumoFinanceiro || 'Contrato fechado com divisão em 2 etapas'}
+                {removerParentesesResumo(obra.resumoFinanceiro) || 'Contrato fechado com divisão em 2 etapas'}
               </p>
             </Card>
 
-            {/* Cartão 2: 1ª Parcela (50%) */}
-            <Card
-              label="1ª Parcela (Entrada)"
-              value={formatarMoeda(obra.parcela1.valor)}
-              accent={obra.parcela1.situacao === 'paga' ? 'border-emerald-500' : 'border-amber-500'}
-              icon={
-                // Ícone representando fatura / parcela
-                <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-              }
-            >
-              {/* Status e data da primeira parcela */}
-              <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
-                <span className="text-slate-500">Situação:</span>
-                <span
-                  className={`px-2 py-0.5 rounded-full font-bold capitalize text-[11px] ${
-                    obra.parcela1.situacao === 'paga'
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      : 'bg-amber-50 text-amber-700 border border-amber-200'
-                  }`}
-                >
-                  {obra.parcela1.situacao === 'paga' ? '✓ Paga' : '⏳ Pendente'}
-                </span>
-              </div>
-              <p className="mt-1 text-[11px] text-slate-400">
-                {textoDataParcela(obra.parcela1)}
-              </p>
-            </Card>
-
-            {/* Cartão 3: 2ª Parcela (50%) */}
-            <Card
-              label="2ª Parcela (Final)"
-              value={formatarMoeda(obra.parcela2.valor)}
-              accent={obra.parcela2.situacao === 'paga' ? 'border-emerald-500' : 'border-amber-500'}
-              icon={
-                // Ícone representando conclusão de pagamento
-                <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-              }
-            >
-              {/* Status e data da segunda parcela */}
-              <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
-                <span className="text-slate-500">Situação:</span>
-                <span
-                  className={`px-2 py-0.5 rounded-full font-bold capitalize text-[11px] ${
-                    obra.parcela2.situacao === 'paga'
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      : 'bg-amber-50 text-amber-700 border border-amber-200'
-                  }`}
-                >
-                  {obra.parcela2.situacao === 'paga' ? '✓ Paga' : '⏳ Pendente'}
-                </span>
-              </div>
-              <p className="mt-1 text-[11px] text-slate-400">
-                {textoDataParcela(obra.parcela2)}
-              </p>
-            </Card>
-
-          </div>}
-          {(obra.parcelas || []).length > 0 && (obra.parcelas || []).length !== 2 && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{obra.parcelas.map((parcela) => {
-            const vencida = parcela.situacao !== 'paga' && parcela.vencimento && new Date(`${parcela.vencimento.split('/').reverse().join('-')}T23:59:59`) < new Date()
-            return <article key={parcela.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-2"><h3 className="font-bold text-navy">{parcela.numero}ª parcela</h3><span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${parcela.situacao === 'paga' ? 'bg-emerald-50 text-emerald-700' : vencida ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>{parcela.situacao === 'paga' ? 'Paga' : vencida ? 'Atrasada' : 'Pendente'}</span></div><p className="mt-2 text-lg font-bold">{formatarMoeda(parcela.valor)}</p><p className="mt-1 text-xs text-slate-500">Vencimento: {parcela.vencimento || 'A definir'}</p></article>
-          })}</div>}
+            {/* Cartão 2: Resumo de Parcelas calculado sobre o conjunto completo de parcelas do detalhe */}
+            <ResumoParcelas obra={obra} origem="parcelas" className="bg-white p-5 shadow-sm" />
+          </div>
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">

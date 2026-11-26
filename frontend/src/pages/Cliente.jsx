@@ -13,6 +13,8 @@ import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 import { listarObras } from '../services/auth.js'
 import { detectarNovosAgendamentos, registrarEventosConhecidos, registrarListenerOnline } from '../utils/eventosAgendamento.js'
+// Importa o componente padronizado de resumo de parcelas para os cartões da listagem.
+import ResumoParcelas from '../components/ResumoParcelas.jsx'
 
 // Componente principal da página do Painel do Cliente (/cliente)
 export default function Cliente() {
@@ -188,34 +190,8 @@ export default function Cliente() {
 
                   </div>
 
-                  {/* Resumo financeiro rápido das parcelas da obra */}
-                  <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 mb-4 text-xs">
-                    <p className="font-semibold text-slate-700 mb-1.5">Pagamento das Parcelas:</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {/* Status da Parcela 1 */}
-                      <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded border border-slate-200">
-                        <span className="text-slate-500">1ª Parcela:</span>
-                        <span
-                          className={`font-semibold capitalize text-[11px] ${
-                            obra.parcela1?.situacao === 'paga' ? 'text-emerald-600' : 'text-amber-600'
-                          }`}
-                        >
-                          {obra.parcela1?.situacao || 'pendente'}
-                        </span>
-                      </div>
-                      {/* Status da Parcela 2 */}
-                      <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded border border-slate-200">
-                        <span className="text-slate-500">2ª Parcela:</span>
-                        <span
-                          className={`font-semibold capitalize text-[11px] ${
-                            obra.parcela2?.situacao === 'paga' ? 'text-emerald-600' : 'text-amber-600'
-                          }`}
-                        >
-                          {obra.parcela2?.situacao || 'pendente'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                  {/* Resumo financeiro das parcelas usando o campo resumoParcelas vindo da listagem */}
+                  <ResumoParcelas obra={obra} origem="resumo" compacto className="mb-4" />
                 </div>
 
                 {/* Rodapé do card contendo o valor total em destaque e o botão de ação */}

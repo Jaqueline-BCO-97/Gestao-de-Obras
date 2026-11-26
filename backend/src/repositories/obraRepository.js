@@ -545,6 +545,90 @@ function formatarStatus(status) {
   return rotulos[status] || status;
 }
 
+// Calcula a situação padronizada da parcela reutilizando exatamente a regra de atraso do sistema.
+function calcularSituacaoParcela(parcela, agora = new Date()) {
+  // Normaliza a data de vencimento vinda do banco ou de JSON agregado.
+  const vencimento = normalizarData(parcela?.vencimento);
+  // Considera atrasada somente se não estiver paga e o vencimento já tiver passado.
+  const emAtraso = parcela?.situacao !== "PAGA" && Boolean(vencimento && vencimento < agora);
+  // Retorna "paga", "atrasada" ou "pendente" conforme o estado atual.
+  return parcela?.situacao === "PAGA" ? "paga" : emAtraso ? "atrasada" : "pendente";
+}
+
+// Converte uma parcela bruta para o item resumido somente leitura exposto em resumoParcelas.
+function formatarItemResumoParcela(parcela) {
+  // Retorna nulo quando não houver parcela correspondente.
+  if (!parcela) return null;
+  // Reaproveita a regra oficial de cálculo de situação da parcela.
+  const situacao = calcularSituacaoParcela(parcela);
+  // Converte a situação para o rótulo padronizado da interface ("Pago", "Atrasada" ou "Pendente").
+  const estado = situacao === "paga" ? "Pago" : situacao === "atrasada" ? "Atrasada" : "Pendente";
+  // Devolve número, valor numérico, código da situação e rótulo do estado.
+  return {
+    numero: Number(parcela.numero),
+    valor: Number(parcela.valor),
+    situacao,
+    estado,
+  };
+}
+
+// Monta o campo somente leitura resumoParcelas a partir do agregado SQL da listagem ou das parcelas completas.
+function formatarResumoParcelas(obra, parcelasOrdenadas = []) {
+  // Quando a listagem SQL trouxe o agregado completo das parcelas da obra, usa esses dados.
+  const agregadoSql = obra?.resumoParcelasSql;
+  if (agregadoSql && typeof agregadoSql === "object") {
+    // Ordena as até duas últimas parcelas pagas em ordem crescente pelo número.
+    const ultimasPagas = (Array.isArray(agregadoSql.ultimasPagas) ? agregadoSql.ultimasPagas : [])
+      .filter(Boolean)
+      .sort((a, b) => Number(a.numero) - Number(b.numero));
+    // Separa a última paga (maior número) e a penúltima paga (para quando todas estiverem pagas).
+    const ultimaPagaBruta = ultimasPagas.length ? ultimasPagas[ultimasPagas.length - 1] : null;
+    const penultimaPagaBruta = ultimasPagas.length >= 2 ? ultimasPagas[ultimasPagas.length - 2] : null;
+    // Lê a próxima parcela não paga (menor número diferente de PAGA).
+    const proximaNaoPagaBruta = agregadoSql.proximaNaoPaga || null;
+    // Usa o total contado no banco (ou quantidade cadastrada na obra como alternativa).
+    const total = Number(agregadoSql.total ?? obra.quantidadeParcelas ?? parcelasOrdenadas.length ?? 0);
+    // Usa a contagem de parcelas quitadas retornada pela consulta.
+    const pagas = Number(agregadoSql.pagas ?? 0);
+    // Usa o valor real da primeira parcela para o cabeçalho (ex.: "12 parcelas de R$ X").
+    const valorParcelaBase = agregadoSql.valorParcelaPadrao !== null && agregadoSql.valorParcelaPadrao !== undefined
+      ? Number(agregadoSql.valorParcelaPadrao)
+      : (parcelasOrdenadas[0] ? Number(parcelasOrdenadas[0].valor) : null);
+
+    // Devolve o resumo somente leitura para os cartões da listagem.
+    return {
+      total,
+      pagas,
+      valorParcelaBase,
+      ultimaPaga: formatarItemResumoParcela(ultimaPagaBruta),
+      penultimaPaga: formatarItemResumoParcela(penultimaPagaBruta),
+      proximaNaoPaga: formatarItemResumoParcela(proximaNaoPagaBruta),
+    };
+  }
+
+  // Quando todas as parcelas já estão carregadas em memória (detalhes ou mocks), calcula diretamente delas.
+  const pagasLista = parcelasOrdenadas.filter((parcela) => parcela?.situacao === "PAGA");
+  const naoPagasLista = parcelasOrdenadas.filter((parcela) => parcela?.situacao !== "PAGA");
+  // Calcula total de parcelas existentes ou cadastradas na obra.
+  const total = parcelasOrdenadas.length || Number(obra?.quantidadeParcelas || 0);
+  // Identifica a última paga, a penúltima paga e a próxima não paga.
+  const ultimaPagaBruta = pagasLista.length ? pagasLista[pagasLista.length - 1] : null;
+  const penultimaPagaBruta = pagasLista.length >= 2 ? pagasLista[pagasLista.length - 2] : null;
+  const proximaNaoPagaBruta = naoPagasLista.length ? naoPagasLista[0] : null;
+  // Mantém o valor real da primeira parcela como valor base do cabeçalho.
+  const valorParcelaBase = parcelasOrdenadas[0] ? Number(parcelasOrdenadas[0].valor) : null;
+
+  // Devolve o mesmo contrato somente leitura.
+  return {
+    total,
+    pagas: pagasLista.length,
+    valorParcelaBase,
+    ultimaPaga: formatarItemResumoParcela(ultimaPagaBruta),
+    penultimaPaga: formatarItemResumoParcela(penultimaPagaBruta),
+    proximaNaoPaga: formatarItemResumoParcela(proximaNaoPagaBruta),
+  };
+}
+
 // Converte uma parcela do banco para o mesmo formato do mock.
 function formatarParcela(parcela) {
   // Retorna nulo quando a obra não possui esta parcela.
@@ -560,8 +644,8 @@ function formatarParcela(parcela) {
   // Saldo devedor considera apenas aprovações; reservas são informadas separadamente.
   const saldoDevedor = parcela.situacao === "PAGA" ? 0 : Math.max(0, valor - aprovado);
   const saldoDisponivel = Math.max(0, saldoDevedor - reservado);
-  const emAtraso = parcela.situacao !== "PAGA" && vencimento && vencimento < new Date();
-  const resposta = { id: parcela.id, numero: parcela.numero, valor, situacao: parcela.situacao === "PAGA" ? "paga" : emAtraso ? "atrasada" : "pendente", valorPago: parcela.situacao === "PAGA" ? valor : aprovado, valorReservado: reservado, saldoDevedor, saldoDisponivel, vencimento: formatarData(vencimento), vencimentoISO: vencimento ? vencimento.toISOString().slice(0, 10) : "", comprovanteUrl: parcela.comprovanteUrl, tentativasPendentes: pagamentos.filter((pagamento) => pagamento.status === "PENDENTE").map((pagamento) => ({ id: pagamento.id, valor: Number(pagamento.valor) })) };
+  const situacao = calcularSituacaoParcela(parcela);
+  const resposta = { id: parcela.id, numero: parcela.numero, valor, situacao, valorPago: parcela.situacao === "PAGA" ? valor : aprovado, valorReservado: reservado, saldoDevedor, saldoDisponivel, vencimento: formatarData(vencimento), vencimentoISO: vencimento ? vencimento.toISOString().slice(0, 10) : "", comprovanteUrl: parcela.comprovanteUrl, tentativasPendentes: pagamentos.filter((pagamento) => pagamento.status === "PENDENTE").map((pagamento) => ({ id: pagamento.id, valor: Number(pagamento.valor) })) };
   // Inclui a data do pagamento quando a parcela foi quitada.
   if (pagaEm) resposta.pagamento = formatarData(pagaEm);
   // Inclui quando o cliente enviou um comprovante.
@@ -652,6 +736,8 @@ function formatarObra(obra, tipo) {
     resposta.taxaJurosMensal = Number(obra.taxaJurosMensal || 0);
     resposta.valorBase = Number(obra.valorBase || obra.valorTotal);
     resposta.parcelas = parcelas.map(formatarParcela);
+    // Adiciona campo novo somente leitura com o resumo agregado das parcelas (não exposto ao colaborador).
+    resposta.resumoParcelas = formatarResumoParcelas(obra, parcelas);
     resposta.resumoFinanceiro = `Contrato fechado com divisão em (${obra.quantidadeParcelas || parcelas.length}) etapas`;
     // Converte a primeira parcela para o campo usado pelo mock.
     resposta.parcela1 = formatarParcela(parcelas[0]);
@@ -689,6 +775,32 @@ function jsonEventos(empresaId, limitar) {
       ${limite}
     ) evento
   ), '[]'::jsonb)`;
+}
+
+// Agrega em JSON somente os dados necessários para montar resumoParcelas na listagem GET /obras.
+function jsonResumoParcelas() {
+  return Prisma.sql`jsonb_build_object(
+    'total', (SELECT COUNT(*)::int FROM "Parcela" p WHERE p."obraId" = o.id),
+    'pagas', (SELECT COUNT(*)::int FROM "Parcela" p WHERE p."obraId" = o.id AND p.situacao = 'PAGA'),
+    'valorParcelaPadrao', (SELECT p0.valor FROM "Parcela" p0 WHERE p0."obraId" = o.id ORDER BY p0.numero ASC LIMIT 1),
+    'ultimasPagas', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object('numero', p1.numero, 'valor', p1.valor, 'situacao', p1.situacao, 'vencimento', p1.vencimento) ORDER BY p1.numero ASC)
+      FROM (
+        SELECT p.numero, p.valor, p.situacao, p.vencimento
+        FROM "Parcela" p
+        WHERE p."obraId" = o.id AND p.situacao = 'PAGA'
+        ORDER BY p.numero DESC
+        LIMIT 2
+      ) p1
+    ), '[]'::jsonb),
+    'proximaNaoPaga', (
+      SELECT jsonb_build_object('numero', p2.numero, 'valor', p2.valor, 'situacao', p2.situacao, 'vencimento', p2.vencimento)
+      FROM "Parcela" p2
+      WHERE p2."obraId" = o.id AND p2.situacao <> 'PAGA'
+      ORDER BY p2.numero ASC
+      LIMIT 1
+    )
+  )`;
 }
 
 function jsonParcelas(limitar) {
@@ -779,6 +891,8 @@ function consultaListaObras(empresaId, usuarioId, tipo, { incluirArquivadas = fa
     colunas.push(
       Prisma.sql`o."valorTotal"`, Prisma.sql`o."valorBase"`, Prisma.sql`o."quantidadeParcelas"`, Prisma.sql`o."taxaJurosMensal"`,
       Prisma.sql`${jsonParcelas(!detalhesCompletos)} AS parcelas`,
+      // Inclui agregado somente leitura de todas as parcelas na listagem sem alterar o campo parcelas existente.
+      Prisma.sql`${jsonResumoParcelas()} AS "resumoParcelasSql"`,
     );
   }
   colunas.push(Prisma.sql`${jsonEscalas(empresaId, tipo)} AS escalas`);

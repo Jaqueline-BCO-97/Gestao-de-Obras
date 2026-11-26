@@ -32,11 +32,11 @@ Login retorna 400 para campos ausentes, 401 para credenciais inválidas e 503 qu
 - `ADMIN` recebe todas as obras da empresa do token.
 - `CLIENTE` recebe somente obras cujo `clienteId` corresponde ao próprio usuário.
 - `COLABORADOR` recebe somente obras com escala aberta de funcionário associado ao usuário e à mesma empresa.
-- `valorTotal` e parcelas são enviados a `ADMIN` e `CLIENTE`, e omitidos para `COLABORADOR`.
+- `valorTotal`, parcelas e `resumoParcelas` são enviados a `ADMIN` e `CLIENTE`, e omitidos para `COLABORADOR` (regra RN15).
 - `CLIENTE` recebe eventos com `visivelParaCliente: true`. `COLABORADOR` não recebe eventos `pagamento`, `orcamento_aprovado` ou `contratacao`, em linha com o filtro de timeline usado no frontend.
 - Eventos, funcionários escalados e cliente de outra empresa não devem aparecer na resposta.
 
-O objeto de obra usa os campos `id`, `titulo`, `cliente`, `colaboradores`, `endereco`, `status`, `prazo`, `timeline` e, conforme o perfil, `valorTotal`, `parcela1` e `parcela2`. Datas usam `DD/MM/YYYY`; horários usam `HH:mm`. O schema não possui vencimento de parcela, portanto parcelas pendentes retornam `vencimento: null`. O formato atual expõe no máximo duas parcelas.
+O objeto de obra usa os campos `id`, `titulo`, `cliente`, `colaboradores`, `endereco`, `status`, `prazo`, `timeline` e, conforme o perfil, `valorTotal`, `parcela1`, `parcela2`, `parcelas` e `resumoParcelas`. Na listagem `GET /obras`, `resumoParcelas` (somente leitura) traz `{ total, pagas, valorParcelaBase, ultimaPaga, penultimaPaga, proximaNaoPaga }` com `{ numero, valor, situacao, estado }` calculado a partir de todas as parcelas da obra usando a mesma regra de atraso do sistema, permitindo exibir cartões de obras com mais de 2 parcelas sem alterar o campo `parcelas`. Datas usam `DD/MM/YYYY`; horários usam `HH:mm`. O schema não possui vencimento de parcela, portanto parcelas pendentes retornam `vencimento: null`. O formato atual legado de `parcela1`/`parcela2` expõe até duas parcelas para compatibilidade.
 
 ## Ainda não implementado
 
