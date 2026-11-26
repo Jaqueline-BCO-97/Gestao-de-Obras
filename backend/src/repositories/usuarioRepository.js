@@ -100,7 +100,7 @@ async function buscarPerfilUsuarioPorId(id) {
         'funcao', funcionario.funcao, 'telefone', funcionario.telefone, 'fotoUrl', funcionario."fotoUrl"
       ) END AS funcionario,
       CASE WHEN empresa.id IS NULL THEN NULL ELSE jsonb_build_object(
-        'nome', empresa.nome, 'cnpj', empresa.cnpj, 'cpfResponsavel', empresa."cpfResponsavel",
+        'nome', empresa.nome, 'slogan', empresa.slogan, 'cnpj', empresa.cnpj, 'cpfResponsavel', empresa."cpfResponsavel",
         'telefone', empresa.telefone, 'telefoneSecundario', empresa."telefoneSecundario",
         'enderecoResponsavel', empresa."enderecoResponsavel", 'endereco', empresa.endereco,
         'estado', empresa.estado, 'cidade', empresa.cidade, 'bairro', empresa.bairro,

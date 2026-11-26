@@ -50,6 +50,32 @@ export const colaboradoresMock = [
     // Telefone celular formatado para contato
     telefone: '(19) 95432-1098',
   },
+  // Colaborador 5: gerente de demonstração sem obras nem dias programados
+  {
+    // Identificador numérico exclusivo de Luciano Oliveira
+    id: 5,
+    // Nome completo do profissional responsável
+    nome: 'Luciano Oliveira',
+    // Função profissional informada para a conta demo
+    funcao: 'Engenheiro',
+    // Registra o nível Responsável usado pela regra de alocação
+    nivel: 'RESPONSAVEL',
+    // Mantém o telefone vazio porque não foi definido para a demonstração
+    telefone: '',
+  },
+  // Colaborador 6: gerente de demonstração sem obras nem dias programados
+  {
+    // Identificador numérico exclusivo de Jhonatan Bruno
+    id: 6,
+    // Nome completo do profissional responsável
+    nome: 'Jhonatan Bruno',
+    // Função profissional informada para a conta demo
+    funcao: 'Arquiteto',
+    // Registra o nível Responsável usado pela regra de alocação
+    nivel: 'RESPONSAVEL',
+    // Mantém o telefone vazio porque não foi definido para a demonstração
+    telefone: '',
+  },
 ]
 
 // Devolve as obras que incluem o identificador do colaborador na escala

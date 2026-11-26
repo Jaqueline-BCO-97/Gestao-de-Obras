@@ -128,7 +128,7 @@ Cadastre cada item como issue separada, usando o título, critérios e label aba
 ### N15 — Atualizar o cabeçalho do gerente
 
 - **Label:** `ux`, `perfil`
-- **Critérios:** cabeçalho do gerente mostra foto de `foto-colaborador.png`, tem espaço adequado e não mostra o selo “Acesso Operacional”.
+- **Critérios:** cabeçalho do gerente mostra a foto de demonstração em `/foto-perfil/foto-colaborador1.png`, tem espaço adequado e não mostra o selo “Acesso Operacional”.
 - **Situação nesta branch:** implementada em `Colaborador.jsx`.
 
 ### N16 — Revogar acesso ao mover ou remover gerente

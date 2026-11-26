@@ -84,6 +84,8 @@ async function executarRequisicao(caminho, opcoes = {}) {
     const erro = new Error(dados.erro || 'Não foi possível concluir a solicitação.')
     // Anexa o código de status HTTP retornado pelo servidor ao erro
     erro.status = resposta.status
+    // Preserva códigos funcionais para que a tela trate cada campo com a mensagem certa.
+    erro.codigo = dados.codigo
     erro.tentativaFinalizada = Boolean(dados.tentativaFinalizada)
     // Lança o erro para a camada superior tratar
     throw erro
@@ -112,9 +114,13 @@ export async function consultarConvite(token) {
   return requisicao(`/convites/${encodeURIComponent(token)}`)
 }
 
-export async function aceitarConvite(token, senha) {
+export async function aceitarConvite(token, senha, email) {
+  // Lê a sessão para preservar o comportamento atual de quem já entrou na conta.
   const sessao = obterToken()
-  return requisicao(`/convites/${encodeURIComponent(token)}/aceitar`, { method: 'POST', body: JSON.stringify({ senha }), ...(sessao ? { headers: { Authorization: `Bearer ${sessao}` } } : {}) })
+  // Inclui o e-mail somente quando o formulário anônimo de cliente o fornece.
+  const dados = { senha, ...(email !== undefined ? { email } : {}) }
+  // Envia a confirmação no corpo e mantém o cabeçalho de sessão existente.
+  return requisicao(`/convites/${encodeURIComponent(token)}/aceitar`, { method: 'POST', body: JSON.stringify(dados), ...(sessao ? { headers: { Authorization: `Bearer ${sessao}` } } : {}) })
 }
 
 export async function convidarPessoa(tipo, dados) {
@@ -192,8 +198,14 @@ export function salvarSessao({ token, usuario }, lembrarDeMim) {
 
 // Função para simular uma sessão mock (útil para desenvolvimento, testes e navegação sem backend)
 export function salvarSessaoMock(tipo = 'CLIENTE') {
-  // Define o nome amigável do usuário: para COLABORADOR usamos o nome do profissional fake, senão o padrão
-  const nomeUsuario = tipo === 'COLABORADOR' ? 'Carlos Eduardo da Silva' : `Usuário Demonstração (${tipo})`
+  // Define os nomes reais das contas demo já existentes nos perfis locais.
+  const nomesDemo = {
+    ADMIN: 'Carla Kleia',
+    CLIENTE: 'Marthania Soares',
+    COLABORADOR: 'Carlos Eduardo da Silva',
+  }
+  // Mantém um nome genérico para qualquer perfil mock não listado.
+  const nomeUsuario = nomesDemo[tipo] || 'Usuário Demonstração (' + tipo + ')'
 
   // Cria um objeto de sessão simulada com dados válidos de teste
   const sessaoMock = {
@@ -207,6 +219,8 @@ export function salvarSessaoMock(tipo = 'CLIENTE') {
       nome: nomeUsuario,
       // E-mail fictício de teste
       email: `demo.${tipo.toLowerCase()}@obramaster.local`,
+      // Inclui a empresa demo no perfil administrativo usado sem a API.
+      ...(tipo === 'ADMIN' ? { empresa: { nome: 'CaiPim Reformas', slogan: 'O toque final que dá vida ao seu projeto.' } } : {}),
       // Perfil/tipo do usuário (CLIENTE, ADMIN ou COLABORADOR)
       tipo: tipo,
     },
@@ -294,6 +308,17 @@ export async function registrarAndamentoObra(obraId, descricao, tipo, foto, visi
 
 export async function atualizarObra(id, dados) {
   return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) })
+}
+
+// Atualiza as datas das parcelas pela rota dedicada de vencimento da obra.
+export async function atualizarVencimentoObra(id, vencimentoInicial) {
+  // Mantém o nome do campo compatível com o PATCH legado.
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/vencimento`, {
+    // Envia somente a data inicial para evitar qualquer recálculo financeiro.
+    method: 'PATCH',
+    // Serializa a data no formato aceito pelo cadastro de obra.
+    body: JSON.stringify({ vencimentoInicial }),
+  })
 }
 
 export async function anexarContratoObra(id, arquivo, termos = '') {

@@ -164,7 +164,7 @@ function criarPerfilAdminSql() {
     bairro: "Centro", numero: "10", complemento: null, apartamento: null, bloco: null, semApartamento: true, semBloco: true, cpf: null,
     funcionario: null,
     empresa: {
-      nome: "Empreiteira Teste", cnpj: "12345678000199", cpfResponsavel: null, telefone: "1130000000", telefoneSecundario: null,
+      nome: "Empreiteira Teste", slogan: "Obras com cuidado", cnpj: "12345678000199", cpfResponsavel: null, telefone: "1130000000", telefoneSecundario: null,
       enderecoResponsavel: null, endereco: "Av. B", estado: "SP", cidade: "Campinas", bairro: "Jardim", numero: "20", complemento: null,
     },
   };
@@ -277,11 +277,13 @@ describe("consultas agregadas de obras", () => {
     assert.equal(chamadas.length, 1);
     assert.match(chamadas[0].text, /LEFT JOIN "Funcionario" funcionario/);
     assert.match(chamadas[0].text, /LEFT JOIN "Empresa" empresa/);
+    assert.match(chamadas[0].text, /'slogan', empresa\.slogan/);
 
     chamadas.splice(0);
     const resposta = await requisitarPelaRota("/auth/me", perfil, {}, {}, false);
     assert.equal(resposta.status, 200);
     assert.equal(resposta.body.usuario.empresa.nome, "Empreiteira Teste");
+    assert.equal(resposta.body.usuario.empresa.slogan, "Obras com cuidado");
     assert.equal(chamadas.length, 2);
     assert.match(chamadas[0].text, /LEFT JOIN "Funcionario" funcionario/);
     assert.match(chamadas[1].text, /LEFT JOIN "Empresa" empresa/);
@@ -428,5 +430,127 @@ describe("consultas agregadas de obras", () => {
     assert.equal(formatada.parcelas[0].vencimento, null);
     assert.equal(formatada.parcelas[0].vencimentoISO, "");
     assert.equal(formatada.contrato.criadoEm, null);
+  });
+
+  // Garante a exposição somente leitura de resumoParcelas na listagem GET /obras e o isolamento por perfil.
+  it("expõe resumoParcelas em GET /obras para ADMIN e CLIENTE e omite para COLABORADOR", async () => {
+    // Caso 1: nenhuma parcela paga (12 parcelas).
+    const obraNenhumaPaga = criarLinhaSql("obra-nenhuma", 1, "ADMIN");
+    obraNenhumaPaga.quantidadeParcelas = 12;
+    obraNenhumaPaga.resumoParcelasSql = {
+      total: 12,
+      pagas: 0,
+      valorParcelaPadrao: "1000.00",
+      ultimasPagas: [],
+      proximaNaoPaga: { numero: 1, valor: "1000.00", situacao: "PENDENTE", vencimento: "2028-01-10T12:00:00.000Z" },
+    };
+
+    // Caso 2: obra com mais de 2 parcelas (12), duas primeiras pagas e 3ª atrasada (mesmo com parcelas[] limitado a 2).
+    const obraMaisDeDuas = criarLinhaSql("obra-12", 2, "CLIENTE");
+    obraMaisDeDuas.quantidadeParcelas = 12;
+    obraMaisDeDuas.parcelas = obraMaisDeDuas.parcelas.map((parcela) => ({ ...parcela, situacao: "PAGA" }));
+    obraMaisDeDuas.resumoParcelasSql = {
+      total: 12,
+      pagas: 2,
+      valorParcelaPadrao: "1000.00",
+      ultimasPagas: [
+        { numero: 1, valor: "1000.00", situacao: "PAGA", vencimento: "2025-01-10T12:00:00.000Z" },
+        { numero: 2, valor: "1000.00", situacao: "PAGA", vencimento: "2025-02-10T12:00:00.000Z" },
+      ],
+      proximaNaoPaga: { numero: 3, valor: "1000.00", situacao: "PENDENTE", vencimento: "2025-03-10T12:00:00.000Z" },
+    };
+
+    // Caso 3: todas pagas com diferença de centavos na última parcela (12ª).
+    const obraTodasPagas = criarLinhaSql("obra-quitada", 1, "ADMIN");
+    obraTodasPagas.quantidadeParcelas = 12;
+    obraTodasPagas.resumoParcelasSql = {
+      total: 12,
+      pagas: 12,
+      valorParcelaPadrao: "833.33",
+      ultimasPagas: [
+        { numero: 11, valor: "833.33", situacao: "PAGA", vencimento: "2026-11-10T12:00:00.000Z" },
+        { numero: 12, valor: "833.37", situacao: "PAGA", vencimento: "2026-12-10T12:00:00.000Z" },
+      ],
+      proximaNaoPaga: null,
+    };
+
+    // Caso 4: algumas pagas (1ª paga e 2ª pendente futura).
+    const obraAlgumasPagas = criarLinhaSql("obra-parcial", 1, "CLIENTE");
+    obraAlgumasPagas.quantidadeParcelas = 4;
+    obraAlgumasPagas.resumoParcelasSql = {
+      total: 4,
+      pagas: 1,
+      valorParcelaPadrao: "500.00",
+      ultimasPagas: [
+        { numero: 1, valor: "500.00", situacao: "PAGA", vencimento: "2026-01-10T12:00:00.000Z" },
+      ],
+      proximaNaoPaga: { numero: 2, valor: "500.00", situacao: "PENDENTE", vencimento: "2028-02-10T12:00:00.000Z" },
+    };
+
+    linhasSql = [obraNenhumaPaga, obraMaisDeDuas, obraTodasPagas, obraAlgumasPagas];
+    const admin = { id: "admin-resumo", email: "admin@resumo.test", tipo: "ADMIN", empresaId: "empresa-1" };
+    const respostaAdmin = await requisitarPelaRota("/obras", admin);
+    assert.equal(respostaAdmin.status, 200);
+    assert.match(chamadas[0].text, /resumoParcelasSql/);
+
+    // Valida caso 1: nenhuma paga.
+    assert.deepEqual(respostaAdmin.body[0].resumoParcelas, {
+      total: 12,
+      pagas: 0,
+      valorParcelaBase: 1000,
+      ultimaPaga: null,
+      penultimaPaga: null,
+      proximaNaoPaga: { numero: 1, valor: 1000, situacao: "pendente", estado: "Pendente" },
+    });
+
+    // Valida caso 2: obra > 2 parcelas com 2 primeiras pagas e 3ª atrasada (preserva parcelas[] existente com 2 itens).
+    assert.equal(respostaAdmin.body[1].parcelas.length, 2);
+    assert.deepEqual(respostaAdmin.body[1].resumoParcelas, {
+      total: 12,
+      pagas: 2,
+      valorParcelaBase: 1000,
+      ultimaPaga: { numero: 2, valor: 1000, situacao: "paga", estado: "Pago" },
+      penultimaPaga: { numero: 1, valor: 1000, situacao: "paga", estado: "Pago" },
+      proximaNaoPaga: { numero: 3, valor: 1000, situacao: "atrasada", estado: "Atrasada" },
+    });
+
+    // Valida caso 3: todas pagas preservando centavos diferentes da última parcela.
+    assert.deepEqual(respostaAdmin.body[2].resumoParcelas, {
+      total: 12,
+      pagas: 12,
+      valorParcelaBase: 833.33,
+      ultimaPaga: { numero: 12, valor: 833.37, situacao: "paga", estado: "Pago" },
+      penultimaPaga: { numero: 11, valor: 833.33, situacao: "paga", estado: "Pago" },
+      proximaNaoPaga: null,
+    });
+
+    // Valida caso 4: algumas pagas com próxima parcela pendente.
+    assert.deepEqual(respostaAdmin.body[3].resumoParcelas, {
+      total: 4,
+      pagas: 1,
+      valorParcelaBase: 500,
+      ultimaPaga: { numero: 1, valor: 500, situacao: "paga", estado: "Pago" },
+      penultimaPaga: null,
+      proximaNaoPaga: { numero: 2, valor: 500, situacao: "pendente", estado: "Pendente" },
+    });
+
+    // Garante que CLIENTE recebe o resumo filtrado por clienteId e empresaId.
+    chamadas.splice(0);
+    linhasSql = [obraAlgumasPagas];
+    const cliente = { id: "cliente-1", email: "cliente@resumo.test", tipo: "CLIENTE", empresaId: "empresa-1" };
+    const respostaCliente = await requisitarPelaRota("/obras", cliente);
+    assert.equal(respostaCliente.status, 200);
+    assert.match(chamadas[0].text, /o\."clienteId" = \$\d+/);
+    assert.equal(respostaCliente.body[0].resumoParcelas.pagas, 1);
+
+    // Garante RN15: COLABORADOR nunca recebe resumoParcelas nem valores financeiros.
+    chamadas.splice(0);
+    linhasSql = criarLinhasSql("COLABORADOR");
+    const gerente = { id: "gerente-resumo", email: "gerente@resumo.test", tipo: "COLABORADOR", empresaId: "empresa-1" };
+    const respostaGerente = await requisitarPelaRota("/obras", gerente);
+    assert.equal(respostaGerente.status, 200);
+    assert.doesNotMatch(chamadas[0].text, /resumoParcelasSql/);
+    assert.equal("resumoParcelas" in respostaGerente.body[0], false);
+    assert.equal("valorTotal" in respostaGerente.body[0], false);
   });
 });

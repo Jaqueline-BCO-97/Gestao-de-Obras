@@ -51,7 +51,8 @@ function criarPrisma() {
       findUnique: async ({ where, include }) => {
         const convite = convites.find((item) => Object.entries(where).every(([chave, valor]) => item[chave] === valor)) || null;
         if (!convite || !include) return convite;
-        return { ...convite, empresa: { nome: "Empreiteira A" }, obra: { nome: obras.find((obra) => obra.id === convite.obraId)?.nome } };
+        // Imita a relação opcional do Prisma e mantém obra nula para convite sem vínculo.
+        return { ...convite, empresa: { nome: "Empreiteira A" }, obra: convite.obraId ? { nome: obras.find((obra) => obra.id === convite.obraId)?.nome } : null };
       },
       findFirst: async ({ where }) => convites.find((item) => Object.entries(where).every(([chave, valor]) => {
         if (chave === "expiraEm" && valor?.gt) return item.expiraEm > valor.gt;
@@ -71,6 +72,8 @@ function criarPrisma() {
     funcionario: {
       findUnique: async ({ where }) => funcionarios.find((item) => Object.entries(where).every(([chave, valor]) => item[chave] === valor)) || null,
       create: async ({ data }) => { const item = { id: `funcionario-${funcionarios.length + 1}`, ativo: true, ...data }; funcionarios.push(item); return item; },
+      // Imita a atualização de telefone do funcionário quando uma conta existente aceita convite.
+      update: async ({ where, data }) => { const item = funcionarios.find((funcionario) => funcionario.id === where.id); Object.assign(item, data); return item; },
     },
     obraEscala: {
       findFirst: async ({ where }) => escalas.find((item) => Object.entries(where).every(([chave, valor]) => item[chave] === valor)) || null,
@@ -80,6 +83,8 @@ function criarPrisma() {
       create: async ({ data }) => { const item = { id: `evento-${eventos.length + 1}`, ...data }; eventos.push(item); return item; },
     },
     parcela: {
+      // Busca a parcela da obra solicitada e respeita o recorte usado pela rota.
+      findFirst: async ({ where, select }) => selecionar(parcelas.find((item) => item.obraId === where.obraId && item.numero === where.numero) || null, select),
       count: async ({ where }) => parcelas.filter((item) => item.obraId === where.obraId && (!where.situacao || item.situacao === where.situacao)).length,
       findMany: async ({ where }) => parcelas.filter((item) => item.obraId === where.obraId).map((item) => ({ ...item, pagamentos: [] })),
       update: async ({ where, data }) => { const item = parcelas.find((parcela) => parcela.id === where.id); Object.assign(item, data); return item; },
@@ -102,6 +107,7 @@ function criarPrisma() {
 
 const dbPath = require.resolve("../src/config/db");
 const usuarioRepositoryPath = require.resolve("../src/repositories/usuarioRepository");
+const obraRepositoryPath = require.resolve("../src/repositories/obraRepository");
 const cloudinaryServicePath = require.resolve("../src/services/cloudinaryService");
 const prisma = criarPrisma();
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { getPrisma: () => prisma, isDbConfigured: () => true } };
@@ -109,7 +115,7 @@ require.cache[cloudinaryServicePath] = { id: cloudinaryServicePath, filename: cl
 require.cache[usuarioRepositoryPath] = {
   id: usuarioRepositoryPath, filename: usuarioRepositoryPath, loaded: true,
   exports: {
-    listarUsuarios: async () => [], buscarUsuarioPorEmail: async () => null, buscarUsuarioPorId: async () => null,
+    listarUsuarios: async () => [], buscarUsuarioPorEmail: async (email) => usuarios.find((item) => item.email === email) || null, buscarUsuarioPorId: async () => null,
     buscarAutenticacaoUsuarioPorId: async (id) => {
       const usuario = usuarios.find((item) => item.id === id);
       if (!usuario) return null;
@@ -119,6 +125,17 @@ require.cache[usuarioRepositoryPath] = {
     buscarPerfilUsuarioPorId: async (id) => selecionar(usuarios.find((item) => item.id === id) || null, { id: true, empresaId: true, nome: true, email: true, tipo: true }),
     buscarFuncionarioPorUsuarioId: async (usuarioId) => funcionarios.find((item) => item.usuarioId === usuarioId) || null,
     atualizarSenhaUsuario: async () => null, criarUsuarioColaborador: async () => null,
+  },
+};
+require.cache[obraRepositoryPath] = {
+  id: obraRepositoryPath, filename: obraRepositoryPath, loaded: true,
+  exports: {
+    listarObras: async (_empresaId, usuarioId, tipo) => {
+      // Usa as escalas ativas do mock para simular o escopo de obras do colaborador.
+      const funcionario = funcionarios.find((item) => item.usuarioId === usuarioId);
+      // Devolve somente obras associadas ao funcionário autenticado.
+      return obras.filter((obra) => tipo !== "COLABORADOR" || escalas.some((escala) => escala.funcionarioId === funcionario?.id && escala.obraId === obra.id && !escala.dataFim));
+    },
   },
 };
 process.env.JWT_SECRET = "segredo-testes-convite";
@@ -147,14 +164,15 @@ async function chamar(metodo, caminho, { body = {}, params = {}, usuario = admin
 describe("Convites de cliente e gerente por obra", () => {
   beforeEach(() => {
     usuarios = [{ ...administrador }];
-    obras = [{ id: "obra-convite-a", empresaId, nome: "Obra A", clienteId: null, valorBase: "1000.00", valorTotal: "1000.00", excluidaEm: null }];
+    obras = [{ id: "obra-convite-a", empresaId, nome: "Obra A", clienteId: null, valorBase: "1000.00", valorTotal: "1000.00", quantidadeParcelas: 2, excluidaEm: null }];
     convites = [];
     funcionarios = [];
     escalas = [];
     eventos = [];
+    // Prepara parcelas com datas próprias para exercitar a nova prioridade da obra.
     parcelas = [
-      { id: "parcela-1", obraId: "obra-convite-a", numero: 1, valor: "500.00", situacao: "PENDENTE" },
-      { id: "parcela-2", obraId: "obra-convite-a", numero: 2, valor: "500.00", situacao: "PENDENTE" },
+      { id: "parcela-1", obraId: "obra-convite-a", numero: 1, valor: "500.00", vencimento: new Date("2026-12-10T12:00:00.000Z"), situacao: "PENDENTE" },
+      { id: "parcela-2", obraId: "obra-convite-a", numero: 2, valor: "500.00", vencimento: new Date("2027-01-10T12:00:00.000Z"), situacao: "PENDENTE" },
     ];
     contratos = [];
     notificacoes = [];
@@ -168,8 +186,55 @@ describe("Convites de cliente e gerente por obra", () => {
     const consulta = await chamar("GET", "/convites/:token", { params: { token: codigo }, usuario: null });
     assert.equal(consulta.statusCode, 200);
     assert.equal(consulta.body.obra, "Obra A");
+    // Confirma que o GET de cliente entrega uma dica mascarada, sem e-mail completo.
+    assert.equal(consulta.body.emailDica, "cl******te@teste.local");
+    // Garante que o campo antigo não possa expor o endereço completo para cliente.
+    assert.equal(consulta.body.email, undefined);
 
-    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
+    // Tenta aceitar sem e-mail e confirma que o convite segue intacto.
+    const semEmail = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "Senha-segura-123" }, usuario: null });
+    assert.equal(semEmail.statusCode, 400);
+    // Confirma o código próprio para e-mail ausente.
+    assert.equal(semEmail.body.codigo, "EMAIL_CONVITE_OBRIGATORIO");
+    // Confirma a orientação em português para informar o endereço.
+    assert.equal(semEmail.body.erro, "Informe o e-mail do convite.");
+    // Confirma que o erro não criou cliente nem consumiu o convite.
+    assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 0);
+    assert.equal(convites[0].usadoEm, null);
+
+    // Tenta aceitar com e-mail vazio e confirma a mesma recusa genérica.
+    const emailVazio = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "   ", senha: "Senha-segura-123" }, usuario: null });
+    assert.equal(emailVazio.statusCode, 400);
+    // Garante que o e-mail vazio recebe o mesmo código do e-mail ausente.
+    assert.equal(emailVazio.body.codigo, semEmail.body.codigo);
+    // Confirma que um e-mail vazio também não cria conta nem consome o convite.
+    assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 0);
+    assert.equal(convites[0].usadoEm, null);
+
+    // Tenta aceitar com outro e-mail e confirma que o endereço do convite não é revelado.
+    const emailErrado = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "outro@teste.local", senha: "Senha-segura-123" }, usuario: null });
+    assert.equal(emailErrado.statusCode, 400);
+    // Confirma o código próprio para e-mail divergente.
+    assert.equal(emailErrado.body.codigo, "EMAIL_CONVITE_DIVERGENTE");
+    // Confirma a mensagem explícita aprovada sem repetir o endereço convidado.
+    assert.equal(emailErrado.body.erro, "O e-mail informado não confere com o do convite. Confira o endereço e tente novamente.");
+    // Garante que a resposta não revela o e-mail verdadeiro do convite.
+    assert.equal(emailErrado.body.erro.includes("cliente@teste.local"), false);
+    // Confirma que a tentativa incorreta não cria usuário nem marca o convite como usado.
+    assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 0);
+    assert.equal(convites[0].usadoEm, null);
+
+    // Confirma que o endpoint também bloqueia senha fraca para cliente sem sessão.
+    const senhaFracaCliente = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "cliente@teste.local", senha: "senha-segura-123" }, usuario: null });
+    assert.equal(senhaFracaCliente.statusCode, 400);
+    // Confirma que a resposta identifica a regra de maiúscula em português.
+    assert.equal(senhaFracaCliente.body.codigo, "SENHA_MAIUSCULA");
+    // Confirma que a rejeição da senha não cria conta nem consome o convite.
+    assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 0);
+    assert.equal(convites[0].usadoEm, null);
+
+    // Aceita com e-mail correto após remover espaços e ignorar maiúsculas.
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "  CLIENTE@TESTE.LOCAL  ", senha: "Senha-segura-123" }, usuario: null });
     assert.equal(aceite.statusCode, 200);
     assert.equal(aceite.body.usuario.tipo, "CLIENTE");
     assert.equal(usuarios.find((item) => item.id === aceite.body.usuario.id).cidade, "Santos");
@@ -181,16 +246,195 @@ describe("Convites de cliente e gerente por obra", () => {
     assert.equal(contratos[0].arquivoUrl, "https://res.cloudinary.com/teste/raw/upload/contrato.pdf");
     assert.equal(convites[0].usadoEm instanceof Date, true);
 
-    const reutilizado = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
+    const reutilizado = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "Senha-segura-123" }, usuario: null });
     assert.equal(reutilizado.statusCode, 410);
     assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 1);
+  });
+
+  // A dica mascara a parte local com seis asteriscos e conserva o domínio inteiro.
+  it("mascara endereços longos e curtos sem revelar o tamanho da parte local", async () => {
+    // Reúne exemplos longos, curtos e domínios sem ponto para validar a saída do GET.
+    const casos = [
+      { email: "jane.doe97@gmail.com", dica: "ja******97@gmail.com" },
+      { email: "abcdef@dominio", dica: "ab******ef@dominio" },
+      { email: "abcde@localhost", dica: "a******@localhost" },
+      { email: "abc@domain", dica: "a******@domain" },
+      { email: "ab@nodot", dica: "******@nodot" },
+      { email: "a@domain", dica: "******@domain" },
+    ];
+    // Executa cada exemplo pela rota pública de consulta do convite.
+    for (let indice = 0; indice < casos.length; indice += 1) {
+      // Seleciona o endereço e a dica esperada para esta passagem.
+      const caso = casos[indice];
+      // Cria um token de teste único para a consulta simulada.
+      const codigo = `mascara-${indice}`;
+      // Registra um convite de cliente em memória com o hash esperado pela rota.
+      convites.push({ id: `convite-mascara-${indice}`, tokenHash: crypto.createHash("sha256").update(codigo).digest("hex"), empresaId, tipo: "CLIENTE", nome: "Cliente teste", email: caso.email, obraId: null, expiraEm: new Date(Date.now() + 60_000), usadoEm: null });
+      // Consulta a dica por meio do endpoint, sem acessar banco compartilhado.
+      const consulta = await chamar("GET", "/convites/:token", { params: { token: codigo }, usuario: null });
+      // Confirma o formato de máscara definido para o endereço.
+      assert.equal(consulta.body.emailDica, caso.dica);
+      // Garante que o campo completo não seja devolvido para clientes.
+      assert.equal(consulta.body.email, undefined);
+      // Garante que a dica jamais seja igual ao e-mail verdadeiro.
+      assert.notEqual(consulta.body.emailDica, caso.email);
+    }
+  });
+
+  // Convites novos usam quantidade e valor total já definidos na obra.
+  it("aceita cliente sem quantidade no convite e usa parcelas e total da obra", async () => {
+    // Representa uma obra cujo total já inclui a regra de cobrança vigente.
+    obras[0].valorBase = "1000.00";
+    obras[0].valorTotal = "1010.00";
+    obras[0].quantidadeParcelas = 13;
+
+    // Simula a parcela número um existente para que o aceite complete as outras doze.
+    parcelas = [{ id: "parcela-1", obraId: "obra-convite-a", numero: 1, valor: "1010.00", vencimento: new Date("2026-12-10T12:00:00.000Z"), situacao: "PENDENTE" }];
+    // O payload atual envia o contrato, mas não envia data nem quantidade próprias.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Novo", email: "novo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    assert.equal(criado.statusCode, 201);
+    assert.equal(convites[0].quantidadeParcelas, null);
+    assert.equal(convites[0].vencimentoInicial, null);
+
+    // O aceite gera as parcelas conforme quantidade e total da obra.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "novo@teste.local", senha: "Senha-segura-123" }, usuario: null });
+    assert.equal(aceite.statusCode, 200);
+    assert.equal(obras[0].quantidadeParcelas, 13);
+    assert.equal(Number(obras[0].valorTotal), 1010);
+    assert.equal(parcelas.length, obras[0].quantidadeParcelas);
+    assert.equal(Math.round(parcelas.reduce((soma, parcela) => soma + Number(parcela.valor), 0) * 100) / 100, Number(obras[0].valorTotal));
+    assert.equal(parcelas[0].vencimento.toISOString().slice(0, 10), "2026-12-10");
+    assert.equal(parcelas[1].vencimento.toISOString().slice(0, 10), "2027-01-10");
+    assert.equal(contratos[0].arquivoUrl, "https://res.cloudinary.com/teste/raw/upload/contrato.pdf");
+  });
+
+  // Convites novos e antigos sempre preferem a data da parcela um da obra.
+  it("usa o vencimento da obra mesmo se um convite antigo guardar outra data", async () => {
+    // Cria um convite sem data própria, como os convites novos do formulário.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Novo", email: "novo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Confirma que a criação guardou a data como nula para usar a programação da obra.
+    assert.equal(criado.statusCode, 201);
+    assert.equal(convites[0].vencimentoInicial, null);
+    // Simula uma data própria persistida por um convite antigo.
+    convites[0].vencimentoInicial = new Date("2027-02-10T12:00:00.000Z");
+    // Aceita o convite com a senha válida e vinculada à obra do teste.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "novo@teste.local", senha: "Senha-segura-123" }, usuario: null });
+    // Confirma que o convite foi aceito normalmente.
+    assert.equal(aceite.statusCode, 200);
+    // Confirma que o vencimento salvo na primeira parcela da obra foi mantido.
+    assert.equal(parcelas[0].vencimento.toISOString().slice(0, 10), "2026-12-10");
+    // Confirma que as datas seguintes da obra também não foram substituídas pela data do convite.
+    assert.equal(parcelas[1].vencimento.toISOString().slice(0, 10), "2027-01-10");
+  });
+
+  // Convites legados sem vencimento da obra usam sua própria data como reserva.
+  it("usa o vencimento do convite antigo quando a obra não tiver data na parcela um", async () => {
+    // Cria um convite antes de simular os registros antigos no banco.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Antigo", email: "antigo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Persiste no mock a data de convite que existia antes da mudança do formulário.
+    convites[0].vencimentoInicial = new Date("2027-02-10T12:00:00.000Z");
+    // Remove a data da obra para exercitar a regra de reserva do convite antigo.
+    parcelas.forEach((parcela) => { parcela.vencimento = null; });
+    // Aceita o registro antigo sem gerar parcelas sem vencimento.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "antigo@teste.local", senha: "Senha-segura-123" }, usuario: null });
+    // Confirma que a reserva do convite permite preservar o aceite legado.
+    assert.equal(aceite.statusCode, 200);
+    // Confirma que a primeira parcela começa na data antiga do convite.
+    assert.equal(parcelas[0].vencimento.toISOString().slice(0, 10), "2027-02-10");
+    // Confirma que a parcela seguinte mantém o intervalo mensal da programação.
+    assert.equal(parcelas[1].vencimento.toISOString().slice(0, 10), "2027-03-10");
+  });
+
+  // Cada obra vinculada a uma conta existente mantém o próprio calendário de parcelas.
+  it("vincula cliente existente usando o vencimento da nova obra sem alterar as demais", async () => {
+    // Cria uma conta de cliente que já acompanha a primeira obra.
+    const cliente = { id: "cliente-com-duas-obras", empresaId, nome: "Cliente existente", email: "cliente@teste.local", tipo: "CLIENTE", senhaHash: "hash-antigo" };
+    // Registra a conta usada na sessão autenticada do aceite.
+    usuarios.push(cliente);
+    // Cria uma segunda obra com um primeiro vencimento diferente do calendário original.
+    obras.push({ id: "obra-convite-b", empresaId, nome: "Obra B", clienteId: null, valorBase: "600.00", valorTotal: "600.00", quantidadeParcelas: 2, excluidaEm: null });
+    // Cria duas parcelas da segunda obra com datas próprias.
+    parcelas.push({ id: "parcela-b-1", obraId: "obra-convite-b", numero: 1, valor: "300.00", vencimento: new Date("2027-03-15T12:00:00.000Z"), situacao: "PENDENTE" });
+    parcelas.push({ id: "parcela-b-2", obraId: "obra-convite-b", numero: 2, valor: "300.00", vencimento: new Date("2027-04-15T12:00:00.000Z"), situacao: "PENDENTE" });
+    // Cria o convite para associar a conta existente somente à segunda obra.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-b", nome: cliente.nome, email: cliente.email, telefone: "11987654321", endereco: "Rua B", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "200", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Confirma que o novo convite não precisa receber um vencimento no payload.
+    assert.equal(criado.statusCode, 201);
+    // Aceita o convite com a sessão da conta existente, sem senha nova.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: {}, usuario: cliente });
+    // Confirma que a conta existente foi vinculada à segunda obra.
+    assert.equal(aceite.statusCode, 200);
+    assert.equal(obras[1].clienteId, cliente.id);
+    // Confirma que a primeira obra manteve seu vencimento original.
+    assert.equal(parcelas[0].vencimento.toISOString().slice(0, 10), "2026-12-10");
+    // Confirma que a segunda obra manteve a data própria em sua primeira parcela.
+    assert.equal(parcelas[2].vencimento.toISOString().slice(0, 10), "2027-03-15");
+    // Confirma que a segunda parcela da nova obra mantém seu calendário independente.
+    assert.equal(parcelas[3].vencimento.toISOString().slice(0, 10), "2027-04-15");
+  });
+
+  // Obras sem vencimento não podem gerar convites ou parcelas sem data.
+  it("bloqueia convite quando a obra não tem vencimento na parcela um", async () => {
+    // Remove a data da primeira parcela para representar uma obra antiga incompleta.
+    parcelas[0].vencimento = null;
+    // Tenta criar o convite mesmo que o payload legado informe outra data.
+    const resposta = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Novo", email: "novo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, vencimentoInicial: "2027-02-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Confirma a mensagem acordada para a obra sem vencimento.
+    assert.equal(resposta.statusCode, 400);
+    assert.equal(resposta.body.erro, "Esta obra não tem vencimento da primeira parcela. Edite a obra e informe a data antes de convidar o cliente.");
+    // Confirma que nenhum convite foi criado.
+    assert.equal(convites.length, 0);
+  });
+
+  // Um convite antigo sem data na obra nem no registro não pode gerar parcelas sem data.
+  it("recusa aceite antigo quando a obra e o convite não têm vencimento", async () => {
+    // Cria um convite válido enquanto a obra ainda tem data para passar pela rota nova.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Antigo", email: "antigo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Simula um convite histórico sem vencimento salvo.
+    convites[0].vencimentoInicial = null;
+    // Remove a data da obra para confirmar que o aceite não cria parcelas sem data.
+    parcelas.forEach((parcela) => { parcela.vencimento = null; });
+    // Tenta aceitar o convite sem sessão e com uma senha válida.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "antigo@teste.local", senha: "Senha-segura-123" }, usuario: null });
+    // Confirma que a regra retorna conflito antes de criar conta ou consumir o convite.
+    assert.equal(aceite.statusCode, 409);
+    assert.equal(aceite.body.erro, "Esta obra não tem vencimento da primeira parcela. Edite a obra e informe a data antes de convidar o cliente.");
+    assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 0);
+    assert.equal(convites[0].usadoEm, null);
+  });
+
+  // A API não permite uma segunda vinculação a uma obra ocupada.
+  it("recusa convite para obra que já tem cliente vinculado", async () => {
+    // Simula uma obra com cliente vinculado antes do novo convite.
+    obras[0].clienteId = "cliente-existente";
+    const resposta = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Novo", email: "novo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    assert.equal(resposta.statusCode, 409);
+    assert.match(resposta.body.erro, /vinculada a um cliente/i);
   });
 
   it("cria gerente responsável e concede escala somente para a obra do convite", async () => {
     const criado = await chamar("POST", "/convites/gerente", { body: { obraId: "obra-convite-a", nome: "Gerente A", email: "gerente@teste.local", telefone: "11987654321", funcao: "Gerente de obras" } });
     assert.equal(criado.statusCode, 201);
     const codigo = criado.body.convite.link.split("/").at(-1);
-    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
+    // Confirma que o GET do gerente continua devolvendo o e-mail usado pelo fluxo atual.
+    const consulta = await chamar("GET", "/convites/:token", { params: { token: codigo }, usuario: null });
+    assert.equal(consulta.body.email, "gerente@teste.local");
+    // Confirma que o GET devolve a função necessária à nova tela de equipe.
+    assert.equal(consulta.body.funcao, "Gerente de obras");
+    // Confirma que gerente sem sessão também precisa criar senha conforme a regra nova.
+    const senhaFraca = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
+    assert.equal(senhaFraca.statusCode, 400);
+    // Confirma o mesmo código de maiúscula usado na criação de conta de cliente.
+    assert.equal(senhaFraca.body.codigo, "SENHA_MAIUSCULA");
+    // Confirma que a senha fraca não cria funcionário nem consome o convite.
+    assert.equal(funcionarios.length, 0);
+    assert.equal(convites[0].usadoEm, null);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "Senha-segura-123" }, usuario: null });
     assert.equal(aceite.statusCode, 200);
     assert.equal(aceite.body.usuario.tipo, "COLABORADOR");
     assert.equal(funcionarios[0].nivel, "RESPONSAVEL");
@@ -201,6 +445,142 @@ describe("Convites de cliente e gerente por obra", () => {
     assert.equal(eventos[0].tipo, "EQUIPE");
     assert.equal(eventos[0].visivelParaCliente, false);
     assert.equal(notificacoes.length, 2);
+  });
+
+  // Permite criar gerente sem obra, mas valida a obra quando ela é informada.
+  it("cria convite de gerente sem obra e recusa obra de outra empresa", async () => {
+    // Solicita o convite sem enviar obraId e com espaços na função.
+    const criado = await chamar("POST", "/convites/gerente", { body: { nome: "Luciano", email: "luciano@teste.local", telefone: "11987654321", funcao: "  Encarregado geral  " } });
+    // Confirma que a obra é opcional para esse tipo de convite.
+    assert.equal(criado.statusCode, 201);
+    // Confirma que o banco recebe obra nula e função aparada.
+    assert.equal(convites[0].obraId, null);
+    assert.equal(convites[0].funcao, "Encarregado geral");
+    // Impede função maior que o limite anunciado no formulário.
+    const funcaoLonga = await chamar("POST", "/convites/gerente", { body: { nome: "Gerente longo", email: "longo@teste.local", telefone: "11987654321", funcao: "x".repeat(101) } });
+    // Confirma que a validação não cria um segundo convite.
+    assert.equal(funcaoLonga.statusCode, 400);
+    assert.equal(convites.length, 1);
+    // Prepara uma obra que pertence a outra empresa.
+    obras.push({ id: "obra-outra-empresa", empresaId: "empresa-convite-b", nome: "Obra B", clienteId: null, excluidaEm: null });
+    // Tenta associar um novo gerente a essa obra alheia.
+    const recusado = await chamar("POST", "/convites/gerente", { body: { obraId: "obra-outra-empresa", nome: "Jhonatan", email: "jhonatan@teste.local", telefone: "11987654322", funcao: "Arquiteto" } });
+    // Confirma que a validação de empresa continua bloqueando o convite.
+    assert.equal(recusado.statusCode, 404);
+    assert.equal(convites.length, 1);
+  });
+
+  // Reenviar um link pendente não depende de a obra opcional estar vinculada.
+  it("reenvia convite de gerente sem obra e conserva a resposta compatível", async () => {
+    // Cria um convite sem obra para exercitar o endpoint de reenvio.
+    const criado = await chamar("POST", "/convites/gerente", { body: { nome: "Gerente sem obra", email: "sem-obra@teste.local", telefone: "11987654321", funcao: "Responsável" } });
+    // Confirma que o convite foi criado com obra nula.
+    assert.equal(criado.statusCode, 201);
+    // Solicita um token novo sem consultar nem ler o nome de uma obra.
+    const reenviado = await chamar("POST", "/convites/:id/reenviar", { params: { id: convites[0].id } });
+    // Confirma que o endpoint retorna link e e-mail como antes.
+    assert.equal(reenviado.statusCode, 200);
+    assert.equal(reenviado.body.convite.email, "sem-obra@teste.local");
+    assert.match(reenviado.body.convite.link, /\/convite\//);
+  });
+
+  // Aceitar convite sem obra cria uma conta ativa que pode entrar e ver a lista vazia.
+  it("aceita gerente sem obra, permite login e retorna Gestão de Obras vazia", async () => {
+    // Cria o convite de gerente sem associar uma obra.
+    const criado = await chamar("POST", "/convites/gerente", { body: { nome: "Gerente sem obra", email: "gerente-sem-obra@teste.local", telefone: "11987654321", funcao: "Responsável" } });
+    // Extrai o token único para consultar e aceitar o convite.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    // Confirma que o GET protege contra uma relação de obra nula.
+    const consulta = await chamar("GET", "/convites/:token", { params: { token: codigo }, usuario: null });
+    assert.equal(consulta.body.obra, null);
+    assert.equal(consulta.body.email, "gerente-sem-obra@teste.local");
+    assert.equal(consulta.body.funcao, "Responsável");
+    // Aceita o convite com uma senha válida e cria a conta normalmente.
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "Senha-segura-123" }, usuario: null });
+    // Confirma que o usuário criado pode autenticar como colaborador.
+    assert.equal(aceite.statusCode, 200);
+    assert.equal(aceite.body.usuario.tipo, "COLABORADOR");
+    // Confirma que o funcionário fica ativo e no nível Responsável.
+    assert.equal(funcionarios[0].ativo, true);
+    assert.equal(funcionarios[0].nivel, "RESPONSAVEL");
+    // Confirma que convite sem obra não cria escala, evento ou notificação de obra.
+    assert.equal(escalas.length, 0);
+    assert.equal(eventos.length, 0);
+    assert.equal(notificacoes.length, 0);
+    // Faz login pela rota normal com a senha recém-criada.
+    const login = await chamar("POST", "/auth/login", { body: { email: "gerente-sem-obra@teste.local", senha: "Senha-segura-123" }, usuario: null });
+    // Confirma que a conta ativa pode receber uma sessão de colaborador.
+    assert.equal(login.statusCode, 200);
+    assert.equal(login.body.usuario.tipo, "COLABORADOR");
+    // Abre a rota usada pela tela Gestão de Obras com a sessão de colaborador.
+    const gestao = await chamar("GET", "/obras", { usuario: login.body.usuario });
+    // Confirma que o gerente sem escala recebe lista vazia em vez de erro.
+    assert.equal(gestao.statusCode, 200);
+    assert.deepEqual(gestao.body, []);
+  });
+
+  // Uma pessoa que já tem conta aceita convite de gerente sem criar senha nem escala.
+  it("aceita convite de gerente sem obra com usuário já autenticado", async () => {
+    // Prepara a conta de colaborador existente e seu perfil Responsável ativo.
+    const gerente = { id: "gerente-existente", empresaId, nome: "Gerente existente", email: "existente@teste.local", tipo: "COLABORADOR", senhaHash: "hash-antigo" };
+    // Registra a conta para o JWT e a validação de identidade.
+    usuarios.push(gerente);
+    // Registra o funcionário vinculado à conta.
+    funcionarios.push({ id: "funcionario-existente", empresaId, nome: gerente.nome, funcao: "Arquiteto", nivel: "RESPONSAVEL", ativo: true, usuarioId: gerente.id });
+    // Cria o convite sem obra para o mesmo endereço da conta autenticada.
+    const criado = await chamar("POST", "/convites/gerente", { body: { nome: gerente.nome, email: gerente.email, telefone: "11987654321", funcao: "Arquiteto" } });
+    // Recupera o token para aceitar o convite com a sessão existente.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    // Aceita com a conta atual e sem enviar senha nova.
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: {}, usuario: gerente });
+    // Confirma que o convite foi aceito sem exigir vínculo de obra.
+    assert.equal(aceite.statusCode, 200);
+    assert.equal(convites[0].usadoEm instanceof Date, true);
+    // Confirma que a conta continua sem escala, evento ou notificação de obra.
+    assert.equal(escalas.length, 0);
+    assert.equal(eventos.length, 0);
+    assert.equal(notificacoes.length, 0);
+  });
+
+  // Usuários já autenticados aceitam convite sem criar senha nova ou validar a política.
+  it("mantém o aceite de cliente com sessão sem exigir e-mail nem nova senha", async () => {
+    // Prepara uma conta existente com senha histórica que não participa desta validação.
+    const cliente = { id: "cliente-com-sessao", empresaId, nome: "Cliente existente", email: "cliente@teste.local", tipo: "CLIENTE", senhaHash: "hash-antigo" };
+    // Registra a conta no mock para que o JWT corresponda ao usuário salvo.
+    usuarios.push(cliente);
+    // Cria o convite para o mesmo e-mail e para a obra ainda sem cliente.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: cliente.nome, email: cliente.email, telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Confirma que o convite para a conta existente foi criado.
+    assert.equal(criado.statusCode, 201);
+    // Extrai o token único sem exibir ou persistir credenciais.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    // Aceita com a sessão existente e sem enviar e-mail ou senha nova.
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: {}, usuario: cliente });
+    // Confirma que o fluxo logado continua aceitando o convite.
+    assert.equal(aceite.statusCode, 200);
+    // Confirma que a conta antiga foi reutilizada sem substituir sua senha salva.
+    assert.equal(aceite.body.usuario.id, cliente.id);
+    assert.equal(usuarios.find((item) => item.id === cliente.id).senhaHash, "hash-antigo");
+    // Confirma que a obra foi ligada ao cliente já autenticado.
+    assert.equal(obras[0].clienteId, cliente.id);
+  });
+
+  // Convites vencidos continuam recusados mesmo quando o e-mail informado é válido.
+  it("recusa convite expirado sem criar usuário", async () => {
+    // Cria um convite de cliente válido pela rota administrativa existente.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente A", email: "cliente@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    // Confirma que o convite foi criado antes de simular a expiração.
+    assert.equal(criado.statusCode, 201);
+    // Expira o registro em memória sem alterar ou acessar banco compartilhado.
+    convites[0].expiraEm = new Date(Date.now() - 1000);
+    // Tenta aceitar o token já expirado com os dados que seriam válidos.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { email: "cliente@teste.local", senha: "Senha-segura-123" }, usuario: null });
+    // Preserva o status existente para convite inválido, expirado ou usado.
+    assert.equal(aceite.statusCode, 410);
+    // Confirma que a expiração não cria usuário nem consome o convite.
+    assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 0);
+    assert.equal(convites[0].usadoEm, null);
   });
 
   it("exige que o cliente esteja vinculado a uma obra e tenha contrato e parcelas", async () => {

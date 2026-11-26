@@ -9,12 +9,16 @@ import Card from '../components/Card.jsx'
 
 // Importa o componente reutilizável Button do sistema de design
 import Button from '../components/Button.jsx'
+// Importa o seletor próprio das quantidades exibido somente na criação de obra.
+import SelectQuantidadeParcelas from '../components/SelectQuantidadeParcelas.jsx'
 
 // Importa os dados das obras e as funções de moeda e cores
 import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a lista de colaboradores mockados para exibir os membros da equipe alocada
 import { listarObras, listarObrasArquivadas, restaurarObra, solicitarConferenciaObra, criarObra } from '../services/auth.js'
+// Importa o montador compartilhado com o teste do payload da opção 36.
+import { montarPayloadCriarObra } from '../utils/quantidadeParcelas.js'
 
 function moedaEntrada(valor) {
   const centavos = String(valor).replace(/\D/g, '')
@@ -44,7 +48,7 @@ export default function AdminObras() {
   const [feedbackForm, setFeedbackForm] = useState('')
   const [feedbackFormErro, setFeedbackFormErro] = useState(false)
   const [fotosObra, setFotosObra] = useState([])
-  const [novaObra, setNovaObra] = useState({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', quantidadeParcelas: '2', vencimentoInicial: '', valorTotal: '', informacoesAdicionais: '' })
+  const [novaObra, setNovaObra] = useState({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', quantidadeParcelas: '', vencimentoInicial: '', valorTotal: '', informacoesAdicionais: '' })
 
   const atualizarObras = useCallback(async () => { const [ativas, arquivadasApi] = await Promise.all([listarObras(), listarObrasArquivadas()]); setObras(ativas); setArquivadas(arquivadasApi) }, [])
 
@@ -108,6 +112,7 @@ export default function AdminObras() {
   async function handleCriarObra(event) {
     event.preventDefault(); setFeedbackForm(''); setFeedbackFormErro(false)
     const erros = []
+    if (!novaObra.quantidadeParcelas) erros.push('Selecione a quantidade de parcelas.')
     if (!/^\d+$/.test(novaObra.numero)) erros.push('Número do endereço: use apenas números.')
     if (!novaObra.semApartamento && !/^\d+$/.test(novaObra.apartamento)) erros.push('Apartamento: use apenas números.')
     if (!novaObra.semBloco && !/^[a-z\d]+$/i.test(novaObra.bloco)) erros.push('Bloco: use apenas letras e números.')
@@ -118,8 +123,11 @@ export default function AdminObras() {
       const fotos = await Promise.all(fotosObra.map((arquivo) => new Promise((resolve, reject) => {
         const leitor = new FileReader(); leitor.onload = () => resolve({ data: leitor.result, mimeType: arquivo.type }); leitor.onerror = () => reject(new Error('Não foi possível ler uma das fotos.')); leitor.readAsDataURL(arquivo)
       })))
-      const resposta = await criarObra({ ...novaObra, quantidadeParcelas: Number(novaObra.quantidadeParcelas), valorTotal: valorNormalizado, fotos })
-      setNovaObra({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', quantidadeParcelas: '2', vencimentoInicial: '', valorTotal: '', informacoesAdicionais: '' }); setFotosObra([])
+      // Monta o payload preservando os campos atuais e convertendo a quantidade para número.
+      const payloadObra = montarPayloadCriarObra(novaObra, valorNormalizado, fotos)
+      // Envia à API a mesma quantidade selecionada, inclusive valores acima de doze.
+      const resposta = await criarObra(payloadObra)
+      setNovaObra({ nome: '', descricao: '', clienteId: '', estado: '', cidade: '', bairro: '', endereco: '', numero: '', semApartamento: false, apartamento: '', semBloco: false, bloco: '', prazoFinal: '', quantidadeParcelas: '', vencimentoInicial: '', valorTotal: '', informacoesAdicionais: '' }); setFotosObra([])
       setFeedbackForm(resposta.avisos?.length ? `Obra criada, mas as fotos não foram enviadas: ${resposta.avisos.join('; ')}` : 'Obra cadastrada. Cadastre o cliente na tela Clientes para anexar contrato e parcelas.')
       await atualizarObras()
     } catch (falha) { setFeedbackForm(falha.message); setFeedbackFormErro(true) }
@@ -132,8 +140,8 @@ export default function AdminObras() {
 
   const hoje = new Date()
   const valorBaseNumero = Number(moedaNumero(novaObra.valorTotal || '0')) || 0
-  const quantidadeEscolhida = Number(novaObra.quantidadeParcelas)
-  const valorFinalEstimado = valorBaseNumero * (1 + (quantidadeEscolhida > 12 ? 0.01 * (quantidadeEscolhida - 12) : 0))
+  const quantidadeEscolhida = novaObra.quantidadeParcelas ? Number(novaObra.quantidadeParcelas) : null
+  const valorFinalEstimado = quantidadeEscolhida === null ? null : valorBaseNumero * (1 + (quantidadeEscolhida > 12 ? 0.01 * (quantidadeEscolhida - 12) : 0))
   const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`
   const proximasObras = obras.filter((obra) => obra.status === 'Agendada' && obra.agendadaParaISO && obra.agendadaParaISO > hojeISO).sort((a, b) => a.agendadaParaISO.localeCompare(b.agendadaParaISO))
 
@@ -379,9 +387,10 @@ export default function AdminObras() {
             <div className="grid gap-2 sm:grid-cols-2"><label className="text-sm">Bloco<input disabled={novaObra.semBloco} required={!novaObra.semBloco} pattern="[A-Za-z0-9]+" title="Use apenas letras e números" value={novaObra.bloco} onChange={(e) => setNovaObra({ ...novaObra, bloco: e.target.value.replace(/[^a-z\d]/gi, '') })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /></label><label className="mt-6 flex items-center gap-2 text-xs"><input type="checkbox" checked={novaObra.semBloco} onChange={(e) => setNovaObra({ ...novaObra, semBloco: e.target.checked, bloco: '' })} /> Não existe bloco</label></div>
             <label className="text-sm">Prazo final<input required type="date" value={novaObra.prazoFinal} onChange={(e) => setNovaObra({ ...novaObra, prazoFinal: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm">Valor base (R$)<input required inputMode="decimal" placeholder="40.000,25" value={novaObra.valorTotal} onChange={(e) => setNovaObra({ ...novaObra, valorTotal: moedaEntrada(e.target.value) })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            <label className="text-sm">Quantidade de parcelas<select required size="4" value={novaObra.quantidadeParcelas} onChange={(e) => setNovaObra({ ...novaObra, quantidadeParcelas: e.target.value })} className="mt-1 max-h-28 w-full overflow-y-auto rounded border border-slate-300 p-2">{Array.from({ length: 36 }, (_, index) => index + 1).map((quantidade) => <option key={quantidade} value={quantidade}>{quantidade} parcela{quantidade === 1 ? '' : 's'}{quantidade <= 12 ? ' · sem juros' : ' · juros de 1% por parcela adicional'}</option>)}</select></label>
+            {/* Exibe a lista compacta somente no cadastro de uma nova obra. */}
+            <div className="text-sm"><label htmlFor="quantidade-parcelas">Quantidade de parcelas</label><SelectQuantidadeParcelas id="quantidade-parcelas" value={novaObra.quantidadeParcelas} onChange={(quantidadeParcelas) => setNovaObra({ ...novaObra, quantidadeParcelas })} /></div>
             <label className="text-sm">Vencimento da primeira parcela<input required type="date" value={novaObra.vencimentoInicial} onChange={(e) => setNovaObra({ ...novaObra, vencimentoInicial: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
-            <p className="text-sm text-slate-600">Valor final estimado: <strong>{formatarMoeda(valorFinalEstimado)}</strong>. Até 12 parcelas sem juros; acima disso, acréscimo simples de 1% por parcela adicional.</p>
+            <p className="text-sm text-slate-600">Valor final estimado: <strong>{valorFinalEstimado === null ? '—' : formatarMoeda(valorFinalEstimado)}</strong>. Até 12 parcelas sem juros; acima disso, acréscimo simples de 1% por parcela adicional.</p>
             <label className="text-sm sm:col-span-2 lg:col-span-3">Informações de execução: serviços, materiais e medidas previstos no contrato<textarea required rows="4" value={novaObra.informacoesAdicionais} onChange={(e) => setNovaObra({ ...novaObra, informacoesAdicionais: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
             <label className="text-sm sm:col-span-2 lg:col-span-3">Fotos iniciais (JPG, PNG ou WebP; até 5 arquivos de 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(e) => { const arquivos = Array.from(e.target.files || []); if (arquivos.length > 5 || arquivos.some((arquivo) => !['image/jpeg', 'image/png', 'image/webp'].includes(arquivo.type) || arquivo.size > 5 * 1024 * 1024)) { setFotosObra([]); e.target.value = ''; setFeedbackForm('Cada foto deve ser JPG, PNG ou WebP de até 5 MB (máximo de 5 fotos).'); setFeedbackFormErro(true); return } setFotosObra(arquivos); setFeedbackForm(''); setFeedbackFormErro(false) }} className="mt-1 block w-full rounded border border-slate-300 p-2" /></label>
             {feedbackForm && <p role={feedbackFormErro ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm font-semibold sm:col-span-2 lg:col-span-3 ${feedbackFormErro ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{feedbackForm}</p>}<Button type="submit" className="sm:col-span-2 lg:col-span-3">Criar obra</Button>
