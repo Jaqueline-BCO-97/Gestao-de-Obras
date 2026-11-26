@@ -363,6 +363,8 @@ model DisponibilidadeFuncionario {
   obraId        String
   obra          Obra        @relation(fields: [obraId], references: [id], onDelete: Cascade)
   diaSemana     Int
+  // Horário local de início, salvo como HH:MM quando informado.
+  horarioInicio String?
   criadoEm      DateTime    @default(now())
 
   @@unique([funcionarioId, obraId, diaSemana])

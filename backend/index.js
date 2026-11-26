@@ -19,6 +19,8 @@ const {
   finalizarRequisicaoDb,
 } = require("./src/config/db");
 const { comCacheEmpresa, invalidarCacheEmpresa } = require("./src/services/cacheConsultas");
+// Reutiliza a mesma validação nas rotas de criação e edição de funcionários.
+const { validarDisponibilidades } = require("./src/utils/disponibilidadeFuncionario");
 const {
   listarUsuarios,
   buscarUsuarioPorEmail,
@@ -224,7 +226,7 @@ app.post("/convites/:token/aceitar", async (req, res) => {
       if (convite.tipo === "CLIENTE") {
         if (convite.obraId) {
           const vinculada = await tx.obra.updateMany({ where: { id: convite.obraId, empresaId: convite.empresaId, clienteId: null }, data: { clienteId: novo.id } });
-          const obra = await tx.obra.findFirst({ where: { id: convite.obraId, empresaId: convite.empresaId }, select: { id: true, clienteId: true, valorBase: true, valorTotal: true } });
+          const obra = await tx.obra.findFirst({ where: { id: convite.obraId, empresaId: convite.empresaId }, select: { id: true, clienteId: true, valorBase: true, valorTotal: true, quantidadeParcelas: true } });
           if (!obra || (obra.clienteId !== novo.id && vinculada.count === 0)) throw Object.assign(new Error("A obra já está vinculada a outro cliente."), { code: "WORK_ALREADY_LINKED" });
           if (convite.quantidadeParcelas && convite.vencimentoInicial) {
             const parcelasAtuais = await tx.parcela.findMany({ where: { obraId: convite.obraId }, include: { pagamentos: { select: { id: true } } }, orderBy: { numero: "asc" } });
@@ -246,8 +248,34 @@ app.post("/convites/:token/aceitar", async (req, res) => {
             for (let indice = 0; indice < quantidade; indice += 1) {
               await tx.parcela.updateMany({ where: { obraId: obra.id, numero: indice + 101 }, data: { numero: indice + 1 } });
             }
-            if (convite.contratoUrl) await tx.contrato.upsert({ where: { obraId: obra.id }, create: { obraId: obra.id, empresaId: convite.empresaId, termos: "Contrato anexado ao cadastrar o cliente.", arquivoUrl: convite.contratoUrl }, update: { termos: "Contrato anexado ao cadastrar o cliente.", arquivoUrl: convite.contratoUrl } });
+          } else if (convite.vencimentoInicial) {
+            // Convites novos mantêm quantidade e total que já foram definidos na obra.
+            const parcelasAtuais = await tx.parcela.findMany({ where: { obraId: convite.obraId }, include: { pagamentos: { select: { id: true } } }, orderBy: { numero: "asc" } });
+            // Datas de vencimento não podem ser alteradas depois do início de pagamentos.
+            if (parcelasAtuais.some((parcela) => parcela.situacao === "PAGA" || parcela.pagamentos.length)) throw Object.assign(new Error("Não é possível alterar parcelas depois de iniciar pagamentos."), { code: "INSTALLMENTS_LOCKED" });
+            // Usa os campos persistidos na obra, sem recalcular a cobrança ou a quantidade.
+            const quantidade = Number(obra.quantidadeParcelas || parcelasAtuais.length);
+            const total = Number(obra.valorTotal);
+            if (!Number.isInteger(quantidade) || quantidade < 1 || !Number.isFinite(total) || total <= 0) throw Object.assign(new Error("A obra precisa ter quantidade de parcelas e valor total válidos."), { code: "INSTALLMENTS_LOCKED" });
+            // Não apaga parcelas existentes caso a obra tenha dados inconsistentes.
+            if (parcelasAtuais.length > quantidade) throw Object.assign(new Error("A obra tem mais parcelas cadastradas do que a quantidade definida."), { code: "INSTALLMENTS_LOCKED" });
+            // Divide o total já calculado pela obra e ajusta o último centavo.
+            const valores = Array.from({ length: quantidade }, () => Math.round((total / quantidade) * 100) / 100);
+            valores[valores.length - 1] = Math.round((total - valores.slice(0, -1).reduce((soma, item) => soma + item, 0)) * 100) / 100;
+            // Atualiza ou completa parcelas usando o vencimento informado no convite.
+            for (let indice = 0; indice < quantidade; indice += 1) {
+              const vencimento = somarMesesPreservandoDia(new Date(convite.vencimentoInicial), indice);
+              const parcela = parcelasAtuais[indice];
+              if (parcela) await tx.parcela.update({ where: { id: parcela.id }, data: { numero: indice + 101, valor: valores[indice].toFixed(2), vencimento } });
+              else await tx.parcela.create({ data: { obraId: obra.id, numero: indice + 101, valor: valores[indice].toFixed(2), vencimento } });
+            }
+            // Restaura a numeração sequencial depois da atualização sem colisões.
+            for (let indice = 0; indice < quantidade; indice += 1) {
+              await tx.parcela.updateMany({ where: { obraId: obra.id, numero: indice + 101 }, data: { numero: indice + 1 } });
+            }
           }
+          // O contrato do cliente deve ser salvo nos convites novos e nos legados.
+          if (convite.contratoUrl) await tx.contrato.upsert({ where: { obraId: obra.id }, create: { obraId: obra.id, empresaId: convite.empresaId, termos: "Contrato anexado ao cadastrar o cliente.", arquivoUrl: convite.contratoUrl }, update: { termos: "Contrato anexado ao cadastrar o cliente.", arquivoUrl: convite.contratoUrl } });
           const evento = await tx.obraEvento.create({ data: { obraId: convite.obraId, empresaId: convite.empresaId, usuarioId: novo.id, tipo: "STATUS", descricao: `${novo.nome} aceitou o convite de cliente e vinculou-se à obra.`, visivelParaCliente: false } });
           const administradores = await tx.usuario.findMany({ where: { empresaId: convite.empresaId, tipo: "ADMIN" }, select: { id: true } });
           if (administradores.length) await tx.notificacao.createMany({ data: administradores.map(({ id }) => ({ empresaId: convite.empresaId, usuarioId: id, obraId: convite.obraId, eventoId: evento.id, tipo: "CONVITE", titulo: "Cliente aceitou o convite", descricao: `${novo.nome} aceitou o convite para acompanhar a obra.` })) });
@@ -282,10 +310,12 @@ app.post("/convites/:token/aceitar", async (req, res) => {
 async function criarConvite(req, res, tipo) {
   try {
     const { obraId, nome, email, funcao, telefone, endereco, estado, cidade, bairro, numero, apartamento, bloco, semApartamento, semBloco, quantidadeParcelas, vencimentoInicial, contrato } = req.body || {};
+    // Mantém quantidade opcional para aceitar integrações e convites legados.
+    const quantidadeLegadaInformada = quantidadeParcelas !== undefined && quantidadeParcelas !== null && quantidadeParcelas !== "";
     const obraIdInformada = typeof obraId === "string" && obraId.trim() ? obraId.trim() : null;
     if (![nome, email, telefone].every((v) => typeof v === "string" && v.trim()) || !obraIdInformada || (tipo === "GERENTE" && (typeof funcao !== "string" || !funcao.trim())) || (tipo === "CLIENTE" && (typeof endereco !== "string" || !endereco.trim()))) return res.status(400).json({ erro: tipo === "GERENTE" ? "Obra, nome, e-mail, telefone e função são obrigatórios" : "Obra, nome, e-mail, telefone e endereço são obrigatórios" });
     if (tipo === "CLIENTE" && (![estado, cidade, bairro, endereco, numero].every((v) => typeof v === "string" && v.trim()) || !/^\d+$/.test(String(numero || "").trim()) || typeof semApartamento !== "boolean" || typeof semBloco !== "boolean" || (!semApartamento && (typeof apartamento !== "string" || !/^\d+$/.test(apartamento.trim()))) || (!semBloco && (typeof bloco !== "string" || !/^[A-Za-z0-9]+$/.test(bloco.trim()))))) return res.status(400).json({ erro: "Preencha estado, cidade, bairro, rua, número e informe apartamento e bloco ou marque que não existem" });
-    if (tipo === "CLIENTE" && (!Number.isInteger(Number(quantidadeParcelas)) || Number(quantidadeParcelas) < 1 || Number(quantidadeParcelas) > 36 || !/^\d{4}-\d{2}-\d{2}$/.test(vencimentoInicial || "") || typeof contrato?.data !== "string" || contrato.mimeType !== "application/pdf")) return res.status(400).json({ erro: "Selecione o contrato PDF, a quantidade de parcelas (1 a 36) e a data do primeiro vencimento" });
+    if (tipo === "CLIENTE" && ((quantidadeLegadaInformada && (!Number.isInteger(Number(quantidadeParcelas)) || Number(quantidadeParcelas) < 1 || Number(quantidadeParcelas) > 36)) || !/^\d{4}-\d{2}-\d{2}$/.test(vencimentoInicial || "") || typeof contrato?.data !== "string" || contrato.mimeType !== "application/pdf")) return res.status(400).json({ erro: "Selecione o contrato PDF e a data do primeiro vencimento; a quantidade legada, se enviada, deve estar entre 1 e 36" });
     const prisma = getPrisma();
     if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
     const obra = await prisma.obra.findFirst({ where: { id: obraIdInformada, empresaId: req.usuario.empresaId, excluidaEm: null } });
@@ -307,7 +337,7 @@ async function criarConvite(req, res, tipo) {
       contratoUrl = await cloudinaryService.enviarContratoObra({ arquivo: contrato, obraId: obra.id });
     }
     const rawToken = crypto.randomBytes(32).toString("base64url");
-    const convite = await prisma.convite.create({ data: { empresaId: req.usuario.empresaId, obraId: obra.id, criadoPorId: req.usuario.id, tipo, nome: nome.trim(), email: normalizedEmail, telefone: telefone.trim(), endereco: tipo === "CLIENTE" ? endereco.trim() : null, estado: tipo === "CLIENTE" ? estado.trim() : null, cidade: tipo === "CLIENTE" ? cidade.trim() : null, bairro: tipo === "CLIENTE" ? bairro.trim() : null, numero: tipo === "CLIENTE" ? numero.trim() : null, apartamento: tipo === "CLIENTE" && !semApartamento ? apartamento.trim() : null, bloco: tipo === "CLIENTE" && !semBloco ? bloco.trim() : null, semApartamento: tipo === "CLIENTE" ? semApartamento : null, semBloco: tipo === "CLIENTE" ? semBloco : null, funcao: tipo === "GERENTE" ? funcao.trim() : null, quantidadeParcelas: tipo === "CLIENTE" ? Number(quantidadeParcelas) : null, vencimentoInicial: vencimento, contratoUrl, tokenHash: hashConvite(rawToken), expiraEm: new Date(Date.now() + 48 * 60 * 60 * 1000) } });
+    const convite = await prisma.convite.create({ data: { empresaId: req.usuario.empresaId, obraId: obra.id, criadoPorId: req.usuario.id, tipo, nome: nome.trim(), email: normalizedEmail, telefone: telefone.trim(), endereco: tipo === "CLIENTE" ? endereco.trim() : null, estado: tipo === "CLIENTE" ? estado.trim() : null, cidade: tipo === "CLIENTE" ? cidade.trim() : null, bairro: tipo === "CLIENTE" ? bairro.trim() : null, numero: tipo === "CLIENTE" ? numero.trim() : null, apartamento: tipo === "CLIENTE" && !semApartamento ? apartamento.trim() : null, bloco: tipo === "CLIENTE" && !semBloco ? bloco.trim() : null, semApartamento: tipo === "CLIENTE" ? semApartamento : null, semBloco: tipo === "CLIENTE" ? semBloco : null, funcao: tipo === "GERENTE" ? funcao.trim() : null, quantidadeParcelas: tipo === "CLIENTE" && quantidadeLegadaInformada ? Number(quantidadeParcelas) : null, vencimentoInicial: vencimento, contratoUrl, tokenHash: hashConvite(rawToken), expiraEm: new Date(Date.now() + 48 * 60 * 60 * 1000) } });
     const base = process.env.FRONTEND_URL || "http://localhost:5173";
     return res.status(201).json({ convite: { id: convite.id, email: convite.email, expiraEm: convite.expiraEm, link: `${base.replace(/\/$/, "")}/convite/${rawToken}` } });
   } catch (erro) {
@@ -822,7 +852,8 @@ app.get("/funcionarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMI
     return res.json(funcionarios.map(({ funcionario }) => {
       const porObra = new Map();
       for (const item of funcionario.disponibilidades) {
-        if (!porObra.has(item.obraId)) porObra.set(item.obraId, { obraId: item.obraId, obra: item.obra, diasSemana: [] });
+        // Agrupa os dias e mantém o horário único da obra na resposta da API.
+        if (!porObra.has(item.obraId)) porObra.set(item.obraId, { obraId: item.obraId, obra: item.obra, diasSemana: [], horarioInicio: item.horarioInicio || null });
         porObra.get(item.obraId).diasSemana.push(item.diaSemana);
       }
       return { ...funcionario, disponibilidades: [...porObra.values()] };
@@ -832,23 +863,6 @@ app.get("/funcionarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMI
     return res.status(500).json({ erro: "Erro ao listar funcionários" });
   }
 });
-
-function validarDisponibilidades(disponibilidades) {
-  if (!Array.isArray(disponibilidades)) return "Informe a programação semanal do funcionário";
-  if (disponibilidades.length === 0) return null;
-  const diasUsados = new Set();
-  const obrasSelecionadas = new Set();
-  for (const item of disponibilidades) {
-    if (!item || typeof item.obraId !== "string" || !Array.isArray(item.diasSemana) || !item.diasSemana.length || item.diasSemana.some((dia) => !Number.isInteger(dia) || dia < 0 || dia > 6)) return "Cada obra precisa ter ao menos um dia da semana válido";
-    if (obrasSelecionadas.has(item.obraId)) return "Selecione cada obra apenas uma vez";
-    obrasSelecionadas.add(item.obraId);
-    for (const dia of item.diasSemana) {
-      if (diasUsados.has(dia)) return "O funcionário não pode trabalhar em duas obras no mesmo dia";
-      diasUsados.add(dia);
-    }
-  }
-  return null;
-}
 
 app.post("/funcionarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
   try {
@@ -863,7 +877,7 @@ app.post("/funcionarios", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADM
     const fotoUrl = foto ? await cloudinaryService.enviarFotoObra({ foto, obraId: id }) : null;
     const funcionario = await prisma.$transaction(async (tx) => {
       const novo = await tx.funcionario.create({ data: { id, empresaId: req.usuario.empresaId, nome: nome.trim(), telefone: telefone.trim(), funcao: funcao.trim(), nivel: "APOIO", fotoUrl } });
-      if (disponibilidades.length) await tx.disponibilidadeFuncionario.createMany({ data: disponibilidades.flatMap((item) => [...new Set(item.diasSemana)].map((diaSemana) => ({ empresaId: req.usuario.empresaId, funcionarioId: id, obraId: item.obraId, diaSemana }))) });
+      if (disponibilidades.length) await tx.disponibilidadeFuncionario.createMany({ data: disponibilidades.flatMap((item) => [...new Set(item.diasSemana)].map((diaSemana) => ({ empresaId: req.usuario.empresaId, funcionarioId: id, obraId: item.obraId, diaSemana, horarioInicio: item.horarioInicio || null }))) });
       return novo;
     });
     return res.status(201).json({ funcionario });
@@ -890,7 +904,7 @@ app.patch("/funcionarios/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel
     const funcionario = await prisma.$transaction(async (tx) => {
       const atualizado = await tx.funcionario.update({ where: { id: atual.id }, data: { nome: nome.trim(), telefone: telefone.trim(), funcao: funcao.trim(), ...(fotoUrl ? { fotoUrl } : {}) } });
       await tx.disponibilidadeFuncionario.deleteMany({ where: { funcionarioId: atual.id, empresaId: req.usuario.empresaId } });
-      if (disponibilidades.length) await tx.disponibilidadeFuncionario.createMany({ data: disponibilidades.flatMap((item) => [...new Set(item.diasSemana)].map((diaSemana) => ({ empresaId: req.usuario.empresaId, funcionarioId: atual.id, obraId: item.obraId, diaSemana }))) });
+      if (disponibilidades.length) await tx.disponibilidadeFuncionario.createMany({ data: disponibilidades.flatMap((item) => [...new Set(item.diasSemana)].map((diaSemana) => ({ empresaId: req.usuario.empresaId, funcionarioId: atual.id, obraId: item.obraId, diaSemana, horarioInicio: item.horarioInicio || null }))) });
       return atualizado;
     });
     return res.json({ funcionario });
@@ -1220,6 +1234,7 @@ app.patch("/obras/:id/agendamento", authMiddleware, exigirEmpresaDoToken, exigir
     });
   } catch (erro) {
     if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    if (erro.code === "INICIO_OBRA_BLOQUEADO") return res.status(400).json({ erro: erro.message });
     if (erro.code === "AGENDAMENTO_CONCORRENTE" || erro.code === "P2034") {
       return res.status(409).json({ erro: erro.message || "O agendamento foi alterado por outra operação; atualize e tente novamente" });
     }

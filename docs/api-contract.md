@@ -46,7 +46,7 @@ O objeto de obra usa os campos `id`, `titulo`, `cliente`, `colaboradores`, `ende
 
 ## Ainda não implementado
 
-Cadastro/convite de clientes, alteração genérica de status, upload de fotos e rotas de tabela de preços pertencem ao escopo planejado do produto. Solicitação e confirmação de conclusão são operações explícitas descritas abaixo. O endpoint de andamento registra eventos textuais; fotos dependem de armazenamento persistente ainda não configurado. O checkout usa sandbox e depende de credenciais e webhook público para validação fim a fim.
+alteração genérica de status, upload de fotos e rotas de tabela de preços pertencem ao escopo planejado do produto. Solicitação e confirmação de conclusão são operações explícitas descritas abaixo. O endpoint de andamento registra eventos textuais; fotos dependem de armazenamento persistente ainda não configurado. O checkout usa sandbox e depende de credenciais e webhook público para validação fim a fim.
 
 ### Conclusão e RN8 — Issue #22
 
@@ -65,7 +65,7 @@ Cadastro/convite de clientes, alteração genérica de status, upload de fotos e
 }
 ```
 
-Os dois campos devem ser datas válidas no formato `AAAA-MM-DD` e `prazoFinal` deve ser posterior ao início. Horários não são solicitados nem exibidos. Períodos de obras podem se sobrepor.
+Obras em qualquer status diferente de `AGENDADA` não podem alterar `agendadaPara`; o início recebido deve ser igual ao salvo para permitir mudança apenas de `prazoFinal`. Os dois campos devem ser datas válidas no formato `AAAA-MM-DD` e `prazoFinal` deve ser posterior ao início. Horários não são solicitados nem exibidos. Períodos de obras diferentes podem ter datas iguais ou se sobrepor, sem bloqueio por conflito.
 
 Sucesso retorna HTTP 200 com `{ "obra": { ...obra, "agendadaPara": "AAAA-MM-DD", "prazoFinal": "AAAA-MM-DD" }, "evento": { ... }, "alterada": true }`. Repetir exatamente as datas já salvas retorna HTTP 200, `alterada: false` e `evento: null`, sem inserir outro evento. Payload inválido retorna 400, usuário sem autenticação 401, papel ou ausência de empresa 403 e obra inexistente ou fora da empresa 404. Falha de concorrência após novas tentativas retorna HTTP 409.
 
@@ -114,3 +114,10 @@ O retorno do navegador não confirma pagamento. A URL configurada deve receber n
 Configuração manual necessária (não gravar credenciais no repositório): definir `MERCADO_PAGO_ACCESS_TOKEN_TEST` com Access Token de teste e `MERCADO_PAGO_WEBHOOK_SECRET` com a assinatura secreta de Webhooks. No painel de integrações, cadastrar URL HTTPS pública do webhook no modo de teste e habilitar notificações de Orders. A URL local não alcançável pela internet não recebe callbacks. O checkout usa Orders API do Checkout Pro, que retorna `checkout_url` e aceita `X-Idempotency-Key` para repetição segura ([criação de order](https://www.mercadopago.com.br/developers/pt/docs/checkout-pro-orders/create-order?scope=prod)); as notificações de Orders e a forma de consulta estão descritas pelo provedor ([notificações Checkout Pro Orders](https://www.mercadopago.com.br/developers/pt/docs/checkout-pro-orders/notifications?scope=prod)).
 
 A aprovação real no sandbox ainda não foi validada: não há credenciais de teste nem URL pública de webhook configuradas neste ambiente. Testes mockados não substituem a compra aprovada real. A migration aditiva que cria o histórico de tentativas ainda precisa ser aplicada em ambiente autorizado antes do endpoint funcionar com PostgreSQL.
+
+
+### Funcionários e convite de cliente
+
+`GET /funcionarios` retorna dias programados agrupados por obra e `horarioInicio` em `HH:MM` ou `null` para escalas antigas. `POST /funcionarios` e `PATCH /funcionarios/:id` aceitam `disponibilidades` como lista de `{ obraId, diasSemana, horarioInicio? }`. A lista pode ficar vazia, uma obra pode ter zero ou um dia, e registros antigos sem horário continuam válidos. Quando o mesmo dia aparece em obras diferentes, cada obra precisa de horário entre `07:00` e `17:59`. O mesmo funcionário não pode iniciar em obras diferentes no mesmo dia e horário exatos; horários distintos são permitidos, sem cálculo de sobreposição por duração. Horários inválidos, incompletos para dias repetidos ou conflitantes retornam 400.
+
+`POST /convites/cliente` exige uma obra sem cliente, dados do cliente, `vencimentoInicial` e contrato PDF. `quantidadeParcelas` é opcional para manter compatibilidade com integrações e convites antigos. Convites novos omitem a quantidade: no aceite, as parcelas usam a quantidade e o valor total da obra, e a data informada define os vencimentos. Convites legados com quantidade enviada continuam usando o fluxo anterior. Um convite para obra já vinculada retorna 409, e a aceitação também protege o vínculo contra concorrência.

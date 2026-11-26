@@ -173,6 +173,7 @@ describe("Reagendamento por data sem conflito de sobreposição", () => {
       obras: [
         { id: "obra-a", empresaId: empresaA, clienteId: "cliente-a", nome: "Obra A", status: "AGENDADA", agendadaPara: null, prazoFinal: null, valorTotal: 1000, endereco: "Rua A" },
         { id: "obra-b", empresaId: empresaA, clienteId: "cliente-a", nome: "Obra B", status: "AGENDADA", agendadaPara: data("2026-12-03"), prazoFinal: data("2026-12-08"), valorTotal: 1200, endereco: "Rua B" },
+        { id: "obra-iniciada", empresaId: empresaA, clienteId: "cliente-a", nome: "Obra Iniciada", status: "EM_ANDAMENTO", agendadaPara: data("2026-12-01"), prazoFinal: data("2026-12-20"), valorTotal: 1300, endereco: "Rua D" },
         { id: "obra-outra-empresa", empresaId: empresaB, clienteId: null, nome: "Obra Externa", status: "AGENDADA", agendadaPara: data("2026-12-01"), prazoFinal: data("2026-12-04"), valorTotal: 500, endereco: "Rua C" },
       ],
       eventos: [],
@@ -200,6 +201,23 @@ describe("Reagendamento por data sem conflito de sobreposição", () => {
     const resposta = await chamarReagendamento({ body: payload("2026-12-06", "2026-12-10") });
     assert.equal(resposta.statusCode, 200);
     assert.equal(estado.eventos.length, 1);
+  });
+
+  // Início de obra iniciada não pode ser trocado pelo administrador.
+  it("bloqueia a mudança da data de início de obra iniciada", async () => {
+    const resposta = await chamarReagendamento({ obraId: "obra-iniciada", body: payload("2026-12-02", "2026-12-21") });
+    assert.equal(resposta.statusCode, 400);
+    assert.match(resposta.body.erro, /data de início não pode ser alterada/i);
+    assert.equal(estado.obras.find((obra) => obra.id === "obra-iniciada").agendadaPara.toISOString().slice(0, 10), "2026-12-01");
+    assert.equal(estado.eventos.length, 0);
+  });
+
+  // A data original pode acompanhar um novo prazo final.
+  it("permite alterar somente o prazo final de obra iniciada", async () => {
+    const resposta = await chamarReagendamento({ obraId: "obra-iniciada", body: payload("2026-12-01", "2026-12-25") });
+    assert.equal(resposta.statusCode, 200);
+    assert.equal(resposta.body.obra.agendadaPara, "2026-12-01");
+    assert.equal(resposta.body.obra.prazoFinal, "2026-12-25");
   });
 
   it("rejeita horários, datas ausentes, formatos inválidos e datas inexistentes", async () => {
@@ -260,13 +278,14 @@ describe("Reagendamento por data sem conflito de sobreposição", () => {
   });
 
   it("repetir exatamente o mesmo intervalo não cria nova notificação", async () => {
-    const primeira = await chamarReagendamento({ body: payload() });
-    const repetida = await chamarReagendamento({ body: payload() });
-    assert.equal(primeira.body.alterada, true);
+    const primeiroPayload = payload("2026-12-01", "2026-12-20");
+    const primeira = await chamarReagendamento({ obraId: "obra-iniciada", body: primeiroPayload });
+    const repetida = await chamarReagendamento({ obraId: "obra-iniciada", body: primeiroPayload });
+    assert.equal(primeira.body.alterada, false);
     assert.equal(repetida.statusCode, 200);
     assert.equal(repetida.body.alterada, false);
     assert.equal(repetida.body.evento, null);
-    assert.equal(estado.eventos.length, 1);
+    assert.equal(estado.eventos.length, 0);
   });
 
   it("usa apenas estados declarados no schema; StatusObra não define CANCELADA", () => {

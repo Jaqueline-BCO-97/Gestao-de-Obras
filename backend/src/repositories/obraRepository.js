@@ -436,9 +436,14 @@ async function reagendarObra({ obraId, empresaId, administradorId, agendadaPara,
       return await prisma.$transaction(async (tx) => {
         const obraAtual = await tx.obra.findFirst({
           where: { id: obraId, empresaId },
-          select: { id: true, agendadaPara: true, prazoFinal: true },
+          select: { id: true, status: true, agendadaPara: true, prazoFinal: true },
         });
         if (!obraAtual) return null;
+
+        // Obras iniciadas mantêm a data original e só aceitam mudar o prazo.
+        if (obraAtual.status !== "AGENDADA" && !mesmoInstante(obraAtual.agendadaPara, agendadaPara)) {
+          throw erroAgendamento("INICIO_OBRA_BLOQUEADO", "A data de início não pode ser alterada depois que a obra foi iniciada");
+        }
 
         if (mesmoInstante(obraAtual.agendadaPara, agendadaPara) && mesmoInstante(obraAtual.prazoFinal, prazoFinal)) {
           const semAlteracao = await tx.obra.findFirst({

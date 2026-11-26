@@ -147,7 +147,7 @@ async function chamar(metodo, caminho, { body = {}, params = {}, usuario = admin
 describe("Convites de cliente e gerente por obra", () => {
   beforeEach(() => {
     usuarios = [{ ...administrador }];
-    obras = [{ id: "obra-convite-a", empresaId, nome: "Obra A", clienteId: null, valorBase: "1000.00", valorTotal: "1000.00", excluidaEm: null }];
+    obras = [{ id: "obra-convite-a", empresaId, nome: "Obra A", clienteId: null, valorBase: "1000.00", valorTotal: "1000.00", quantidadeParcelas: 2, excluidaEm: null }];
     convites = [];
     funcionarios = [];
     escalas = [];
@@ -184,6 +184,39 @@ describe("Convites de cliente e gerente por obra", () => {
     const reutilizado = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
     assert.equal(reutilizado.statusCode, 410);
     assert.equal(usuarios.filter((item) => item.tipo === "CLIENTE").length, 1);
+  });
+
+  // Convites novos usam quantidade e valor total já definidos na obra.
+  it("aceita cliente sem quantidade no convite e usa parcelas e total da obra", async () => {
+    // Representa uma obra cujo total já inclui a regra de cobrança vigente.
+    obras[0].valorBase = "1000.00";
+    obras[0].valorTotal = "1010.00";
+    obras[0].quantidadeParcelas = 13;
+
+    // O payload novo informa vencimento e contrato, mas não quantidade.
+    const criado = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Novo", email: "novo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    assert.equal(criado.statusCode, 201);
+    assert.equal(convites[0].quantidadeParcelas, null);
+
+    // O aceite gera as parcelas conforme quantidade e total da obra.
+    const codigo = criado.body.convite.link.split("/").at(-1);
+    const aceite = await chamar("POST", "/convites/:token/aceitar", { params: { token: codigo }, body: { senha: "senha-segura-123" }, usuario: null });
+    assert.equal(aceite.statusCode, 200);
+    assert.equal(obras[0].quantidadeParcelas, 13);
+    assert.equal(Number(obras[0].valorTotal), 1010);
+    assert.equal(parcelas.length, obras[0].quantidadeParcelas);
+    assert.equal(Math.round(parcelas.reduce((soma, parcela) => soma + Number(parcela.valor), 0) * 100) / 100, Number(obras[0].valorTotal));
+    assert.equal(parcelas[0].vencimento.toISOString().slice(0, 10), "2026-12-10");
+    assert.equal(contratos[0].arquivoUrl, "https://res.cloudinary.com/teste/raw/upload/contrato.pdf");
+  });
+
+  // A API não permite uma segunda vinculação a uma obra ocupada.
+  it("recusa convite para obra que já tem cliente vinculado", async () => {
+    // Simula uma obra com cliente vinculado antes do novo convite.
+    obras[0].clienteId = "cliente-existente";
+    const resposta = await chamar("POST", "/convites/cliente", { body: { obraId: "obra-convite-a", nome: "Cliente Novo", email: "novo@teste.local", telefone: "11987654321", endereco: "Rua A", estado: "SP", cidade: "Santos", bairro: "Centro", numero: "100", apartamento: "12", bloco: "A", semApartamento: false, semBloco: false, vencimentoInicial: "2026-12-10", contrato: { data: "data:application/pdf;base64,AA==", mimeType: "application/pdf" } } });
+    assert.equal(resposta.statusCode, 409);
+    assert.match(resposta.body.erro, /vinculada a um cliente/i);
   });
 
   it("cria gerente responsável e concede escala somente para a obra do convite", async () => {
