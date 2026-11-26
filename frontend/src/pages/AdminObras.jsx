@@ -126,7 +126,8 @@ export default function AdminObras() {
       // Remove a obra das listas locais imediatamente e sincroniza com a API.
       setObras((atuais) => atuais.filter((item) => item.id !== obra.id))
       setArquivadas((atuais) => atuais.filter((item) => item.id !== obra.id))
-      await atualizarObras()
+      // Sincroniza as listas com a API sem mascarar erro de recarregamento após exclusão já concluída.
+      await atualizarObras().catch((falha) => setErro(falha.message))
     } catch (falha) {
       // Exibe a mensagem exata retornada pelo backend na linha da obra.
       setErroAcao((atuais) => ({ ...atuais, [obra.id]: falha.message }))

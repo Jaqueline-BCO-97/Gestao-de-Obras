@@ -1,5 +1,7 @@
-// Carrega as variáveis do arquivo .env local sem gravar nem exibir segredos.
-require("dotenv").config();
+// Resolve o caminho absoluto do .env do backend para funcionar de qualquer diretório.
+const path = require("node:path");
+// Carrega as variáveis do arquivo .env do backend sem gravar nem exibir segredos.
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 // Importa a conexão Prisma do backend e a classificação de eventos automáticos.
 const { getPrisma } = require("../src/config/db");
 const { eventoHistoricoReal } = require("../src/services/excluirCliente");
