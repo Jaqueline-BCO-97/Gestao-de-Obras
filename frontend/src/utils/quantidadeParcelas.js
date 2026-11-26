@@ -31,6 +31,14 @@ export function normalizarQuantidadeParcelas(valor) {
   return Number(valor)
 }
 
+// Verifica se algum pagamento impede editar os valores financeiros da obra.
+export function deveBloquearEdicaoFinanceira(parcelas) {
+  // Usa uma lista vazia quando os dados de parcelas ainda não chegaram corretamente.
+  const parcelasDaObra = Array.isArray(parcelas) ? parcelas : []
+  // Bloqueia por parcela quitada ou por tentativa online ainda pendente.
+  return parcelasDaObra.some((parcela) => parcela?.situacao === 'paga' || Boolean(parcela?.tentativasPendentes?.length))
+}
+
 // Calcula a próxima ação do seletor para que o teclado e os testes usem as mesmas regras.
 export function resolverTeclaQuantidadeParcelas(tecla, estado, total, indiceSelecionado = -1, desabilitado = false) {
   // Não permite abrir, navegar ou confirmar opções enquanto o campo estiver desabilitado.

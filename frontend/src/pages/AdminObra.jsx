@@ -8,7 +8,7 @@ import useConfirmacao from '../components/useConfirmacao.jsx'
 // Importa o componente padronizado de resumo de parcelas (título "Parcelas", sem parênteses, até 2 linhas).
 import ResumoParcelas from '../components/ResumoParcelas.jsx'
 // Preserva o formato inicial e numérico usado pelos payloads existentes da obra.
-import { normalizarQuantidadeParcelas, obterQuantidadeInicialObra } from '../utils/quantidadeParcelas.js'
+import { deveBloquearEdicaoFinanceira, normalizarQuantidadeParcelas, obterQuantidadeInicialObra } from '../utils/quantidadeParcelas.js'
 
 function moeda(valor) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor || 0)) }
 function moedaEntrada(valor) { const digitos = String(valor).replace(/\D/g, ''); return digitos ? (Number(digitos) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '' }
@@ -133,9 +133,9 @@ export default function AdminObra() {
   const conviteClientePendente = Boolean(obra.conviteClientePendente)
   const parcelaPaga = parcelas.some((parcela) => parcela.situacao === 'paga')
   const pagamentoEmProcessamento = parcelas.some((parcela) => parcela.tentativasPendentes?.length)
-  // Desabilita a quantidade quando a tela identifica parcela paga ou tentativa pendente.
-  const quantidadeParcelasBloqueada = parcelaPaga || pagamentoEmProcessamento
-  // Repete a explicação usada pelo backend para alterações financeiras bloqueadas.
+  // Aplica a mesma regra de bloqueio aos campos de valor base e quantidade de parcelas.
+  const edicaoFinanceiraBloqueada = deveBloquearEdicaoFinanceira(parcelas)
+  // Mantém a explicação já usada pelo backend para alterações financeiras bloqueadas.
   const explicacaoBloqueioParcelas = 'Valor, quantidade e vencimentos não podem mudar depois de iniciada uma tentativa ou confirmado um pagamento'
   const totalComJuros = form.quantidadeParcelas ? Number(moedaNormalizada(form.valorTotal || '0')) * (1 + (Number(form.quantidadeParcelas) > 12 ? 0.01 * (Number(form.quantidadeParcelas) - 12) : 0)) : null
   const bloqueioArquivamento = obra.status !== 'Agendada' ? 'Somente obras agendadas podem ser arquivadas; obras em execução devem seguir o fluxo de conferência e aceite do cliente.' : parcelaPaga ? 'Esta obra tem parcela paga e não pode ser arquivada.' : pagamentoEmProcessamento ? 'Esta obra tem pagamento em processamento e não pode ser arquivada.' : ''
@@ -154,7 +154,41 @@ export default function AdminObra() {
         <label className="text-sm">Número<input required inputMode="numeric" pattern="[0-9]+" value={form.numero} onChange={(e) => setForm({ ...form, numero: e.target.value.replace(/\D/g, '') })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
         <label className="text-sm">Apartamento<input disabled={form.semApartamento} required={!form.semApartamento} inputMode="numeric" pattern="[0-9]+" value={form.apartamento} onChange={(e) => setForm({ ...form, apartamento: e.target.value.replace(/\D/g, '') })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /><span className="mt-1 flex items-center gap-2 text-xs"><input type="checkbox" checked={form.semApartamento} onChange={(e) => setForm({ ...form, semApartamento: e.target.checked, apartamento: '' })} />Não existe apartamento</span></label>
         <label className="text-sm">Bloco<input disabled={form.semBloco} required={!form.semBloco} pattern="[A-Za-z0-9]+" value={form.bloco} onChange={(e) => setForm({ ...form, bloco: e.target.value.replace(/[^a-z\d]/gi, '') })} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" /><span className="mt-1 flex items-center gap-2 text-xs"><input type="checkbox" checked={form.semBloco} onChange={(e) => setForm({ ...form, semBloco: e.target.checked, bloco: '' })} />Não existe bloco</span></label>
-        <label className="text-sm">Prazo final<input required type="date" value={form.prazoFinal} onChange={(e) => setForm({ ...form, prazoFinal: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><label className="text-sm">Valor base (R$)<input required inputMode="decimal" placeholder="40.000,25" value={form.valorTotal} onChange={(e) => setForm({ ...form, valorTotal: moedaEntrada(e.target.value) })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><div className="text-sm"><label htmlFor="quantidade-parcelas-edicao">Quantidade de parcelas</label>{/* Reinicia o estado da lista se a quantidade passar a ser bloqueada ou liberada. */}<SelectQuantidadeParcelas key={quantidadeParcelasBloqueada ? 'bloqueada' : 'liberada'} id="quantidade-parcelas-edicao" value={form.quantidadeParcelas} disabled={quantidadeParcelasBloqueada} disabledReason={quantidadeParcelasBloqueada ? explicacaoBloqueioParcelas : ''} onChange={(quantidadeParcelas) => setForm({ ...form, quantidadeParcelas })} /></div><label className="text-sm">Vencimento da primeira parcela<input required type="date" value={form.vencimentoInicial} onChange={(e) => setForm({ ...form, vencimentoInicial: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><p className="text-sm text-slate-600 sm:col-span-2">Valor final estimado: <strong>{totalComJuros === null ? '—' : moeda(totalComJuros)}</strong>. Até 12 parcelas sem juros; acima disso, acréscimo simples de 1% por parcela além da 12ª.</p>
+        <label className="text-sm">Prazo final<input required type="date" value={form.prazoFinal} onChange={(e) => setForm({ ...form, prazoFinal: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>
+        {/* Mantém o valor base da obra no formulário e no payload atual do PATCH. */}
+        <label className="text-sm">
+          {/* Identifica o valor base que pode ser editado antes de qualquer pagamento. */}
+          Valor base (R$)
+          {/* Preserva o valor controlado e desabilita a edição quando há pagamento. */}
+          <input
+            required
+            inputMode="decimal"
+            placeholder="40.000,25"
+            value={form.valorTotal}
+            onChange={(e) => setForm({ ...form, valorTotal: moedaEntrada(e.target.value) })}
+            disabled={edicaoFinanceiraBloqueada}
+            className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100"
+          />
+          {/* Mostra junto ao campo a mesma explicação usada na quantidade de parcelas. */}
+          {edicaoFinanceiraBloqueada && (
+            <span className="mt-1 block text-xs text-slate-500">{explicacaoBloqueioParcelas}</span>
+          )}
+        </label>
+        {/* Mantém a lista de parcelas existente e usa a mesma trava do valor base. */}
+        <div className="text-sm">
+          {/* Preserva o rótulo acessível do seletor de quantidade. */}
+          <label htmlFor="quantidade-parcelas-edicao">Quantidade de parcelas</label>
+          {/* Reinicia a lista quando o estado de bloqueio financeiro muda. */}
+          <SelectQuantidadeParcelas
+            key={edicaoFinanceiraBloqueada ? 'bloqueada' : 'liberada'}
+            id="quantidade-parcelas-edicao"
+            value={form.quantidadeParcelas}
+            disabled={edicaoFinanceiraBloqueada}
+            disabledReason={edicaoFinanceiraBloqueada ? explicacaoBloqueioParcelas : ''}
+            onChange={(quantidadeParcelas) => setForm({ ...form, quantidadeParcelas })}
+          />
+        </div>
+        <label className="text-sm">Vencimento da primeira parcela<input required type="date" value={form.vencimentoInicial} onChange={(e) => setForm({ ...form, vencimentoInicial: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><p className="text-sm text-slate-600 sm:col-span-2">Valor final estimado: <strong>{totalComJuros === null ? '—' : moeda(totalComJuros)}</strong>. Até 12 parcelas sem juros; acima disso, acréscimo simples de 1% por parcela além da 12ª.</p>
         <label className="text-sm sm:col-span-2">Serviços, materiais e medidas previstos<textarea required rows="4" value={form.informacoesAdicionais} onChange={(e) => setForm({ ...form, informacoesAdicionais: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>{feedback.dados && <p role={feedback.dados.tipo === 'erro' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm font-semibold sm:col-span-2 ${feedback.dados.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{feedback.dados.texto}</p>}<Button type="submit" disabled={salvando} className="sm:col-span-2">Salvar alterações</Button>
       </form></section>
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Equipe com acesso</h2><p className="mt-1 text-xs text-slate-500">Adicione gerentes que já têm conta. Cada gerente desta obra precisa ter uma função diferente.</p>{feedback.equipe && <p role={feedback.equipe.tipo === 'erro' ? 'alert' : 'status'} className={`mt-3 rounded-lg p-3 text-sm font-semibold ${feedback.equipe.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{feedback.equipe.texto}</p>}<div className="mt-4 space-y-2">{escalas.alocacoesAbertas.map((alocacao) => <div key={alocacao.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm"><span><strong>{alocacao.funcionario.nome}</strong> · {alocacao.funcionario.funcao} · desde {new Date(alocacao.dataInicio).toLocaleDateString('pt-BR')}</span><Button variant="outline" disabled={salvando || alocandoGerente} onClick={() => removerAcesso(alocacao)} className="px-3 py-1.5 text-xs">Remover acesso</Button></div>)}{escalas.alocacoesAbertas.length === 0 && <p className="text-sm text-slate-500">Nenhum gerente tem acesso ativo nesta obra.</p>}</div><form onSubmit={adicionarGerentes} className="mt-4 space-y-3 border-t border-slate-100 pt-4">{selecoesGerentes.map((funcionarioId, indice) => { const funcaoEscolhida = gerentesElegiveis.find((item) => item.id === funcionarioId)?.funcao?.trim().toLocaleLowerCase('pt-BR'); return <label key={indice} className="block text-sm">Gerente {indice + 1}<select required value={funcionarioId} onChange={(event) => setSelecoesGerentes((atual) => atual.map((valor, posicao) => posicao === indice ? event.target.value : valor))} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="">Selecione nome e função</option>{gerentesElegiveis.filter((item) => !idsEscolhidos.has(item.id) || item.id === funcionarioId).map((item) => { const funcao = item.funcao.trim().toLocaleLowerCase('pt-BR'); const usada = funcoesAlocadas.has(funcao) || (funcaoEscolhida !== funcao && selecoesGerentes.some((selecionado) => gerentesElegiveis.find((candidato) => candidato.id === selecionado)?.funcao.trim().toLocaleLowerCase('pt-BR') === funcao)); return <option key={item.id} value={item.id} disabled={usada}>{item.nome} · {item.funcao}{usada ? ' · função já escolhida' : ''}</option>})}</select></label>})}<div className="flex flex-wrap gap-2"><Button type="submit" disabled={alocandoGerente || !gerentesElegiveis.length}>{alocandoGerente ? 'Adicionando…' : 'Adicionar gerente(s)'}</Button>{gerentesElegiveis.length > selecoesGerentes.length && <Button type="button" variant="outline" onClick={() => setSelecoesGerentes((atual) => [...atual, ''])}>Adicionar outro</Button>}</div>{gerentesElegiveis.length === 0 && <p className="text-xs text-slate-500">Não há outros gerentes com conta ativa disponíveis nesta empresa.</p>}</form></section></div>

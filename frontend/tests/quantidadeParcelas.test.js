@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 // Importa a leitura de arquivos para conferir como as telas conectam o controle compartilhado.
 import { readFile } from 'node:fs/promises'
 // Importa as opções, conversões e regras usadas pelos cadastros e pela edição da obra.
-import { criarOpcoesQuantidadeParcelas, localizarIndiceQuantidadeParcelas, montarPayloadCriarObra, normalizarQuantidadeParcelas, obterQuantidadeInicialObra, resolverTeclaQuantidadeParcelas } from '../src/utils/quantidadeParcelas.js'
+import { criarOpcoesQuantidadeParcelas, deveBloquearEdicaoFinanceira, localizarIndiceQuantidadeParcelas, montarPayloadCriarObra, normalizarQuantidadeParcelas, obterQuantidadeInicialObra, resolverTeclaQuantidadeParcelas } from '../src/utils/quantidadeParcelas.js'
 // Lê a tela de edição para validar a ligação entre os dados da obra e o controle visual.
 const paginaEdicao = await readFile(new URL('../src/pages/AdminObra.jsx', import.meta.url), 'utf8')
 // Lê o componente para validar os atributos reais do botão desabilitado.
@@ -61,6 +61,54 @@ describe('Seletor de quantidade de parcelas na criação de obra', () => {
     assert.match(paginaEdicao, /value=\{form\.quantidadeParcelas\}/)
   })
 
+  // Confirma que os campos financeiros permanecem editáveis sem parcela paga ou tentativa ativa.
+  it('mantém valor base e quantidade habilitados sem pagamento', () => {
+    // Representa uma parcela comum ainda não paga, sem tentativa de pagamento online.
+    const parcelas = [{ situacao: 'pendente', tentativasPendentes: [] }]
+    // Confirma que esse estado não ativa o bloqueio financeiro.
+    assert.equal(deveBloquearEdicaoFinanceira(parcelas), false)
+    // Confirma que valor base e quantidade usam a mesma condição para desabilitar.
+    assert.equal((paginaEdicao.match(/disabled=\{edicaoFinanceiraBloqueada\}/g) || []).length, 2)
+  })
+
+  // Confirma que uma parcela quitada bloqueia os dois campos e mantém a explicação comum.
+  it('bloqueia valor base e quantidade com parcela paga', () => {
+    // Representa uma parcela confirmada como paga, como a API entrega à tela.
+    const parcelas = [{ situacao: 'paga', tentativasPendentes: [] }]
+    // Confirma que uma parcela paga ativa a condição de bloqueio financeiro.
+    assert.equal(deveBloquearEdicaoFinanceira(parcelas), true)
+    // Confirma que o valor base fica desabilitado pela condição compartilhada.
+    assert.match(paginaEdicao, /disabled=\{edicaoFinanceiraBloqueada\}/)
+    // Confirma que o seletor mostra a mesma explicação sob o controle bloqueado.
+    assert.match(paginaEdicao, /disabledReason=\{edicaoFinanceiraBloqueada \? explicacaoBloqueioParcelas : ''\}/)
+    // Confirma que o campo de valor também apresenta essa explicação junto a ele.
+    assert.match(paginaEdicao, /<span className="mt-1 block text-xs text-slate-500">\{explicacaoBloqueioParcelas\}<\/span>/)
+  })
+
+  // Confirma que uma tentativa online pendente bloqueia os dois campos e mostra a explicação comum.
+  it('bloqueia valor base e quantidade com tentativa pendente', () => {
+    // Representa parcela não paga com uma tentativa online ainda em processamento.
+    const parcelas = [{ situacao: 'pendente', tentativasPendentes: [{ id: 'pagamento-pendente' }] }]
+    // Confirma que o registro de tentativa ativa a condição de bloqueio financeiro.
+    assert.equal(deveBloquearEdicaoFinanceira(parcelas), true)
+    // Confirma que os dois campos compartilham a condição de bloqueio.
+    assert.equal((paginaEdicao.match(/disabled=\{edicaoFinanceiraBloqueada\}/g) || []).length, 2)
+    // Confirma que a mensagem junto ao valor usa o texto compartilhado do seletor.
+    assert.match(paginaEdicao, /<span className="mt-1 block text-xs text-slate-500">\{explicacaoBloqueioParcelas\}<\/span>/)
+  })
+
+  // Confirma que bloquear a edição não remove nem altera o valor que o PATCH recebe.
+  it('preserva o valor base atual no envio do PATCH', () => {
+    // Confirma que a tela continua exibindo o valor guardado no estado do formulário.
+    assert.match(paginaEdicao, /value=\{form\.valorTotal\}/)
+    // Confirma que o valor digitado continua sendo tratado pelo mesmo formatador.
+    assert.match(paginaEdicao, /valorTotal: moedaEntrada\(e\.target\.value\)/)
+    // Confirma que o envio continua normalizando o mesmo valor do estado atual.
+    assert.match(paginaEdicao, /const valor = moedaNormalizada\(form\.valorTotal\)/)
+    // Confirma que o payload atual ainda inclui valorTotal sem alterar o contrato.
+    assert.match(paginaEdicao, /atualizarObra\(id, \{ \.\.\.form, valorTotal: valor, quantidadeParcelas:/)
+  })
+
   // Confirma que o campo bloqueado não abre a lista e apresenta a explicação junto a ele.
   it('campo desabilitado não abre a lista e mostra o motivo do bloqueio', () => {
     // Prepara uma lista fechada e informa ao redutor que o campo está desabilitado.
@@ -74,7 +122,7 @@ describe('Seletor de quantidade de parcelas na criação de obra', () => {
     // Confirma que o controle usa o mesmo fundo desabilitado dos campos do formulário.
     assert.match(componenteSelect, /disabled:bg-slate-100/)
     // Confirma que a tela bloqueia com parcela paga ou tentativa pendente.
-    assert.match(paginaEdicao, /parcelaPaga \|\| pagamentoEmProcessamento/)
+    assert.match(paginaEdicao, /deveBloquearEdicaoFinanceira\(parcelas\)/)
     // Confirma que a tela repete a mensagem já retornada pelo backend.
     assert.match(paginaEdicao, /Valor, quantidade e vencimentos não podem mudar depois de iniciada uma tentativa ou confirmado um pagamento/)
   })
