@@ -47,6 +47,7 @@ const {
   iniciarExecucaoObra,
   confirmarPrimeiraParcela,
   moverAlocacao,
+  atualizarVencimentoObra,
   atualizarDadosObra,
   anexarFotoObra,
   arquivarObra,
@@ -112,6 +113,14 @@ function converterDataISO(valor) {
     return new Date(Date.UTC(ano, mes - 1, dia, 12));
   }
   return null;
+}
+
+// Mantém a mesma validação de data já usada no cadastro de obras.
+function vencimentoInicialValido(valor) {
+  // Exige texto no formato de data usado pelo campo HTML.
+  if (typeof valor !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false;
+  // Preserva a validação atual do cadastro sem acrescentar bloqueio para datas passadas.
+  return Number.isFinite(new Date(`${valor}T12:00:00.000Z`).getTime());
 }
 
 function somarMesesPreservandoDia(dataInicial, quantidadeMeses) {
@@ -1132,7 +1141,7 @@ app.post("/obras", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), a
     const valorTotal = String(corpo.valorTotal);
     if (!/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(valorTotal) || Number(valorTotal) <= 0) return res.status(400).json({ erro: "Valor base deve ser positivo e ter até duas casas decimais" });
     if (!Number.isInteger(Number(corpo.quantidadeParcelas)) || Number(corpo.quantidadeParcelas) < 1 || Number(corpo.quantidadeParcelas) > 36) return res.status(400).json({ erro: "Escolha de 1 a 36 parcelas" });
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(corpo.vencimentoInicial || "") || !Number.isFinite(new Date(`${corpo.vencimentoInicial}T12:00:00.000Z`).getTime())) return res.status(400).json({ erro: "Informe a data do primeiro vencimento" });
+    if (!vencimentoInicialValido(corpo.vencimentoInicial)) return res.status(400).json({ erro: "Informe a data do primeiro vencimento" });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(corpo.prazoFinal) || !Number.isFinite(new Date(`${corpo.prazoFinal}T12:00:00.000Z`).getTime())) return res.status(400).json({ erro: "Informe um prazo final válido" });
     if (corpo.fotos !== undefined && (!Array.isArray(corpo.fotos) || corpo.fotos.length > 5)) return res.status(400).json({ erro: "Envie até cinco fotos iniciais" });
     const prisma = getPrisma();
@@ -1225,7 +1234,7 @@ app.patch("/obras/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN
       dados.quantidadeParcelas = Number(req.body.quantidadeParcelas);
     }
     if (req.body?.vencimentoInicial !== undefined) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.body.vencimentoInicial) || !Number.isFinite(new Date(`${req.body.vencimentoInicial}T12:00:00.000Z`).getTime())) return res.status(400).json({ erro: "Informe a data do primeiro vencimento" });
+      if (!vencimentoInicialValido(req.body.vencimentoInicial)) return res.status(400).json({ erro: "Informe a data do primeiro vencimento" });
       dados.vencimentoInicial = new Date(`${req.body.vencimentoInicial}T12:00:00.000Z`);
     }
     if (req.body?.valorTotal !== undefined) {
@@ -1246,8 +1255,44 @@ app.patch("/obras/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN
   } catch (erro) {
     if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
     if (erro.code === "VALOR_OBRA_TRAVADO") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "VENCIMENTO_OBRA_BLOQUEADO") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "PARCELA_UM_NAO_ENCONTRADA") return res.status(409).json({ erro: erro.message });
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada por outra operação. Atualize os dados e tente novamente." });
     console.error("Erro ao atualizar dados da obra:", erro.code || erro.message);
     return res.status(500).json({ erro: "Erro ao atualizar dados da obra" });
+  }
+});
+
+// Permite ao ADMIN alterar os vencimentos da parcela 1 em diante por uma regra dedicada.
+app.patch("/obras/:id/vencimento", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  // Converte erros esperados em respostas estáveis e sem revelar obras de outra empresa.
+  try {
+    // Valida a data com exatamente a regra que o cadastro de obras já utiliza.
+    if (!vencimentoInicialValido(req.body?.vencimentoInicial)) return res.status(400).json({ erro: "Informe a data do primeiro vencimento" });
+    // Persiste datas, evento e notificação usando a transação do repositório.
+    const resultado = await atualizarVencimentoObra({
+      obraId: req.params.id,
+      empresaId: req.usuario.empresaId,
+      administradorId: req.usuario.id,
+      vencimentoInicial: new Date(`${req.body.vencimentoInicial}T12:00:00.000Z`),
+    });
+    // Usa resposta idêntica para obra ausente e obra de outra empresa.
+    if (!resultado) return res.status(404).json({ erro: "Obra não encontrada" });
+    // Devolve o evento próprio junto às datas gravadas.
+    return res.json(resultado);
+  } catch (erro) {
+    // Informa quando o banco não está configurado sem expor dados internos.
+    if (erro.code === "DATABASE_NOT_CONFIGURED") return res.status(503).json({ erro: erro.message });
+    // Devolve a regra de negócio compartilhada em português.
+    if (erro.code === "VENCIMENTO_OBRA_BLOQUEADO") return res.status(409).json({ erro: erro.message });
+    // Identifica obra inconsistente sem iniciar alteração parcial.
+    if (erro.code === "PARCELA_UM_NAO_ENCONTRADA") return res.status(409).json({ erro: erro.message });
+    // Trata concorrência serializável para que o administrador possa recarregar.
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada por outra operação. Atualize os dados e tente novamente." });
+    // Registra somente o código ou a mensagem técnica no log do servidor.
+    console.error("Erro ao alterar vencimento da obra:", erro.code || erro.message);
+    // Mantém a resposta ao cliente sem detalhes internos.
+    return res.status(500).json({ erro: "Não foi possível atualizar as datas das parcelas" });
   }
 });
 

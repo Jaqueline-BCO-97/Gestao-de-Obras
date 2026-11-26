@@ -16,6 +16,8 @@ Os papéis válidos são `ADMIN`, `CLIENTE` e `COLABORADOR`.
 | `GET /usuarios` | ADMIN | Lista usuários da empresa do token, sem hashes de senha. |
 | `POST /colaboradores` | ADMIN | Cria colaborador na empresa do token. Recebe `nome`, `email` e `senha`. |
 | `POST /obras` | ADMIN | Cria obra na empresa do token. Recebe `nome` e, opcionalmente, `descricao` e `endereco`. |
+| `PATCH /obras/:id` | ADMIN da empresa | Atualiza dados gerais; se receber `vencimentoInicial`, aplica a mesma regra transacional da rota dedicada de vencimento. |
+| `PATCH /obras/:id/vencimento` | ADMIN da empresa | Atualiza somente `Parcela.vencimento` de todas as parcelas a partir da data informada; exige obra Agendada e sem movimento de pagamento. |
 | `GET /obras` | Autenticado | Lista obras dentro do escopo do perfil. |
 | `GET /obras/:id` | Autenticado | Consulta obra dentro do escopo; obra inexistente ou fora dele retorna 404. |
 | `POST /obras/:id/colaboradores` | ADMIN da empresa | Recebe `funcionarioId` e adiciona uma escala aberta sem encerrar as escalas anteriores; valida empresa, nível Responsável, funcionário ativo, vínculo de login válido, duplicidade e função repetida. |
@@ -39,6 +41,7 @@ Login retorna 400 para campos ausentes, 401 para credenciais inválidas e 503 qu
 - `COLABORADOR` recebe somente obras com escala aberta de funcionário associado ao usuário e à mesma empresa.
 - `valorTotal`, parcelas e `resumoParcelas` são enviados a `ADMIN` e `CLIENTE`, e omitidos para `COLABORADOR` (regra RN15).
 - `CLIENTE` recebe eventos com `visivelParaCliente: true`. `COLABORADOR` não recebe eventos `pagamento`, `orcamento_aprovado` ou `contratacao`, em linha com o filtro de timeline usado no frontend.
+- As parcelas podem incluir `temMovimentoPagamento` (booleano somente leitura), que informa se existe pagamento em qualquer estado, parcela paga, comprovante enviado ou referência externa; o campo não expõe os detalhes de pagamentos ocultos.
 
 ### Atribuição de gerentes
 
@@ -46,6 +49,18 @@ Login retorna 400 para campos ausentes, 401 para credenciais inválidas e 503 qu
 - Eventos, funcionários escalados e cliente de outra empresa não devem aparecer na resposta.
 
 O objeto de obra usa os campos `id`, `titulo`, `cliente`, `colaboradores`, `endereco`, `status`, `prazo`, `timeline` e, conforme o perfil, `valorTotal`, `parcela1`, `parcela2`, `parcelas` e `resumoParcelas`. Na listagem `GET /obras`, `resumoParcelas` (somente leitura) traz `{ total, pagas, valorParcelaBase, ultimaPaga, penultimaPaga, proximaNaoPaga }` com `{ numero, valor, situacao, estado }` calculado a partir de todas as parcelas da obra usando a mesma regra de atraso do sistema, permitindo exibir cartões de obras com mais de 2 parcelas sem alterar o campo `parcelas`. Datas usam `DD/MM/YYYY`; horários usam `HH:mm`. O schema possui `Parcela.vencimento`, usado para classificar parcelas não pagas vencidas como atrasadas; o campo `vencimento` aparece formatado nas parcelas quando informado. O formato atual legado de `parcela1`/`parcela2` expõe até duas parcelas para compatibilidade.
+
+### Alteração do vencimento das parcelas
+
+`PATCH /obras/:id/vencimento` exige token de `ADMIN` da empresa proprietária e recebe `{ "vencimentoInicial": "AAAA-MM-DD" }`. A obra é localizada pelo ID e pela empresa da sessão; uma obra ausente ou de outra empresa retorna 404 sem revelar sua existência. Cliente e colaborador/gerente recebem 403.
+
+A alteração só é permitida quando o status salvo da obra é `AGENDADA` e nenhuma parcela tem movimento de pagamento. Conta como movimento uma parcela `PAGA`, um comprovante enviado, uma referência externa ou qualquer registro relacionado de `Pagamento`, independentemente do estado. A validação ocorre na mesma transação serializável que atualiza as datas. Fora da regra, a rota responde 409 com: `Só é possível alterar o vencimento enquanto a obra não começou e nenhuma parcela tiver pagamento.`
+
+A rota altera exclusivamente `Parcela.vencimento` em todas as parcelas. Os vencimentos seguem mês a mês a regra atual de preservar o dia de origem e limitar ao último dia de meses curtos (por exemplo, 31 de janeiro, 28/29 de fevereiro e 31 de março). Valores, juros, total e quantidade não são recalculados. O campo deve estar no formato `AAAA-MM-DD` e usa a mesma validação do cadastro de obra; não há validação que impeça datas passadas.
+
+O evento de histórico usa descrição própria e fica visível ao cliente. Uma notificação é criada somente se houver cliente vinculado, e seu conteúdo contém apenas a data anterior e a nova. A alteração invalida o cache das listas da empresa para que o resumo de parcelas e o painel do cliente leiam as datas novas.
+
+O PATCH genérico `PATCH /obras/:id` continua aceitando `vencimentoInicial` para compatibilidade e aplica a mesma validação, função de domínio, transação e bloqueio da rota dedicada. Ao alterar a quantidade em uma operação posterior, as datas são recalculadas a partir do vencimento atual da parcela 1. Convites pendentes com `Convite.vencimentoInicial` legado não são modificados: ao aceitar convite, a data salva atualmente na parcela 1 da obra continua tendo prioridade, e a data antiga do convite permanece apenas como reserva de compatibilidade.
 
 ## Cadastro e perfil da empresa
 

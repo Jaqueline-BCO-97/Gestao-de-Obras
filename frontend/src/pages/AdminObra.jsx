@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 // Reutiliza a lista compacta de parcelas também no formulário de edição.
 import SelectQuantidadeParcelas from '../components/SelectQuantidadeParcelas.jsx'
-import { alocarFuncionarioObra, anexarFotoNovaObra, arquivarObra, atualizarObra, buscarObra, confirmarPrimeiraParcela, encerrarAlocacaoObra, iniciarExecucaoObra, listarAlocacoesObra, registrarAndamentoObra, solicitarConferenciaObra } from '../services/auth.js'
+import { alocarFuncionarioObra, anexarFotoNovaObra, arquivarObra, atualizarObra, atualizarVencimentoObra, buscarObra, confirmarPrimeiraParcela, encerrarAlocacaoObra, iniciarExecucaoObra, listarAlocacoesObra, registrarAndamentoObra, solicitarConferenciaObra } from '../services/auth.js'
 import useConfirmacao from '../components/useConfirmacao.jsx'
 // Importa o componente padronizado de resumo de parcelas (título "Parcelas", sem parênteses, até 2 linhas).
 import ResumoParcelas from '../components/ResumoParcelas.jsx'
@@ -11,6 +11,8 @@ import ResumoParcelas from '../components/ResumoParcelas.jsx'
 import { deveBloquearEdicaoFinanceira, normalizarQuantidadeParcelas, obterQuantidadeInicialObra } from '../utils/quantidadeParcelas.js'
 // Reutiliza a regra única ao bloquear funções já usadas na equipe da obra.
 import { normalizarFuncaoComparacao } from '../utils/funcao.js'
+// Reutiliza a regra e a explicação da edição segura do vencimento.
+import { explicacaoBloqueioVencimento, podeAlterarVencimentoObra } from '../utils/vencimentoObra.js'
 
 function moeda(valor) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor || 0)) }
 function moedaEntrada(valor) { const digitos = String(valor).replace(/\D/g, ''); return digitos ? (Number(digitos) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '' }
@@ -72,8 +74,20 @@ export default function AdminObra() {
     if (!/^\d+$/.test(form.numero) || (!form.semApartamento && !/^\d+$/.test(form.apartamento)) || (!form.semBloco && !/^[a-z\d]+$/i.test(form.bloco))) { informarFeedback('dados', 'erro', 'Número e apartamento aceitam apenas números; bloco aceita letras e números.'); return }
     const valor = moedaNormalizada(form.valorTotal)
     if (!/^\d+(?:\.\d{1,2})?$/.test(valor) || Number(valor) <= 0) { informarFeedback('dados', 'erro', 'Informe um valor positivo com até duas casas decimais.'); return }
-    // Converte a quantidade para número mantendo o payload original da edição.
-    await executar(() => atualizarObra(id, { ...form, valorTotal: valor, quantidadeParcelas: normalizarQuantidadeParcelas(form.quantidadeParcelas), vencimentoInicial: form.vencimentoInicial }), 'Dados da obra atualizados.', 'dados')
+    // Separa a data do payload genérico para evitar duas regras de edição na tela.
+    const dadosGerais = { ...form }
+    // Remove a data para que este formulário não altere o calendário da obra.
+    delete dadosGerais.vencimentoInicial
+    // Atualiza os campos gerais sem enviar o vencimento ao PATCH legado.
+    await executar(() => atualizarObra(id, { ...dadosGerais, valorTotal: valor, quantidadeParcelas: normalizarQuantidadeParcelas(form.quantidadeParcelas) }), 'Dados da obra atualizados.', 'dados')
+  }
+
+  // Salva o calendário pela rota exclusiva e mostra falhas junto ao campo.
+  async function salvarVencimento() {
+    // Recusa o envio local quando o campo obrigatório estiver vazio.
+    if (!form.vencimentoInicial) { informarFeedback('vencimento', 'erro', 'Informe a data do primeiro vencimento.'); return }
+    // Atualiza a tela depois da gravação e informa o lembrete sobre o contrato.
+    await executar(() => atualizarVencimentoObra(id, form.vencimentoInicial), 'Datas das parcelas atualizadas. Se houver contrato anexado, atualize o PDF com as novas datas.', 'vencimento')
   }
 
   async function salvarFotoObra(event) {
@@ -137,6 +151,8 @@ export default function AdminObra() {
   const pagamentoEmProcessamento = parcelas.some((parcela) => parcela.tentativasPendentes?.length)
   // Aplica a mesma regra de bloqueio aos campos de valor base e quantidade de parcelas.
   const edicaoFinanceiraBloqueada = deveBloquearEdicaoFinanceira(parcelas)
+  // Habilita a edição de data somente quando a obra e todas as parcelas atendem à regra.
+  const vencimentoPodeAlterar = podeAlterarVencimentoObra(obra)
   // Mantém a explicação já usada pelo backend para alterações financeiras bloqueadas.
   const explicacaoBloqueioParcelas = 'Valor, quantidade e vencimentos não podem mudar depois de iniciada uma tentativa ou confirmado um pagamento'
   const totalComJuros = form.quantidadeParcelas ? Number(moedaNormalizada(form.valorTotal || '0')) * (1 + (Number(form.quantidadeParcelas) > 12 ? 0.01 * (Number(form.quantidadeParcelas) - 12) : 0)) : null
@@ -191,7 +207,21 @@ export default function AdminObra() {
             onChange={(quantidadeParcelas) => setForm({ ...form, quantidadeParcelas })}
           />
         </div>
-        <label className="text-sm">Vencimento da primeira parcela<input required type="date" value={form.vencimentoInicial} onChange={(e) => setForm({ ...form, vencimentoInicial: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><p className="text-sm text-slate-600 sm:col-span-2">Valor final estimado: <strong>{totalComJuros === null ? '—' : moeda(totalComJuros)}</strong>. Até 12 parcelas sem juros; acima disso, acréscimo simples de 1% por parcela além da 12ª.</p>
+        {/* Mantém a data obrigatória e separa sua gravação dos outros dados da obra. */}
+        <div className="text-sm">
+          {/* Associa o rótulo ao campo de data que atualiza a parcela 1. */}
+          <label htmlFor="vencimento-primeira-parcela">Vencimento da primeira parcela</label>
+          {/* Bloqueia o campo fora da regra e preserva a data atualmente salva. */}
+          <input id="vencimento-primeira-parcela" required type="date" value={form.vencimentoInicial} disabled={!vencimentoPodeAlterar || salvando} onChange={(e) => { setForm({ ...form, vencimentoInicial: e.target.value }); limparFeedback('vencimento') }} className="mt-1 w-full rounded border border-slate-300 p-2 disabled:bg-slate-100" />
+          {/* Explica por que o administrador não pode editar o calendário. */}
+          {!vencimentoPodeAlterar && <span className="mt-1 block text-xs text-slate-500">{explicacaoBloqueioVencimento}</span>}
+          {/* Salva somente quando a data estiver habilitada e preenchida. */}
+          <Button type="button" disabled={!vencimentoPodeAlterar || salvando || !form.vencimentoInicial} onClick={salvarVencimento} className="mt-2">Atualizar vencimentos</Button>
+          {/* Exibe erros da API ao lado da ação de vencimento. */}
+          {feedback.vencimento && <p role={feedback.vencimento.tipo === 'erro' ? 'alert' : 'status'} className={`mt-2 rounded-lg p-3 text-xs font-semibold ${feedback.vencimento.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{feedback.vencimento.texto}</p>}
+        </div>
+        {/* Mantém junto ao cálculo atual a estimativa financeira da obra. */}
+        <p className="text-sm text-slate-600 sm:col-span-2">Valor final estimado: <strong>{totalComJuros === null ? '—' : moeda(totalComJuros)}</strong>. Até 12 parcelas sem juros; acima disso, acréscimo simples de 1% por parcela além da 12ª.</p>
         <label className="text-sm sm:col-span-2">Serviços, materiais e medidas previstos<textarea required rows="4" value={form.informacoesAdicionais} onChange={(e) => setForm({ ...form, informacoesAdicionais: e.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2" /></label>{feedback.dados && <p role={feedback.dados.tipo === 'erro' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm font-semibold sm:col-span-2 ${feedback.dados.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{feedback.dados.texto}</p>}<Button type="submit" disabled={salvando} className="sm:col-span-2">Salvar alterações</Button>
       </form></section>
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Equipe com acesso</h2><p className="mt-1 text-xs text-slate-500">Adicione gerentes que já têm conta. Cada gerente desta obra precisa ter uma função diferente.</p>{feedback.equipe && <p role={feedback.equipe.tipo === 'erro' ? 'alert' : 'status'} className={`mt-3 rounded-lg p-3 text-sm font-semibold ${feedback.equipe.tipo === 'erro' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{feedback.equipe.texto}</p>}<div className="mt-4 space-y-2">{escalas.alocacoesAbertas.map((alocacao) => <div key={alocacao.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm"><span><strong>{alocacao.funcionario.nome}</strong> · {alocacao.funcionario.funcao} · desde {new Date(alocacao.dataInicio).toLocaleDateString('pt-BR')}</span><Button variant="outline" disabled={salvando || alocandoGerente} onClick={() => removerAcesso(alocacao)} className="px-3 py-1.5 text-xs">Remover acesso</Button></div>)}{escalas.alocacoesAbertas.length === 0 && <p className="text-sm text-slate-500">Nenhum gerente tem acesso ativo nesta obra.</p>}</div><form onSubmit={adicionarGerentes} className="mt-4 space-y-3 border-t border-slate-100 pt-4">{selecoesGerentes.map((funcionarioId, indice) => { const funcaoEscolhida = normalizarFuncaoComparacao(gerentesElegiveis.find((item) => item.id === funcionarioId)?.funcao); return <label key={indice} className="block text-sm">Gerente {indice + 1}<select required value={funcionarioId} onChange={(event) => setSelecoesGerentes((atual) => atual.map((valor, posicao) => posicao === indice ? event.target.value : valor))} className="mt-1 w-full rounded border border-slate-300 p-2"><option value="">Selecione nome e função</option>{gerentesElegiveis.filter((item) => !idsEscolhidos.has(item.id) || item.id === funcionarioId).map((item) => { const funcao = normalizarFuncaoComparacao(item.funcao); const usada = funcoesAlocadas.has(funcao) || (funcaoEscolhida !== funcao && selecoesGerentes.some((selecionado) => normalizarFuncaoComparacao(gerentesElegiveis.find((candidato) => candidato.id === selecionado)?.funcao) === funcao)); return <option key={item.id} value={item.id} disabled={usada}>{item.nome} · {item.funcao}{usada ? ' · função já escolhida' : ''}</option>})}</select></label>})}<div className="flex flex-wrap gap-2"><Button type="submit" disabled={alocandoGerente || !gerentesElegiveis.length}>{alocandoGerente ? 'Adicionando…' : 'Adicionar gerente(s)'}</Button>{gerentesElegiveis.length > selecoesGerentes.length && <Button type="button" variant="outline" onClick={() => setSelecoesGerentes((atual) => [...atual, ''])}>Adicionar outro</Button>}</div>{gerentesElegiveis.length === 0 && <p className="text-xs text-slate-500">Não há outros gerentes com conta ativa disponíveis nesta empresa.</p>}</form></section></div>

@@ -106,7 +106,7 @@ describe('Seletor de quantidade de parcelas na criação de obra', () => {
     // Confirma que o envio continua normalizando o mesmo valor do estado atual.
     assert.match(paginaEdicao, /const valor = moedaNormalizada\(form\.valorTotal\)/)
     // Confirma que o payload atual ainda inclui valorTotal sem alterar o contrato.
-    assert.match(paginaEdicao, /atualizarObra\(id, \{ \.\.\.form, valorTotal: valor, quantidadeParcelas:/)
+    assert.match(paginaEdicao, /atualizarObra\(id, \{ \.\.\.dadosGerais, valorTotal: valor, quantidadeParcelas:/)
   })
 
   // Confirma que o campo bloqueado não abre a lista e apresenta a explicação junto a ele.
@@ -128,7 +128,7 @@ describe('Seletor de quantidade de parcelas na criação de obra', () => {
   })
 
   // Confirma que a edição percorre o teclado até a opção 36 e envia o valor como número.
-  it('edição envia a opção 36 como número sem alterar o campo de vencimento', () => {
+  it('edição envia a opção 36 como número sem incluir vencimento no PATCH genérico', () => {
     // Abre a navegação pelo teclado no primeiro item da lista.
     let estado = { aberta: true, indiceAtivo: 0 }
     // Avança com setas até a última das 36 opções.
@@ -141,7 +141,9 @@ describe('Seletor de quantidade de parcelas na criação de obra', () => {
     assert.equal(normalizarQuantidadeParcelas(quantidadeSelecionada), 36)
     // Confirma que a tela envia a quantidade convertida no payload atual.
     assert.match(paginaEdicao, /quantidadeParcelas: normalizarQuantidadeParcelas\(form\.quantidadeParcelas\)/)
-    // Confirma que o campo de vencimento continua no formulário e no payload.
-    assert.match(paginaEdicao, /vencimentoInicial: form\.vencimentoInicial/)
+    // Confirma que a tela remove o vencimento antes do PATCH genérico.
+    assert.match(paginaEdicao, /delete dadosGerais\.vencimentoInicial/)
+    // Confirma que a data usa a rota dedicada.
+    assert.match(paginaEdicao, /atualizarVencimentoObra\(id, form\.vencimentoInicial\)/)
   })
 })

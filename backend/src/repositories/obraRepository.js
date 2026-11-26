@@ -1,6 +1,8 @@
 // Importa o cliente do banco e a verificação de configuração.
 const { getPrisma, isDbConfigured } = require("../config/db");
 const { Prisma } = require("@prisma/client");
+// Reutiliza a regra pura de ausência de pagamentos nos fluxos de vencimento e F7.
+const { obraSemMovimentoDePagamento } = require("../utils/obraSemMovimentoPagamento");
 // Reutiliza a mesma normalização em todos os bloqueios de função repetida.
 const { normalizarFuncaoComparacao } = require("../utils/normalizarFuncao");
 
@@ -43,19 +45,32 @@ function erroConclusao(code, message) {
   return erro;
 }
 
-async function notificarEventoObra(tx, { obraId, empresaId, evento, visivelParaCliente = true, autorId = null, incluirGerentes = true }) {
+// Padroniza o bloqueio do vencimento quando a obra começou ou teve pagamento.
+function erroVencimentoObra() {
+  // Usa a mesma mensagem para status incompatível e movimento financeiro.
+  const erro = new Error("Só é possível alterar o vencimento enquanto a obra não começou e nenhuma parcela tiver pagamento.");
+  // Permite que as rotas convertam esta regra em HTTP 409.
+  erro.code = "VENCIMENTO_OBRA_BLOQUEADO";
+  // Devolve o erro de domínio para a transação encerrar sem gravar parcialmente.
+  return erro;
+}
+
+async function notificarEventoObra(tx, { obraId, empresaId, evento, visivelParaCliente = true, autorId = null, incluirGerentes = true, somenteCliente = false, descricaoNotificacao = null }) {
   const [obra, administradores, escalasAtivas] = await Promise.all([
     tx.obra.findFirst({ where: { id: obraId, empresaId }, select: { clienteId: true } }),
-    tx.usuario.findMany({ where: { empresaId, tipo: "ADMIN", ...(autorId ? { id: { not: autorId } } : {}) }, select: { id: true } }),
-    incluirGerentes && tx.obraEscala?.findMany
+    somenteCliente ? [] : tx.usuario.findMany({ where: { empresaId, tipo: "ADMIN", ...(autorId ? { id: { not: autorId } } : {}) }, select: { id: true } }),
+    !somenteCliente && incluirGerentes && tx.obraEscala?.findMany
       ? tx.obraEscala.findMany({ where: { obraId, dataFim: null, funcionario: { ativo: true } }, select: { funcionario: { select: { usuarioId: true } } } })
       : [],
   ]);
-  const destinatarios = [
+  // Mantém os destinatários atuais ou restringe a notificação ao cliente vinculado.
+  const destinatarios = somenteCliente
+    ? (visivelParaCliente && obra?.clienteId && obra.clienteId !== autorId ? [obra.clienteId] : [])
+    : [
     ...administradores.map(({ id }) => id),
     ...escalasAtivas.map(({ funcionario }) => funcionario?.usuarioId).filter(Boolean),
     ...(visivelParaCliente && obra?.clienteId && obra.clienteId !== autorId ? [obra.clienteId] : []),
-  ].filter((usuarioId) => usuarioId !== autorId);
+    ].filter((usuarioId) => usuarioId !== autorId);
   if (!destinatarios.length) return;
   const descricao = evento.descricao || "";
   const conclusao = /conclus[aã]o da obra confirmada/i.test(descricao);
@@ -64,7 +79,7 @@ async function notificarEventoObra(tx, { obraId, empresaId, evento, visivelParaC
   await tx.notificacao.createMany({ data: destinatarios.map((usuarioId) => ({
     empresaId, usuarioId, obraId, eventoId: evento.id, tipo: tipoNotificacao,
     titulo,
-    descricao,
+    descricao: descricaoNotificacao || descricao,
   })) });
 }
 
@@ -647,13 +662,17 @@ function formatarParcela(parcela) {
   // Prepara a parcela com número, valor numérico e situação legível.
   const valor = Number(parcela.valor);
   const pagamentos = Array.isArray(parcela.pagamentos) ? parcela.pagamentos.filter(Boolean) : [];
+  // Expõe um indicador sem revelar registros ou estados financeiros adicionais.
+  const temMovimentoPagamento = Boolean(parcela.temMovimentoPagamento)
+    || parcela.situacao === "PAGA"
+    || Boolean(pagaEm || parcela.comprovanteUrl || comprovanteEnviadoEm || parcela.pagamentoExternoId || pagamentos.length);
   const aprovado = pagamentos.filter((pagamento) => pagamento.status === "APROVADO").reduce((total, pagamento) => total + Number(pagamento.valor), 0);
   const reservado = pagamentos.filter((pagamento) => pagamento.status === "PENDENTE").reduce((total, pagamento) => total + Number(pagamento.valor), 0);
   // Saldo devedor considera apenas aprovações; reservas são informadas separadamente.
   const saldoDevedor = parcela.situacao === "PAGA" ? 0 : Math.max(0, valor - aprovado);
   const saldoDisponivel = Math.max(0, saldoDevedor - reservado);
   const situacao = calcularSituacaoParcela(parcela);
-  const resposta = { id: parcela.id, numero: parcela.numero, valor, situacao, valorPago: parcela.situacao === "PAGA" ? valor : aprovado, valorReservado: reservado, saldoDevedor, saldoDisponivel, vencimento: formatarData(vencimento), vencimentoISO: vencimento ? vencimento.toISOString().slice(0, 10) : "", comprovanteUrl: parcela.comprovanteUrl, tentativasPendentes: pagamentos.filter((pagamento) => pagamento.status === "PENDENTE").map((pagamento) => ({ id: pagamento.id, valor: Number(pagamento.valor) })) };
+  const resposta = { id: parcela.id, numero: parcela.numero, valor, situacao, valorPago: parcela.situacao === "PAGA" ? valor : aprovado, valorReservado: reservado, saldoDevedor, saldoDisponivel, vencimento: formatarData(vencimento), vencimentoISO: vencimento ? vencimento.toISOString().slice(0, 10) : "", comprovanteUrl: parcela.comprovanteUrl, tentativasPendentes: pagamentos.filter((pagamento) => pagamento.status === "PENDENTE").map((pagamento) => ({ id: pagamento.id, valor: Number(pagamento.valor) })), temMovimentoPagamento };
   // Inclui a data do pagamento quando a parcela foi quitada.
   if (pagaEm) resposta.pagamento = formatarData(pagaEm);
   // Inclui quando o cliente enviou um comprovante.
@@ -824,6 +843,8 @@ function jsonParcelas(limitar) {
       'pagaEm', parcela."pagaEm",
       'comprovanteUrl', parcela."comprovanteUrl",
       'comprovanteEnviadoEm', parcela."comprovanteEnviadoEm",
+      'pagamentoExternoId', parcela."pagamentoExternoId",
+      'temMovimentoPagamento', (parcela.situacao = 'PAGA' OR parcela."pagaEm" IS NOT NULL OR parcela."comprovanteUrl" IS NOT NULL OR parcela."comprovanteEnviadoEm" IS NOT NULL OR parcela."pagamentoExternoId" IS NOT NULL OR EXISTS (SELECT 1 FROM "Pagamento" mov WHERE mov."parcelaId" = parcela.id)),
       'pagamentos', COALESCE((
         SELECT jsonb_agg(jsonb_build_object('id', pagamento.id, 'valor', pagamento.valor, 'status', pagamento.status))
         FROM "Pagamento" pagamento
@@ -831,7 +852,7 @@ function jsonParcelas(limitar) {
       ), '[]'::jsonb)
     ) ORDER BY parcela.numero ASC)
     FROM (
-      SELECT p.id, p.numero, p.valor, p.situacao, p.vencimento, p."pagaEm", p."comprovanteUrl", p."comprovanteEnviadoEm"
+      SELECT p.id, p.numero, p.valor, p.situacao, p.vencimento, p."pagaEm", p."comprovanteUrl", p."comprovanteEnviadoEm", p."pagamentoExternoId"
       FROM "Parcela" p
       WHERE p."obraId" = o.id ${filtroNumero}
       ORDER BY p.numero ASC ${limite}
@@ -1070,45 +1091,174 @@ async function salvarContratoObra({ obraId, empresaId, administradorId, termos, 
   });
 }
 
-async function atualizarDadosObra({ obraId, empresaId, administradorId, dados }) {
+// Atualiza somente os vencimentos dentro da transação recebida pelo chamador.
+async function atualizarVencimentosParcelasNaTransacao(tx, { obra, obraId, empresaId, administradorId, vencimentoInicial }) {
+  // Devolve nulo se a consulta de escopo não encontrou a obra.
+  if (!obra) return null;
+  // Lê todas as parcelas e qualquer registro de pagamento na mesma transação.
+  const parcelas = await tx.parcela.findMany({
+    where: { obraId },
+    include: { pagamentos: { select: { id: true } } },
+    orderBy: { numero: "asc" },
+  });
+  // Localiza a primeira parcela como origem do novo calendário.
+  const primeiraParcela = parcelas.find((parcela) => Number(parcela.numero) === 1);
+  // Impede salvar uma data quando a obra ainda não tem a parcela obrigatória.
+  if (!primeiraParcela) {
+    const erro = new Error("Não foi possível localizar a primeira parcela desta obra.");
+    erro.code = "PARCELA_UM_NAO_ENCONTRADA";
+    throw erro;
+  }
+  // Aplica o bloqueio do status e da ausência de movimento de pagamento.
+  if (obra.status !== "AGENDADA" || !obraSemMovimentoDePagamento({ parcelas })) throw erroVencimentoObra();
+  // Guarda a data antiga para o histórico sem expor outros dados da parcela.
+  const vencimentoAnterior = primeiraParcela.vencimento ? formatarData(primeiraParcela.vencimento) : "não informado";
+  // Atualiza a data de cada parcela sem tocar em número, valor ou obra.
+  for (let indice = 0; indice < parcelas.length; indice += 1) {
+    // Preserva o dia original e limita o dia ao último dia de meses curtos.
+    const vencimento = somarMesesPreservandoDia(vencimentoInicial, indice);
+    // Grava somente o campo Parcela.vencimento.
+    await tx.parcela.update({ where: { id: parcelas[indice].id }, data: { vencimento } });
+  }
+  // Formata a primeira data nova para o evento e a resposta.
+  const vencimentoNovo = formatarData(vencimentoInicial);
+  // Registra uma anotação própria que pode aparecer no histórico do cliente.
+  const evento = await tx.obraEvento.create({ data: {
+    obraId,
+    empresaId,
+    usuarioId: administradorId,
+    tipo: "ANOTACAO",
+    descricao: `Vencimento das parcelas alterado de ${vencimentoAnterior} para ${vencimentoNovo}.`,
+    visivelParaCliente: true,
+  } });
+  // Cria notificações somente quando há um cliente vinculado à obra.
+  if (obra.clienteId) await notificarEventoObra(tx, {
+    obraId,
+    empresaId,
+    evento,
+    autorId: administradorId,
+    somenteCliente: true,
+    descricaoNotificacao: `${vencimentoAnterior} → ${vencimentoNovo}`,
+  });
+  // Devolve apenas as datas e o evento criados nesta transação.
+  return { obraId, vencimentoAnterior, vencimentoNovo, evento };
+}
+
+// Altera o calendário de parcelas sem recalcular valores ou quantidade.
+async function atualizarVencimentoObra({ obraId, empresaId, administradorId, vencimentoInicial }) {
+  // Confirma que o banco pode receber gravações.
   exigirBancoConfigurado();
+  // Inicia uma transação serializável para concorrer com novas tentativas de pagamento.
   const prisma = getPrisma();
-  return prisma.$transaction(async (tx) => {
-    const obra = await tx.obra.findFirst({ where: { id: obraId, empresaId, excluidaEm: null }, select: { id: true, quantidadeParcelas: true, taxaJurosMensal: true, valorBase: true, valorTotal: true } });
+  return emTransacaoSerializavel(prisma, async (tx) => {
+    // Localiza a obra pela empresa e lê o estado necessário para a regra.
+    const obra = await tx.obra.findFirst({
+      where: { id: obraId, empresaId, excluidaEm: null },
+      select: { id: true, status: true, clienteId: true },
+    });
+    // Atualiza datas, evento e notificação na mesma transação.
+    return atualizarVencimentosParcelasNaTransacao(tx, { obra, obraId, empresaId, administradorId, vencimentoInicial });
+  });
+}
+
+async function atualizarDadosObra({ obraId, empresaId, administradorId, dados }) {
+  // Confirma que o banco pode receber alterações.
+  exigirBancoConfigurado();
+  // Obtém a instância compartilhada do Prisma.
+  const prisma = getPrisma();
+  // Guarda a data antes de removê-la dos campos gerais da obra.
+  const vencimentoInicialSolicitado = dados.vencimentoInicial;
+  // Usa uma transação serializável sempre que o PATCH também altera datas.
+  const executar = async (tx) => {
+    // Busca a obra pelo ID e pela empresa do administrador.
+    const obra = await tx.obra.findFirst({
+      where: { id: obraId, empresaId, excluidaEm: null },
+      select: { id: true, status: true, clienteId: true, quantidadeParcelas: true, taxaJurosMensal: true, valorBase: true, valorTotal: true },
+    });
+    // Mantém o mesmo resultado de obra inexistente ou fora da empresa.
     if (!obra) return null;
-    if (dados.valorTotal !== undefined || dados.quantidadeParcelas !== undefined || dados.vencimentoInicial !== undefined) {
+    // Mantém o evento próprio de vencimento separado do evento de dados básicos.
+    let eventoVencimento = null;
+    // Valida e atualiza as datas pela mesma regra usada na rota dedicada.
+    if (vencimentoInicialSolicitado !== undefined) {
+      const alteracao = await atualizarVencimentosParcelasNaTransacao(tx, {
+        obra,
+        obraId,
+        empresaId,
+        administradorId,
+        vencimentoInicial: vencimentoInicialSolicitado,
+      });
+      // Guarda o evento próprio para devolvê-lo mesmo em PATCH apenas de data.
+      eventoVencimento = alteracao.evento;
+      // Impede que o vencimento entre no update genérico da tabela Obra.
+      delete dados.vencimentoInicial;
+    }
+    // Identifica somente os campos que recalculam valores e quantidade.
+    const recalcularParcelas = dados.valorTotal !== undefined || dados.quantidadeParcelas !== undefined;
+    // Preserva o bloqueio financeiro atual para alterações de valor e quantidade.
+    if (recalcularParcelas) {
+      // Carrega as parcelas atuais e suas tentativas, dentro desta transação.
       const parcelas = await tx.parcela.findMany({ where: { obraId }, include: { pagamentos: { select: { id: true } } }, orderBy: { numero: "asc" } });
+      // Mantém a mensagem e a condição já existentes para bloqueio financeiro.
       if (parcelas.some((parcela) => parcela.situacao === "PAGA" || parcela.pagamentos.length > 0)) {
         const erro = new Error("Valor, quantidade e vencimentos não podem mudar depois de iniciada uma tentativa ou confirmado um pagamento");
         erro.code = "VALOR_OBRA_TRAVADO";
         throw erro;
       }
+      // Escolhe a quantidade pedida ou mantém a quantidade persistida.
       const quantidade = Number(dados.quantidadeParcelas || obra.quantidadeParcelas || parcelas.length || 2);
+      // Lê o valor base informado ou mantém o valor atual.
       const valorBase = Number(dados.valorTotal ?? (obra.valorBase || obra.valorTotal));
+      // Preserva o acréscimo atual aplicado às parcelas além da décima segunda.
       const taxa = quantidade > 12 ? 1 : 0;
+      // Calcula o valor final sem mudar a regra atual de juros.
       const valorFinal = Math.round(valorBase * (1 + (taxa / 100) * Math.max(0, quantidade - 12)) * 100) / 100;
+      // Distribui o total entre as parcelas em centavos.
       const valores = Array.from({ length: quantidade }, () => Math.round((valorFinal / quantidade) * 100) / 100);
+      // Ajusta a última parcela para fechar exatamente o valor final.
       valores[valores.length - 1] = Math.round((valorFinal - valores.slice(0, -1).reduce((soma, item) => soma + item, 0)) * 100) / 100;
-      const primeiraData = dados.vencimentoInicial || parcelas[0]?.vencimento || new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 10, 12));
+      // Ancora a geração na data recém-informada ou na parcela número um atual.
+      const primeiraParcela = parcelas.find((parcela) => Number(parcela.numero) === 1);
+      const primeiraData = vencimentoInicialSolicitado || primeiraParcela?.vencimento || new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 10, 12));
+      // Remove parcelas excedentes sem alterar o comportamento anterior.
       await tx.parcela.deleteMany({ where: { obraId, numero: { gt: quantidade } } });
+      // Atualiza ou cria todas as parcelas da nova quantidade.
       for (let indice = 0; indice < quantidade; indice += 1) {
+        // Gera o vencimento pelo mesmo calendário mensal do cadastro.
         const vencimento = somarMesesPreservandoDia(new Date(primeiraData), indice);
+        // Atualiza número, valor e data das parcelas já existentes.
         if (parcelas[indice]) await tx.parcela.update({ where: { id: parcelas[indice].id }, data: { numero: indice + 1, valor: valores[indice].toFixed(2), vencimento } });
+        // Cria as parcelas que ainda não existiam.
         else await tx.parcela.create({ data: { obraId, numero: indice + 1, valor: valores[indice].toFixed(2), vencimento } });
       }
+      // Mantém os totais persistidos conforme a regra atual.
       dados.valorBase = valorBase.toFixed(2);
       dados.valorTotal = valorFinal.toFixed(2);
       dados.quantidadeParcelas = quantidade;
       dados.taxaJurosMensal = taxa.toFixed(2);
-      delete dados.vencimentoInicial;
     }
+    // PATCH somente de vencimento não precisa atualizar nem gerar evento genérico.
+    if (Object.keys(dados).length === 0) {
+      // Busca os dados atualizados para manter o formato de resposta existente.
+      const obraAtualizada = await tx.obra.findFirst({ where: { id: obraId, empresaId } });
+      // Devolve o evento próprio sem criar um evento genérico de dados básicos.
+      return { obra: obraAtualizada, evento: eventoVencimento };
+    }
+    // Atualiza os campos gerais que restaram no corpo do PATCH.
     const atualizada = await tx.obra.update({ where: { id: obraId }, data: dados });
+    // Mantém o evento genérico somente para campos básicos ou financeiros.
     const evento = await tx.obraEvento.create({
       data: { obraId, empresaId, usuarioId: administradorId, tipo: "ANOTACAO", descricao: "Dados básicos da obra atualizados pela empreiteira.", visivelParaCliente: false },
     });
+    // Mantém a notificação interna atual para atualizações genéricas.
     await notificarEventoObra(tx, { obraId, empresaId, evento, visivelParaCliente: false, autorId: administradorId });
-    return { obra: atualizada, evento };
-  });
+    // Retorna também o evento de vencimento quando o PATCH legado o recebeu.
+    return { obra: atualizada, evento, ...(eventoVencimento ? { eventoVencimento } : {}) };
+  };
+  // Escolhe isolamento serializável para impedir corridas entre checagem e gravação.
+  if (vencimentoInicialSolicitado !== undefined) return emTransacaoSerializavel(prisma, executar);
+  // Mantém o isolamento atual para alterações que não mexem em vencimentos.
+  return prisma.$transaction(executar);
 }
 
 // Exporta as funções usadas pelas rotas do servidor.
@@ -1127,6 +1277,7 @@ module.exports = {
   solicitarConferenciaObra,
   confirmarConclusaoObra,
   iniciarExecucaoObra,
+  atualizarVencimentoObra,
   atualizarDadosObra,
   anexarFotoObra,
   salvarContratoObra,

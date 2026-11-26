@@ -310,6 +310,17 @@ export async function atualizarObra(id, dados) {
   return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dados) })
 }
 
+// Atualiza as datas das parcelas pela rota dedicada de vencimento da obra.
+export async function atualizarVencimentoObra(id, vencimentoInicial) {
+  // Mantém o nome do campo compatível com o PATCH legado.
+  return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/vencimento`, {
+    // Envia somente a data inicial para evitar qualquer recálculo financeiro.
+    method: 'PATCH',
+    // Serializa a data no formato aceito pelo cadastro de obra.
+    body: JSON.stringify({ vencimentoInicial }),
+  })
+}
+
 export async function anexarContratoObra(id, arquivo, termos = '') {
   return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}/contrato`, { method: 'POST', body: JSON.stringify({ arquivo, termos }) })
 }
