@@ -2,6 +2,8 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const jwt = require("jsonwebtoken");
 const { invalidarCacheEmpresa } = require("../src/services/cacheConsultas");
+// Importa o comparador para provar a mesma regra do endpoint de atribuição.
+const { normalizarFuncaoComparacao } = require("../src/utils/normalizarFuncao");
 
 const empresaA = "empresa-a";
 const empresaB = "empresa-b";
@@ -241,6 +243,11 @@ describe("Issue #20 — alocação de colaboradores em obras", () => {
       method: "POST", body: JSON.stringify({ funcionarioId: "func-resp-a" }),
     });
     assert.equal(cliente.status, 403);
+    // Confirma que colaborador também não pode chamar a rota de atribuição.
+    const gerente = await requisitar("/obras/obra-a/colaboradores", "colaborador-a", {
+      method: "POST", body: JSON.stringify({ funcionarioId: "func-resp-a" }),
+    });
+    assert.equal(gerente.status, 403);
   });
 
   it("rejeita funcionário de outra empresa, nível diferente e vínculo de usuário inconsistente", async () => {
@@ -250,6 +257,12 @@ describe("Issue #20 — alocação de colaboradores em obras", () => {
       });
       assert.ok([400, 404, 409].includes(resposta.status), `${funcionarioId}: ${resposta.status}`);
     }
+    // Oculta também a existência de uma obra que pertence a outra empresa.
+    const obraOutraEmpresa = await requisitar("/obras/obra-b/colaboradores", "admin-a", {
+      method: "POST", body: JSON.stringify({ funcionarioId: "func-resp-a" }),
+    });
+    assert.equal(obraOutraEmpresa.status, 404);
+    assert.equal((await obraOutraEmpresa.json()).erro, "Obra não encontrada");
   });
 
   it("encerra escala sem apagar histórico e impede encerramento repetido", async () => {
@@ -308,5 +321,73 @@ describe("Issue #20 — alocação de colaboradores em obras", () => {
     const acessoAntigo = await requisitar("/obras/obra-a", "colaborador-a");
     assert.equal(acessoAntigo.status, 404);
     assert.ok(notificacoesEquipe.some((item) => item.usuarioId === "colaborador-a" && item.titulo === "Você foi movido para outra obra"));
+  });
+
+  // Confirma que a comparação de funções é igual nos exemplos aprovados.
+  it("normaliza acentos e espaços repetidos sem alterar o texto original", async () => {
+    // Usa as quatro entradas exatas que também são verificadas no frontend.
+    const eletricistaDigitado = "Eletricista";
+    const eletricistaComAcento = "eletricistá";
+    const mestreDigitado = "Mestre  de obras";
+    const mestreNormalizado = "mestre de obras";
+    // Confirma que acentos e maiúsculas não mudam o resultado da comparação.
+    assert.equal(normalizarFuncaoComparacao(eletricistaDigitado), normalizarFuncaoComparacao(eletricistaComAcento));
+    // Confirma que espaços internos repetidos são comparados como um único espaço.
+    assert.equal(normalizarFuncaoComparacao(mestreDigitado), normalizarFuncaoComparacao(mestreNormalizado));
+    // Confirma que funções diferentes continuam diferentes.
+    assert.notEqual(normalizarFuncaoComparacao("Engenheiro"), normalizarFuncaoComparacao("Arquiteto"));
+    // Confirma que a comparação não modifica o valor original que será exibido.
+    assert.equal(mestreDigitado, "Mestre  de obras");
+  });
+
+  // Aplica a comparação nova no endpoint sem sobrescrever a função cadastrada.
+  it("bloqueia função repetida com acento ou espaços diferentes e preserva o texto salvo", async () => {
+    // Prepara pares de funções que devem ser consideradas iguais.
+    const paresEquivalentes = [
+      ["Eletricista", "eletricistá"],
+      ["Mestre  de obras", "mestre de obras"],
+    ];
+    // Repete o teste para cada par sem depender de dados de atribuições anteriores.
+    for (const [funcaoExistente, funcaoNova] of paresEquivalentes) {
+      // Remove escalas de testes anteriores antes de montar a situação duplicada.
+      escalas.splice(0, escalas.length);
+      // Registra o gerente que já ocupa a vaga na obra.
+      funcionarios.push({ id: `func-base-${funcionarios.length}`, empresaId: empresaA, nome: "Gerente base", funcao: funcaoExistente, nivel: "RESPONSAVEL", ativo: true, usuarioId: null, usuario: null });
+      // Registra o gerente que será tentado com função equivalente.
+      const gerenteNovo = { id: `func-novo-${funcionarios.length}`, empresaId: empresaA, nome: "Gerente novo", funcao: funcaoNova, nivel: "RESPONSAVEL", ativo: true, usuarioId: null, usuario: null };
+      funcionarios.push(gerenteNovo);
+      // Cria uma escala ativa para a função já existente na mesma obra.
+      escalas.push({ id: `escala-base-${funcionarios.length}`, obraId: "obra-a", funcionarioId: funcionarios.at(-2).id, dataFim: null });
+      // Tenta atribuir o segundo gerente pela rota reaproveitada.
+      const resposta = await requisitar("/obras/obra-a/colaboradores", "admin-a", { method: "POST", body: JSON.stringify({ funcionarioId: gerenteNovo.id }) });
+      // Mantém o erro em português que a API já usa para função repetida.
+      assert.equal(resposta.status, 409);
+      assert.equal((await resposta.json()).erro, "Cada gerente desta obra precisa ter uma função diferente");
+      // A comparação não altera acentos, maiúsculas ou espaçamento do funcionário.
+      assert.equal(gerenteNovo.funcao, funcaoNova);
+    }
+  });
+
+  // Uma atribuição adicional mantém as escalas anteriores e aparece na lista do gerente.
+  it("adiciona outra obra sem encerrar as anteriores e registra o evento", async () => {
+    // Limpa as escalas acumuladas para preparar um gerente com um acesso prévio.
+    escalas.splice(0, escalas.length);
+    // Registra a obra que o gerente já acessa antes da nova atribuição.
+    escalas.push({ id: "escala-anterior", obraId: "obra-a-destino", funcionarioId: "func-resp-a", dataFim: null });
+    // Guarda quantos eventos existiam antes de adicionar a nova obra.
+    const eventosAntes = eventosEquipe.length;
+    // Atribui a segunda obra usando a rota atual.
+    const atribuida = await requisitar("/obras/obra-a/colaboradores", "admin-a", { method: "POST", body: JSON.stringify({ funcionarioId: "func-resp-a" }) });
+    // Confirma que a rota adicionou a escala sem encerrar a primeira.
+    assert.equal(atribuida.status, 201);
+    assert.equal(escalas.length, 2);
+    assert.equal(escalas.every((escala) => escala.dataFim === null), true);
+    // Confirma que o endpoint registrou evento de equipe na obra nova.
+    assert.equal(eventosEquipe.length, eventosAntes + 1);
+    assert.equal(eventosEquipe.at(-1).tipo, "EQUIPE");
+    // Confirma que a lista usada por Gestão de Obras inclui as duas obras.
+    const obrasDoGerente = await requisitar("/obras", "colaborador-a");
+    const idsVisiveis = (await obrasDoGerente.json()).map((obra) => obra.id).sort();
+    assert.deepEqual(idsVisiveis, ["obra-a", "obra-a-destino"].sort());
   });
 });

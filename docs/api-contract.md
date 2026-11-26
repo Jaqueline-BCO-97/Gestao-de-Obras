@@ -18,6 +18,9 @@ Os papéis válidos são `ADMIN`, `CLIENTE` e `COLABORADOR`.
 | `POST /obras` | ADMIN | Cria obra na empresa do token. Recebe `nome` e, opcionalmente, `descricao` e `endereco`. |
 | `GET /obras` | Autenticado | Lista obras dentro do escopo do perfil. |
 | `GET /obras/:id` | Autenticado | Consulta obra dentro do escopo; obra inexistente ou fora dele retorna 404. |
+| `POST /obras/:id/colaboradores` | ADMIN da empresa | Recebe `funcionarioId` e adiciona uma escala aberta sem encerrar as escalas anteriores; valida empresa, nível Responsável, funcionário ativo, vínculo de login válido, duplicidade e função repetida. |
+| `PATCH /obras/:id/colaboradores/:alocacaoId` | ADMIN da empresa | Encerra a escala aberta sem apagar o histórico. |
+| `POST /obras/:id/colaboradores/:alocacaoId/mover` | ADMIN da empresa | Transfere uma escala da obra de origem para uma obra destino válida da mesma empresa. |
 | `PATCH /obras/:id/agendamento` | ADMIN da empresa | Recebe datas, permite períodos sobrepostos e registra evento visível ao cliente. |
 | `POST /obras/:id/conclusao/solicitar` | ADMIN da empresa | Envia obra em andamento para conferência; status, data e evento de timeline são persistidos em transação. |
 | `POST /obras/:id/conclusao/confirmar` | CLIENTE proprietário | Confirma obra aguardando conferência; status, data e evento são persistidos em transação. |
@@ -36,6 +39,10 @@ Login retorna 400 para campos ausentes, 401 para credenciais inválidas e 503 qu
 - `COLABORADOR` recebe somente obras com escala aberta de funcionário associado ao usuário e à mesma empresa.
 - `valorTotal`, parcelas e `resumoParcelas` são enviados a `ADMIN` e `CLIENTE`, e omitidos para `COLABORADOR` (regra RN15).
 - `CLIENTE` recebe eventos com `visivelParaCliente: true`. `COLABORADOR` não recebe eventos `pagamento`, `orcamento_aprovado` ou `contratacao`, em linha com o filtro de timeline usado no frontend.
+
+### Atribuição de gerentes
+
+`POST /obras/:id/colaboradores` adiciona uma escala e registra evento de equipe; não encerra escalas anteriores. Só ADMIN pode chamar a rota. A função repetida é comparada removendo acentos, juntando espaços internos repetidos, removendo espaços das pontas e ignorando caixa (`pt-BR`); a função salva e exibida permanece com o texto original do cadastro. A tela de Gerentes lista obras não arquivadas com status Agendada, Em andamento ou Aguardando conferência, oculta Concluída no frontend e não apresenta valores financeiros nessa lista. A regra de status da tela não muda o comportamento da API de atribuição.
 - Eventos, funcionários escalados e cliente de outra empresa não devem aparecer na resposta.
 
 O objeto de obra usa os campos `id`, `titulo`, `cliente`, `colaboradores`, `endereco`, `status`, `prazo`, `timeline` e, conforme o perfil, `valorTotal`, `parcela1`, `parcela2`, `parcelas` e `resumoParcelas`. Na listagem `GET /obras`, `resumoParcelas` (somente leitura) traz `{ total, pagas, valorParcelaBase, ultimaPaga, penultimaPaga, proximaNaoPaga }` com `{ numero, valor, situacao, estado }` calculado a partir de todas as parcelas da obra usando a mesma regra de atraso do sistema, permitindo exibir cartões de obras com mais de 2 parcelas sem alterar o campo `parcelas`. Datas usam `DD/MM/YYYY`; horários usam `HH:mm`. O schema possui `Parcela.vencimento`, usado para classificar parcelas não pagas vencidas como atrasadas; o campo `vencimento` aparece formatado nas parcelas quando informado. O formato atual legado de `parcela1`/`parcela2` expõe até duas parcelas para compatibilidade.

@@ -1,6 +1,8 @@
 // Importa o cliente do banco e a verificação de configuração.
 const { getPrisma, isDbConfigured } = require("../config/db");
 const { Prisma } = require("@prisma/client");
+// Reutiliza a mesma normalização em todos os bloqueios de função repetida.
+const { normalizarFuncaoComparacao } = require("../utils/normalizarFuncao");
 
 // Impede consultas enquanto a conexão do banco não estiver configurada.
 function exigirBancoConfigurado() {
@@ -230,7 +232,8 @@ async function alocarFuncionario({ obraId, empresaId, funcionarioId, administrad
       select: { id: true, funcionarioId: true, funcionario: { select: { funcao: true } } },
     });
     if (escalasAbertas.some((escala) => escala.funcionarioId === funcionarioId)) throw erroAlocacao("ALOCACAO_DUPLICADA", "Funcionário já possui alocação aberta nesta obra");
-    if (escalasAbertas.some((escala) => escala.funcionario.funcao.trim().toLocaleLowerCase("pt-BR") === funcionario.funcao.trim().toLocaleLowerCase("pt-BR"))) throw erroAlocacao("FUNCAO_DUPLICADA", "Cada gerente desta obra precisa ter uma função diferente");
+    // Compara cópias normalizadas e conserva a função original no funcionário.
+    if (escalasAbertas.some((escala) => normalizarFuncaoComparacao(escala.funcionario.funcao) === normalizarFuncaoComparacao(funcionario.funcao))) throw erroAlocacao("FUNCAO_DUPLICADA", "Cada gerente desta obra precisa ter uma função diferente");
 
     const alocacao = await tx.obraEscala.create({
       data: {
