@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 // Reutiliza a lista compacta de parcelas também no formulário de edição.
 import SelectQuantidadeParcelas from '../components/SelectQuantidadeParcelas.jsx'
-import { alocarFuncionarioObra, anexarFotoNovaObra, arquivarObra, atualizarObra, atualizarVencimentoObra, buscarObra, confirmarPrimeiraParcela, encerrarAlocacaoObra, iniciarExecucaoObra, listarAlocacoesObra, registrarAndamentoObra, solicitarConferenciaObra } from '../services/auth.js'
+import { alocarFuncionarioObra, anexarFotoNovaObra, arquivarObra, atualizarObra, atualizarVencimentoObra, buscarObra, confirmarPrimeiraParcela, encerrarAlocacaoObra, excluirObra, iniciarExecucaoObra, listarAlocacoesObra, registrarAndamentoObra, solicitarConferenciaObra } from '../services/auth.js'
 import useConfirmacao from '../components/useConfirmacao.jsx'
 // Importa o componente padronizado de resumo de parcelas (título "Parcelas", sem parênteses, até 2 linhas).
 import ResumoParcelas from '../components/ResumoParcelas.jsx'
@@ -141,6 +141,27 @@ export default function AdminObra() {
     finally { setSalvando(false) }
   }
 
+  // Exclui definitivamente a obra agendada quando não possui parcela paga.
+  async function excluirDefinitivamente() {
+    // Limpa falhas anteriores antes de confirmar a exclusão.
+    setErroArquivar('')
+    // Pede confirmação do usuário antes de apagar os registros da obra.
+    if (!await pedirConfirmacao(`Excluir definitivamente a obra "${obra.titulo}"? Parcelas pendentes, anexos e vínculos dessa obra agendada serão removidos.`)) return
+    // Desabilita os botões enquanto a requisição é concluída.
+    setSalvando(true)
+    try {
+      // Remove a obra no backend e retorna para a listagem administrativa.
+      await excluirObra(id)
+      navigate('/admin/obras', { replace: true })
+    } catch (falha) {
+      // Mostra na mesma área o motivo retornado pela API caso seja bloqueada.
+      setErroArquivar(falha.message)
+    } finally {
+      // Restaura o estado dos controles após o retorno da API.
+      setSalvando(false)
+    }
+  }
+
   if (carregando) return <main className="min-h-screen bg-background p-8 text-center text-slate-600" role="status">Carregando obra…</main>
   if (!obra || !form) return <main className="min-h-screen bg-background p-8"><Link to="/admin/obras">← Voltar para obras</Link><h1 className="mt-5 text-2xl font-bold text-navy">Obra não encontrada</h1>{erro && <p role="alert" className="mt-3 text-red-700">{erro}</p>}</main>
 
@@ -234,6 +255,6 @@ export default function AdminObra() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-bold text-navy">Histórico da obra</h2><Link to={`/admin/notificacoes?obraId=${encodeURIComponent(id)}`} className="text-sm font-semibold text-sky-700 underline">Notificações desta obra</Link></div><ol className="mt-4 space-y-3">{(obra.timeline || []).map((item) => <li key={item.id} className="border-l-2 border-sky-200 pl-3"><details><summary className="cursor-pointer text-xs font-semibold text-slate-600">{item.data} {item.hora} · {item.autor || 'Sistema'} · {item.tipo}</summary><p className="mt-2 text-sm text-slate-800">{item.descricao}</p>{item.fotoUrl && <a className="text-xs text-sky-700 underline" href={item.fotoUrl} target="_blank" rel="noreferrer">Abrir foto</a>}</details></li>)}</ol>{!obra.timeline?.length && <p className="mt-3 text-sm text-slate-500">Nenhuma atualização registrada.</p>}</section>
 
-      <section className="rounded-xl border border-red-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-red-800">Arquivar obra</h2><p className="mt-1 text-sm text-slate-600">A obra poderá ser restaurada por sete dias. Só obras agendadas sem parcela paga e sem pagamento em processamento podem ser arquivadas.</p>{bloqueioArquivamento && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">{bloqueioArquivamento}</p>}{erroArquivar && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">{erroArquivar}</p>}<form onSubmit={arquivar} className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-sm sm:col-span-2">Motivo (10 a 500 caracteres)<textarea required minLength={10} maxLength={500} value={motivo} onChange={(e) => setMotivo(e.target.value)} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><label className="text-sm">Senha do administrador<input required type="password" autoComplete="current-password" value={senha} onChange={(e) => setSenha(e.target.value)} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><Button variant="outline" type="submit" disabled={salvando || Boolean(bloqueioArquivamento)} className="self-end border-red-300 text-red-800">Arquivar obra</Button></form></section>
+      <section className="rounded-xl border border-red-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-red-800">Arquivar ou excluir obra</h2><p className="mt-1 text-sm text-slate-600">Ao arquivar, a obra fica recuperável por sete dias. Obras agendadas sem parcela paga também podem ser excluídas definitivamente.</p>{bloqueioArquivamento && <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">{bloqueioArquivamento}</p>}{erroArquivar && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">{erroArquivar}</p>}<form onSubmit={arquivar} className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-sm sm:col-span-2">Motivo (10 a 500 caracteres)<textarea required minLength={10} maxLength={500} value={motivo} onChange={(e) => setMotivo(e.target.value)} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><label className="text-sm">Senha do administrador<input required type="password" autoComplete="current-password" value={senha} onChange={(e) => setSenha(e.target.value)} className="mt-1 w-full rounded border border-slate-300 p-2" /></label><Button variant="outline" type="submit" disabled={salvando || Boolean(bloqueioArquivamento)} className="self-end border-red-300 text-red-800">Arquivar obra</Button></form>{obra.status === 'Agendada' && <div className="mt-4 border-t border-red-100 pt-4"><Button variant="outline" type="button" disabled={salvando || parcelaPaga} onClick={excluirDefinitivamente} className="border-red-300 text-red-800">Excluir obra definitivamente</Button></div>}</section>
     </main></div>
 }

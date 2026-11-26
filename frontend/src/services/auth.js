@@ -148,6 +148,8 @@ export async function listarConvites() {
 export async function reenviarConvite(id) {
   return requisicaoAutenticada(`/convites/${encodeURIComponent(id)}/reenviar`, { method: 'POST' })
 }
+// Cancela um convite de gerente ainda não aceito pela rota administrativa existente.
+export async function cancelarConviteGerente(id) { return requisicaoAutenticada(`/convites/${encodeURIComponent(id)}`, { method: 'DELETE' }) }
 export async function excluirConviteExpirado(id) { return requisicaoAutenticada(`/convites/${encodeURIComponent(id)}`, { method: 'DELETE' }) }
 
 export async function listarTabelaPrecos() { return requisicaoAutenticada('/tabela-precos') }
@@ -183,6 +185,8 @@ export async function confirmarPrimeiraParcela(obraId) { return requisicaoAutent
 export async function arquivarObra(obraId, senha, motivo) { return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/arquivar`, { method: 'POST', body: JSON.stringify({ senha, motivo }) }) }
 export async function restaurarObra(obraId) { return requisicaoAutenticada(`/obras/${encodeURIComponent(obraId)}/restaurar`, { method: 'POST' }) }
 export async function listarObrasArquivadas() { return requisicaoAutenticada('/obras/arquivadas') }
+// Exclui definitivamente uma obra agendada sem parcela paga na API autenticada.
+export async function excluirObra(id) { return requisicaoAutenticada(`/obras/${encodeURIComponent(id)}`, { method: 'DELETE' }) }
 
 // Função para salvar os dados da sessão (token e dados do usuário) no navegador
 export function salvarSessao({ token, usuario }, lembrarDeMim) {

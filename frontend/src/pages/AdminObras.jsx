@@ -16,7 +16,9 @@ import SelectQuantidadeParcelas from '../components/SelectQuantidadeParcelas.jsx
 import { formatarMoeda, obterCoresStatus } from '../data/obrasMock.js'
 
 // Importa a lista de colaboradores mockados para exibir os membros da equipe alocada
-import { listarObras, listarObrasArquivadas, restaurarObra, solicitarConferenciaObra, criarObra } from '../services/auth.js'
+import { listarObras, listarObrasArquivadas, restaurarObra, solicitarConferenciaObra, criarObra, excluirObra } from '../services/auth.js'
+// Reutiliza o modal padrão de confirmação antes da exclusão definitiva de obras agendadas.
+import useConfirmacao from '../components/useConfirmacao.jsx'
 // Importa o montador compartilhado com o teste do payload da opção 36.
 import { montarPayloadCriarObra } from '../utils/quantidadeParcelas.js'
 
@@ -34,6 +36,8 @@ function moedaNumero(valor) { return String(valor).replace(/\./g, '').replace(',
 export default function AdminObras() {
   // Inicializa o hook de navegação para alternar entre rotas
   const navigate = useNavigate()
+  // Disponibiliza o diálogo de confirmação para ações destrutivas na lista de obras.
+  const { pedirConfirmacao, modal: modalConfirmacao } = useConfirmacao()
 
   // Estado para armazenar o status selecionado no filtro (padrão 'Todos')
   const [filtroStatus, setFiltroStatus] = useState('Todos')
@@ -109,6 +113,30 @@ export default function AdminObras() {
     catch (falha) { setErroAcao((atuais) => ({ ...atuais, [obra.id]: falha.message })) }
   }
 
+  // Exclui definitivamente uma obra Agendada sem parcela paga e atualiza a listagem.
+  async function handleExcluirObra(obra) {
+    // Solicita confirmação explícita antes de apagar obra e dependências pendentes.
+    if (!await pedirConfirmacao(`Excluir definitivamente a obra "${obra.titulo}"? Parcelas pendentes, anexos e vínculos dessa obra agendada serão removidos.`)) return
+    // Marca esta obra como em processamento e limpa erro anterior.
+    setSolicitando(`excluir-${obra.id}`)
+    setErroAcao((atuais) => ({ ...atuais, [obra.id]: '' }))
+    try {
+      // Solicita ao backend a remoção transacional e definitiva da obra agendada.
+      await excluirObra(obra.id)
+      // Remove a obra das listas locais imediatamente e sincroniza com a API.
+      setObras((atuais) => atuais.filter((item) => item.id !== obra.id))
+      setArquivadas((atuais) => atuais.filter((item) => item.id !== obra.id))
+      // Sincroniza as listas com a API sem mascarar erro de recarregamento após exclusão já concluída.
+      await atualizarObras().catch((falha) => setErro(falha.message))
+    } catch (falha) {
+      // Exibe a mensagem exata retornada pelo backend na linha da obra.
+      setErroAcao((atuais) => ({ ...atuais, [obra.id]: falha.message }))
+    } finally {
+      // Libera os botões ao término da solicitação.
+      setSolicitando('')
+    }
+  }
+
   async function handleCriarObra(event) {
     event.preventDefault(); setFeedbackForm(''); setFeedbackFormErro(false)
     const erros = []
@@ -148,7 +176,7 @@ export default function AdminObras() {
   // Renderiza a interface da página de Gestão de Obras
   return (
     // Contêiner de tela cheia com fundo claro padrão e tipografia padrão
-    <div className="min-h-screen bg-background text-ink">
+    <div className="min-h-screen bg-background text-ink">{modalConfirmacao}
 
 
 
@@ -339,6 +367,7 @@ export default function AdminObras() {
                         <td className="py-3.5 px-4 text-center whitespace-nowrap">
                           <div className="flex flex-col items-center gap-2">
                             <Button variant="compact" onClick={() => handleVerObra(obra)} className="w-44 text-xs py-1 px-3">Gerenciar</Button>
+                            {obra.status === 'Agendada' && <Button variant="outline" disabled={Boolean(solicitando)} onClick={() => handleExcluirObra(obra)} className="w-44 border-red-300 py-1 px-3 text-xs text-red-800">{solicitando === `excluir-${obra.id}` ? 'Excluindo…' : 'Excluir obra'}</Button>}
                             {obra.status === 'Em andamento' && <Button variant="compact" disabled={Boolean(solicitando)} onClick={() => handleSolicitarConferencia(obra)} className="w-44 text-xs py-1 px-3">{solicitando === obra.id ? 'Enviando…' : 'Solicitar conferência'}</Button>}
                             {erroAcao[obra.id] && <p role="alert" className="max-w-44 whitespace-normal rounded bg-red-50 p-2 text-left text-xs font-semibold text-red-800">{erroAcao[obra.id]}</p>}
                           </div>
@@ -369,7 +398,7 @@ export default function AdminObras() {
 
         </div>
 
-        {arquivadas.length > 0 && <section className="mt-8 rounded-xl border border-amber-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Obras arquivadas</h2><p className="mt-1 text-xs text-slate-600">Cada obra fica recuperável até a data indicada. O registro é mantido no banco.</p><div className="mt-3 space-y-2">{arquivadas.map((obra) => <article key={obra.id} className="rounded-lg bg-amber-50 p-3"><div className="flex flex-wrap items-center justify-between gap-3"><div><strong className="text-navy">{obra.titulo}</strong><p className="text-xs text-slate-600">Motivo: {obra.exclusaoMotivo} · {obra.restauravel ? `Restaurar até ${new Date(obra.exclusaoExpiraEm).toLocaleString('pt-BR')}` : 'Prazo de restauração expirado'}</p></div><Button variant="outline" disabled={!obra.restauravel} onClick={() => handleRestaurar(obra)} className="text-xs">Restaurar obra</Button></div>{erroAcao[obra.id] && <p role="alert" className="mt-2 rounded bg-red-50 p-2 text-sm font-semibold text-red-800">{erroAcao[obra.id]}</p>}</article>)}</div></section>}
+        {arquivadas.length > 0 && <section className="mt-8 rounded-xl border border-amber-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-navy">Obras arquivadas</h2><p className="mt-1 text-xs text-slate-600">Cada obra fica recuperável até a data indicada. O registro é mantido no banco.</p><div className="mt-3 space-y-2">{arquivadas.map((obra) => <article key={obra.id} className="rounded-lg bg-amber-50 p-3"><div className="flex flex-wrap items-center justify-between gap-3"><div><strong className="text-navy">{obra.titulo}</strong><p className="text-xs text-slate-600">Motivo: {obra.exclusaoMotivo} · {obra.restauravel ? `Restaurar até ${new Date(obra.exclusaoExpiraEm).toLocaleString('pt-BR')}` : 'Prazo de restauração expirado'}</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" disabled={!obra.restauravel} onClick={() => handleRestaurar(obra)} className="text-xs">Restaurar obra</Button>{obra.status === 'Agendada' && <Button variant="outline" disabled={Boolean(solicitando)} onClick={() => handleExcluirObra(obra)} className="border-red-300 text-xs text-red-800">{solicitando === `excluir-${obra.id}` ? 'Excluindo…' : 'Excluir definitivamente'}</Button>}</div></div>{erroAcao[obra.id] && <p role="alert" className="mt-2 rounded bg-red-50 p-2 text-sm font-semibold text-red-800">{erroAcao[obra.id]}</p>}</article>)}</div></section>}
 
         {/* Cartão de resumo rápido reutilizando Card.jsx */}
         <section className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

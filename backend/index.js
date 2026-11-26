@@ -23,6 +23,8 @@ const { comCacheEmpresa, invalidarCacheEmpresa } = require("./src/services/cache
 const { validarDisponibilidades } = require("./src/utils/disponibilidadeFuncionario");
 // Reutiliza os requisitos de senha somente na criação de contas por convite.
 const { validarSenhaConvite } = require("./src/utils/validarSenhaConvite");
+// Reutiliza a exclusão atômica de clientes e de obras agendadas nas rotas administrativas.
+const { excluirClienteComObrasAgendadas, excluirObraAgendada } = require("./src/services/excluirCliente");
 const {
   listarUsuarios,
   buscarUsuarioPorEmail,
@@ -469,12 +471,30 @@ app.get("/convites", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"),
 app.delete("/convites/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
   try {
     const prisma = getPrisma();
-    const convite = await prisma.convite.findFirst({ where: { id: req.params.id, empresaId: req.usuario.empresaId }, select: { id: true, usadoEm: true, expiraEm: true } });
+    // Evita responder erro interno quando o banco não está configurado.
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    // Busca o tipo do convite para permitir cancelamento pendente somente para gerente.
+    const convite = await prisma.convite.findFirst({ where: { id: req.params.id, empresaId: req.usuario.empresaId }, select: { id: true, tipo: true, usadoEm: true, expiraEm: true } });
+    // Não revela convites que não pertencem à empresa autenticada.
     if (!convite) return res.status(404).json({ erro: "Convite não encontrado" });
-    if (convite.usadoEm || convite.expiraEm > new Date()) return res.status(409).json({ erro: "Só convites expirados e não utilizados podem ser excluídos" });
-    await prisma.convite.deleteMany({ where: { id: convite.id, empresaId: req.usuario.empresaId, usadoEm: null, expiraEm: { lte: new Date() } } });
-    return res.json({ mensagem: "Convite expirado excluído" });
-  } catch (erro) { console.error("Erro ao excluir convite expirado:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível excluir o convite" }); }
+    // Recusa qualquer convite que já tenha sido aceito.
+    if (convite.usadoEm) return res.status(409).json({ erro: "Este convite já foi aceito e não pode ser cancelado" });
+    // Mantém a exclusão existente para convites expirados sem uso.
+    const conviteExpirado = convite.expiraEm <= new Date();
+    // Permite cancelar convites de gerente ainda válidos, mas mantém a regra antiga para cliente.
+    if (!conviteExpirado && convite.tipo !== "GERENTE") return res.status(409).json({ erro: "Somente convites pendentes de gerente ou convites expirados podem ser excluídos" });
+    // Remove o registro somente se ele continuar sem uso e dentro da empresa do ADMIN.
+    const removido = await prisma.convite.deleteMany({ where: { id: convite.id, empresaId: req.usuario.empresaId, usadoEm: null, ...(conviteExpirado ? { expiraEm: { lte: new Date() } } : { tipo: "GERENTE", expiraEm: { gt: new Date() } }) } });
+    // Informa conflito caso o convite tenha sido aceito entre a leitura e a exclusão.
+    if (removido.count !== 1) return res.status(409).json({ erro: "O convite foi alterado durante o cancelamento. Atualize a lista e tente novamente" });
+    // Mantém uma resposta clara para cancelamento de gerente e exclusão legada de expirado.
+    return res.json({ mensagem: conviteExpirado ? "Convite expirado excluído" : "Convite de gerente cancelado" });
+  } catch (erro) {
+    // Registra falhas técnicas sem expor detalhes internos ao ADMIN.
+    console.error("Erro ao cancelar convite:", erro.code || erro.message);
+    // Informa uma mensagem estável quando a operação não pode ser concluída.
+    return res.status(500).json({ erro: "Não foi possível cancelar o convite" });
+  }
 });
 
 app.post("/convites/:id/reenviar", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
@@ -1072,22 +1092,24 @@ app.get("/clientes/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMI
 
 app.delete("/clientes/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
   try {
+    // Obtém o acesso ao banco sem consultar configuração sensível na resposta.
     const prisma = getPrisma();
-    const cliente = await prisma.usuario.findFirst({ where: { id: req.params.id, empresaId: req.usuario.empresaId, tipo: "CLIENTE" }, select: { id: true } });
-    if (!cliente) return res.status(404).json({ erro: "Cliente não encontrado" });
-    const [obrasIniciadas, pagamentos, aceites, eventos] = await Promise.all([
-      prisma.obra.count({ where: { empresaId: req.usuario.empresaId, clienteId: cliente.id, status: { not: "AGENDADA" } } }),
-      prisma.pagamento.count({ where: { usuarioId: cliente.id } }),
-      prisma.contratoAceite.count({ where: { usuarioId: cliente.id } }),
-      prisma.obraEvento.count({ where: { usuarioId: cliente.id } }),
-    ]);
-    if (obrasIniciadas || pagamentos || aceites || eventos) return res.status(409).json({ erro: "Este cliente tem obra iniciada ou histórico e não pode ser excluído" });
-    await prisma.$transaction(async (tx) => {
-      await tx.obra.updateMany({ where: { empresaId: req.usuario.empresaId, clienteId: cliente.id, status: "AGENDADA" }, data: { clienteId: null } });
-      await tx.usuario.delete({ where: { id: cliente.id } });
-    });
-    return res.json({ mensagem: "Cliente excluído. As obras agendadas foram mantidas sem vínculo de cliente." });
-  } catch (erro) { console.error("Erro ao excluir cliente:", erro.code || erro.message); return res.status(500).json({ erro: "Não foi possível excluir o cliente" }); }
+    // Devolve indisponibilidade sem iniciar operações quando o banco não está configurado.
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    // Valida bloqueios e remove cliente e vínculos elegíveis na mesma transação.
+    const resultado = await excluirClienteComObrasAgendadas(prisma, { clienteId: req.params.id, empresaId: req.usuario.empresaId });
+    // Mantém a resposta de sucesso no formato JSON já usado pela API.
+    return res.json(resultado);
+  } catch (erro) {
+    // Devolve erros de regra com o motivo exato e o código correspondente.
+    if (erro.status) return res.status(erro.status).json({ erro: erro.message, codigo: erro.code });
+    // Trata conflitos serializáveis como uma falha recuperável com botão de nova tentativa.
+    if (erro.code === "P2034") return res.status(409).json({ erro: "Os dados do cliente mudaram durante a exclusão. Atualize a tela e tente novamente.", codigo: "CLIENTE_EXCLUSAO_CONCORRENTE" });
+    // Registra falhas técnicas sem enviar detalhes internos para a tela.
+    console.error("Erro ao excluir cliente:", erro.code || erro.message);
+    // Devolve uma mensagem técnica genérica somente para erros inesperados.
+    return res.status(500).json({ erro: "Não foi possível excluir o cliente" });
+  }
 });
 
 // Cadastro de colaborador vinculado à empresa do usuário autenticado.
@@ -1435,6 +1457,29 @@ app.post("/obras/:id/restaurar", authMiddleware, exigirEmpresaDoToken, exigirPap
     if (erro.code === "PRAZO_RESTAURACAO_EXPIRADO") return res.status(410).json({ erro: erro.message });
     console.error("Erro ao restaurar obra:", erro.code || erro.message);
     return res.status(500).json({ erro: "Não foi possível restaurar a obra" });
+  }
+});
+
+// Exclui definitivamente uma obra Agendada sem parcela paga na empresa autenticada.
+app.delete("/obras/:id", authMiddleware, exigirEmpresaDoToken, exigirPapel("ADMIN"), async (req, res) => {
+  try {
+    // Obtém o cliente Prisma somente após validar autenticação e papel ADMIN.
+    const prisma = getPrisma();
+    // Informa indisponibilidade quando o banco não está configurado no ambiente.
+    if (!prisma) return res.status(503).json({ erro: "Banco não configurado" });
+    // Executa todas as validações e remoções em uma única transação serializável.
+    const resultado = await excluirObraAgendada(prisma, { obraId: req.params.id, empresaId: req.usuario.empresaId });
+    // Devolve a confirmação da exclusão mantendo o formato JSON da API.
+    return res.json(resultado);
+  } catch (erro) {
+    // Converte bloqueios de regra de negócio (status, pagamento ou 404) com código estável.
+    if (erro.status) return res.status(erro.status).json({ erro: erro.message, codigo: erro.code });
+    // Trata conflito concorrente de transação serializável como erro 409 recuperável.
+    if (erro.code === "P2034") return res.status(409).json({ erro: "A obra foi alterada durante a exclusão. Atualize a tela e tente novamente.", codigo: "OBRA_EXCLUSAO_CONCORRENTE" });
+    // Registra apenas código ou mensagem técnica sem expor segredos no log.
+    console.error("Erro ao excluir obra:", erro.code || erro.message);
+    // Devolve resposta segura para falhas inesperadas de servidor.
+    return res.status(500).json({ erro: "Não foi possível excluir a obra" });
   }
 });
 

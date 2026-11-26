@@ -68,6 +68,16 @@ function criarPrisma() {
         Object.assign(item, data);
         return { count: 1 };
       },
+      // Aplica o mesmo escopo de empresa, estado e validade usado pela rota DELETE.
+      deleteMany: async ({ where }) => {
+        const anteriores = convites.length;
+        convites = convites.filter((convite) => !Object.entries(where).every(([chave, valor]) => {
+          if (chave === "expiraEm" && valor?.gt) return convite.expiraEm > valor.gt;
+          if (chave === "expiraEm" && valor?.lte) return convite.expiraEm <= valor.lte;
+          return convite[chave] === valor;
+        }));
+        return { count: anteriores - convites.length };
+      },
     },
     funcionario: {
       findUnique: async ({ where }) => funcionarios.find((item) => Object.entries(where).every(([chave, valor]) => item[chave] === valor)) || null,
@@ -468,6 +478,59 @@ describe("Convites de cliente e gerente por obra", () => {
     // Confirma que a validação de empresa continua bloqueando o convite.
     assert.equal(recusado.statusCode, 404);
     assert.equal(convites.length, 1);
+  });
+
+  // Garante que o administrador não consiga cancelar um convite de outra empresa.
+  it("recusa cancelamento de convite pendente por ADMIN de outra empresa", async () => {
+    // Cria um convite de gerente na empresa autenticada neste teste.
+    const criado = await chamar("POST", "/convites/gerente", { body: { nome: "Gerente Pendente", email: "gerente@teste.local", telefone: "11987654321", funcao: "Responsável" } });
+    // Prepara um ADMIN com empresa diferente, sem alterar o convite original.
+    const adminOutraEmpresa = { id: "admin-outra-empresa", empresaId: "empresa-convite-b", nome: "Outro admin", email: "admin-b@teste.local", tipo: "ADMIN" };
+    // Registra esse ADMIN no mock de autenticação sem mudar a empresa do convite.
+    usuarios.push(adminOutraEmpresa);
+    // Tenta cancelar o convite fora do escopo empresarial do ADMIN.
+    const resposta = await chamar("DELETE", "/convites/:id", { params: { id: criado.body.convite.id }, usuario: adminOutraEmpresa });
+    // Retorna 404 sem revelar que o convite existe em outra empresa.
+    assert.equal(resposta.statusCode, 404);
+    // Mantém o convite pendente intacto.
+    assert.equal(convites.length, 1);
+    assert.equal(convites[0].usadoEm, null);
+  });
+
+  // Permite cancelar um convite de gerente que ainda não foi aceito.
+  it("cancela convite pendente de gerente e remove seu link da lista", async () => {
+    // Cria um convite válido para simular o link ainda ativo.
+    const criado = await chamar("POST", "/convites/gerente", { body: { nome: "Gerente Pendente", email: "gerente@teste.local", telefone: "11987654321", funcao: "Responsável" } });
+    // Cancela o convite no escopo do ADMIN da empresa.
+    const resposta = await chamar("DELETE", "/convites/:id", { params: { id: criado.body.convite.id } });
+    // Confirma sucesso e mensagem específica para convite de gerente.
+    assert.equal(resposta.statusCode, 200);
+    assert.equal(resposta.body.mensagem, "Convite de gerente cancelado");
+    // Confirma que o link não permanece na coleção simulada.
+    assert.equal(convites.length, 0);
+  });
+
+  // Mantém a proteção de convites de cliente ainda válidos.
+  it("não permite usar o cancelamento de gerente para remover convite pendente de cliente", async () => {
+    // Prepara um convite de cliente válido sem criar conta.
+    convites.push({ id: "convite-cliente-pendente", empresaId, tipo: "CLIENTE", nome: "Cliente Pendente", usadoEm: null, expiraEm: new Date(Date.now() + 60_000) });
+    // Tenta remover o convite válido pela rota DELETE existente.
+    const resposta = await chamar("DELETE", "/convites/:id", { params: { id: "convite-cliente-pendente" } });
+    // Mantém a recusa e o registro do convite intacto.
+    assert.equal(resposta.statusCode, 409);
+    assert.equal(convites.length, 1);
+  });
+
+  // Mantém compatibilidade para excluir convites expirados sem uso.
+  it("continua excluindo convite expirado sem uso", async () => {
+    // Prepara um convite de cliente expirado, como no fluxo anterior.
+    convites.push({ id: "convite-expirado", empresaId, tipo: "CLIENTE", nome: "Cliente Expirado", usadoEm: null, expiraEm: new Date(Date.now() - 60_000) });
+    // Solicita a exclusão ao ADMIN da empresa.
+    const resposta = await chamar("DELETE", "/convites/:id", { params: { id: "convite-expirado" } });
+    // Confirma que o comportamento anterior continua disponível.
+    assert.equal(resposta.statusCode, 200);
+    assert.equal(resposta.body.mensagem, "Convite expirado excluído");
+    assert.equal(convites.length, 0);
   });
 
   // Reenviar um link pendente não depende de a obra opcional estar vinculada.
