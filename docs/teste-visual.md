@@ -1,6 +1,6 @@
 # Roteiro de teste visual
 
-Use as contas de demonstração. Senha: `Demo@12345`.
+Entre pela tela de login digitando uma das contas de demonstração. Senha: `Demo@12345`.
 
 - Admin (Carla Kleia): `admin@obramaster.demo`
 - Cliente (Marthania Soares): `cliente@obramaster.demo`
@@ -33,7 +33,7 @@ Use as contas de demonstração. Senha: `Demo@12345`.
 
 ## Gerente
 
-As contas de Luciano Oliveira (\`colaborador2@obramaster.demo\`) e Jhonatan Bruno (\`colaborador3@obramaster.demo\`) entram pelo formulário normal de login, sem atalho de demonstração.
+Além da conta de Carlos, informe os e-mails de Luciano Oliveira (\`colaborador2@obramaster.demo\`) e Jhonatan Bruno (\`colaborador3@obramaster.demo\`) diretamente no formulário normal de login.
 
 1. Entre como Gerente e clique em **Início**, **Notificações** e **Perfil**. Confirme que o menu permanece visível.
 2. Abra uma obra e confira que aparecem o endereço da obra e o telefone de contato do cliente, sem CPF ou endereço pessoal.

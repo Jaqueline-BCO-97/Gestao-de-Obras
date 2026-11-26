@@ -148,6 +148,8 @@ export async function listarConvites() {
 export async function reenviarConvite(id) {
   return requisicaoAutenticada(`/convites/${encodeURIComponent(id)}/reenviar`, { method: 'POST' })
 }
+// Cancela um convite de gerente ainda não aceito pela rota administrativa existente.
+export async function cancelarConviteGerente(id) { return requisicaoAutenticada(`/convites/${encodeURIComponent(id)}`, { method: 'DELETE' }) }
 export async function excluirConviteExpirado(id) { return requisicaoAutenticada(`/convites/${encodeURIComponent(id)}`, { method: 'DELETE' }) }
 
 export async function listarTabelaPrecos() { return requisicaoAutenticada('/tabela-precos') }

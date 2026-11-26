@@ -6,8 +6,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import { entrar, salvarSessao } from '../services/auth.js'
 // Importa a função que retorna a rota de destino conforme o perfil do usuário
 import { obterRotaDashboard } from '../routes/dashboardRoutes.js'
-// Importa as credenciais de teste pré-definidas
-import { CONTAS_DEMO } from '../config/demo.js'
 
 // Componente utilitário interno para renderizar ícones SVG conforme o tipo solicitado
 function Icone({ tipo, className = 'h-5 w-5' }) {
@@ -89,8 +87,6 @@ export default function Login() {
   const [aviso, setAviso] = useState('')
   // Estado booleano para indicar se uma requisição de autenticação está em andamento
   const [carregando, setCarregando] = useState(false)
-  // Estado que armazena qual perfil de demonstração está sendo carregado no momento
-  const [tipoDemoCarregando, setTipoDemoCarregando] = useState(null)
 
   // Função para validar localmente os campos de e-mail e senha antes de enviar a requisição
   function validar() {
@@ -119,19 +115,17 @@ export default function Login() {
   }
 
   // Função assíncrona que processa a autenticação do usuário
-  async function autenticar(emailLogin, senhaLogin, tipoDemo = null) {
+  async function autenticar(emailLogin, senhaLogin) {
     // Limpa erros anteriores
     setErroLogin('')
     // Limpa avisos anteriores
     setAviso('')
 
-    // Se não for acesso de demonstração e a validação falhar, interrompe
-    if (!tipoDemo && !validar()) return
+    // Valida os campos do formulário antes de enviar a requisição
+    if (!validar()) return
 
     // Ativa o estado de carregamento
     setCarregando(true)
-    // Define qual botão de demonstração está em carregamento
-    setTipoDemoCarregando(tipoDemo)
 
     // Tenta realizar a autenticação
     try {
@@ -151,20 +145,11 @@ export default function Login() {
       // Navega para a rota de destino usando o React Router
       navigate(destino)
     } catch (erro) {
-      // Se a conta de demonstração não existir no banco de dados (erro 401)
-      if (tipoDemo && erro.status === 401) {
-        setErroLogin('A conta de demonstração não existe ou ainda não foi preparada. No banco de demonstração, execute: cd backend && npx prisma db seed.')
-      } else if (tipoDemo && (erro.status === 0 || erro.status >= 500)) {
-        setErroLogin('A demonstração precisa da API e do banco de dados ativos. Inicie o backend e tente novamente.')
-      } else {
-        // Exibe mensagem amigável de erro
-        setErroLogin(mensagemDeErro(erro))
-      }
+      // Exibe mensagem amigável de erro
+      setErroLogin(mensagemDeErro(erro))
     } finally {
       // Finaliza o estado de carregamento independente do resultado
       setCarregando(false)
-      // Reseta o indicador de botão demo carregando
-      setTipoDemoCarregando(null)
     }
   }
 
@@ -174,14 +159,6 @@ export default function Login() {
     event.preventDefault()
     // Executa a autenticação com os dados informados no formulário
     return autenticar(email, senha)
-  }
-
-  // Função para acionar o login rápido com credenciais de demonstração
-  function entrarComoDemo(tipo) {
-    // Recupera as credenciais da conta demo do arquivo de configuração (ou fallback seguro com credencial padrão)
-    const credenciais = CONTAS_DEMO[tipo] || { email: 'colaborador@obramaster.demo', senha: 'Demo@12345' }
-    // Dispara a autenticação usando as credenciais demo
-    return autenticar(credenciais.email, credenciais.senha, tipo)
   }
 
   // Função que informa na tela caso o usuário clique em recursos que ainda serão desenvolvidos
@@ -337,43 +314,6 @@ export default function Login() {
             <Link to="/registro-empreiteira" className="font-semibold text-[#087eae] hover:text-[#0c2d43]">Cadastre sua empreiteira</Link>
           </p>
 
-          {/* Seção com botões de atalho para demonstração e testes rápidos */}
-          <section className="mt-8 rounded-2xl border border-dashed border-slate-300 bg-white/70 p-4 sm:p-5" aria-label="Acessos de demonstração">
-            {/* Título da seção de acessos de demonstração */}
-            <h3 className="text-xs font-semibold tracking-wide text-slate-600">ACESSOS DE DEMONSTRAÇÃO</h3>
-            {/* Grade responsiva com 3 colunas em telas maiores para acomodar os 3 perfis */}
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {[
-                // Botão de acesso rápido para o perfil Cliente
-                { tipo: 'CLIENTE', texto: 'Entrar como Cliente' },
-                // Botão de acesso rápido para o perfil Administrador
-                { tipo: 'ADMIN', texto: 'Entrar como Admin' },
-                // Botão de acesso rápido para o perfil Colaborador
-                { tipo: 'COLABORADOR', texto: 'Entrar como Gerente de Obra' },
-              ].map(({ tipo, texto }) => (
-                // Renderiza o botão para cada perfil de demonstração
-                <button
-                  // Chave de identificação exclusiva exigida pelo React
-                  key={tipo}
-                  // Define tipo button para não disparar submissão acidental de formulário
-                  type="button"
-                  // Desabilita o botão se já houver requisição de login em andamento
-                  disabled={carregando}
-                  // Dispara o login de demonstração correspondente ao ser clicado
-                  onClick={() => entrarComoDemo(tipo)}
-                  // Estilos visuais de borda, padding, cores e estados de hover e disabled
-                  className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-[#0c2d43] transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
-                >
-                  {/* Se este perfil estiver conectando, mostra feedback; senão, mostra o texto padrão */}
-                  {tipoDemoCarregando === tipo ? 'Conectando…' : texto}
-                </button>
-              ))}
-            </div>
-            {/* Descrição informativa atualizada mencionando cliente, administrador e colaborador */}
-            <p className="mt-3 text-[11px] leading-4 text-slate-500">
-              Contas de demonstração para empreiteira, cliente e gerente de obra.
-            </p>
-          </section>
         </div>
       </section>
     </main>

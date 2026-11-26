@@ -3,7 +3,7 @@ import Button from '../components/Button.jsx'
 // Reutiliza o campo acessível de busca e seleção de obras nesta tela.
 import ComboboxObraAtribuicao from '../components/ComboboxObraAtribuicao.jsx'
 import { Link } from 'react-router-dom'
-import { alocarFuncionarioObra, encerrarEscala, moverGerente, convidarPessoa, listarFuncionarios, listarObras, listarConvites, reenviarConvite } from '../services/auth.js'
+import { alocarFuncionarioObra, cancelarConviteGerente, encerrarEscala, moverGerente, convidarPessoa, listarFuncionarios, listarObras, listarConvites, reenviarConvite } from '../services/auth.js'
 import useConfirmacao from '../components/useConfirmacao.jsx'
 import { formatarTelefoneBR } from '../utils/telefone.js'
 // Reutiliza a busca sem acentos e filtra status sem alterar os dados da API.
@@ -87,6 +87,30 @@ export default function AdminFuncionarios() {
       setErroAcao((atuais) => ({ ...atuais, [id]: falha.message }))
     } finally {
       // Libera os botões depois da resposta da API.
+      setProcessando('')
+    }
+  }
+
+  // Cancela um convite pendente depois de confirmar a ação com o ADMIN.
+  async function cancelarConvite(convite) {
+    // Pede confirmação antes de invalidar o link enviado ao gerente.
+    if (!await pedirConfirmacao(`Cancelar o convite de ${convite.nome || 'gerente'}? O link deixará de funcionar.`)) return
+    // Limpa erros anteriores e marca o convite em processamento.
+    setErroAcao((atuais) => ({ ...atuais, [convite.id]: '' }))
+    // Desativa as ações enquanto o cancelamento está sendo salvo.
+    setProcessando(`cancelar-${convite.id}`)
+    try {
+      // Usa a rota DELETE já protegida por ADMIN e empresa.
+      await cancelarConviteGerente(convite.id)
+      // Remove o cartão imediatamente depois da confirmação do backend.
+      setConvites((atuais) => atuais.filter((item) => item.id !== convite.id))
+      // Sincroniza as listas completas e reserva o botão de repetição para falha de consulta.
+      await atualizar().catch((falha) => setErroLista(falha.message))
+    } catch (falha) {
+      // Mostra a mensagem real do backend junto ao convite correspondente.
+      setErroAcao((atuais) => ({ ...atuais, [convite.id]: falha.message }))
+    } finally {
+      // Libera os controles depois do resultado da solicitação.
       setProcessando('')
     }
   }
@@ -210,6 +234,8 @@ export default function AdminFuncionarios() {
             {erroAcao[convite.id] && <p role="alert" className="mt-2 rounded bg-red-50 p-2 text-sm font-semibold text-red-800">{erroAcao[convite.id]}</p>}
             {/* Gera um link novo sem depender da obra do convite. */}
             <Button variant="outline" disabled={Boolean(processando)} onClick={() => reenviar(convite.id)} className="mt-3 px-3 py-1.5 text-xs">{processando === convite.id ? 'Gerando…' : 'Gerar novo link'}</Button>
+            {/* Cancela o convite pendente sem alterar a identidade visual atual. */}
+            <Button variant="outline" disabled={Boolean(processando)} onClick={() => cancelarConvite(convite)} className="mt-3 ml-2 px-3 py-1.5 text-xs">{processando === `cancelar-${convite.id}` ? 'Cancelando…' : 'Cancelar convite'}</Button>
           </article>
         ))}
         {/* Informa que os dados ainda estão sendo carregados. */}
